@@ -363,17 +363,6 @@ func TestOpenDirectoryIsTransient(t *testing.T) {
 	}
 }
 
-func TestDatabasePathUsesExplicitOrXDGDataHome(t *testing.T) {
-	if got, err := databasePath("/explicit/opencode2.db"); err != nil || got != "/explicit/opencode2.db" {
-		t.Fatalf("databasePath(explicit) = %q, %v", got, err)
-	}
-	t.Setenv("XDG_DATA_HOME", "/xdg-data")
-	got, err := databasePath("")
-	if err != nil || got != filepath.Join("/xdg-data", "opencode", "opencode2.db") {
-		t.Fatalf("databasePath(XDG) = %q, %v", got, err)
-	}
-}
-
 func newTestDatabase(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "opencode2.db")

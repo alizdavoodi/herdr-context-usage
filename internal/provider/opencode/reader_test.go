@@ -215,6 +215,17 @@ func TestOpenMissingStoreIsSemantic(t *testing.T) {
 	}
 }
 
+func TestOpenDirectoryIsTransient(t *testing.T) {
+	t.Parallel()
+
+	// Both opencode providers answer this the same way now: a directory where
+	// the database should be is not a store that has not been written yet, so it
+	// preserves the pane's value instead of blanking it.
+	if _, err := Open(context.Background(), t.TempDir()); err == nil || errors.Is(err, ErrStoreNotReady) || errors.Is(err, ErrNoSchema) {
+		t.Fatalf("Open() error = %v, want a transient database failure", err)
+	}
+}
+
 func TestOpenRejectsWrites(t *testing.T) {
 	t.Parallel()
 
@@ -222,31 +233,6 @@ func TestOpenRejectsWrites(t *testing.T) {
 	defer store.Close()
 	if _, err := store.database.ExecContext(context.Background(), `INSERT INTO session (id) VALUES ('write')`); err == nil {
 		t.Fatal("read-only opencode store accepted a write")
-	}
-}
-
-func TestDatabasePathUsesExplicitPath(t *testing.T) {
-	t.Parallel()
-
-	want := filepath.Join(t.TempDir(), "opencode.db")
-	got, err := databasePath(want)
-	if err != nil {
-		t.Fatalf("databasePath() error = %v", err)
-	}
-	if got != want {
-		t.Fatalf("databasePath() = %q, want %q", got, want)
-	}
-}
-
-func TestDatabasePathUsesXDGDataHome(t *testing.T) {
-	t.Setenv("XDG_DATA_HOME", "/xdg-data")
-
-	got, err := databasePath("")
-	if err != nil {
-		t.Fatalf("databasePath() error = %v", err)
-	}
-	if want := filepath.Join("/xdg-data", "opencode", "opencode.db"); got != want {
-		t.Fatalf("databasePath() = %q, want %q", got, want)
 	}
 }
 

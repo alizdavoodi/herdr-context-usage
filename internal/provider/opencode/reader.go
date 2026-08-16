@@ -8,9 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"net/url"
-	"os"
-	"path/filepath"
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/opencodeshared"
 
@@ -40,40 +37,20 @@ type Store struct {
 	database *sql.DB
 }
 
-func databasePath(explicit string) (string, error) {
-	if explicit != "" {
-		return explicit, nil
-	}
-	var dataDir string
-	if dataDir = os.Getenv("XDG_DATA_HOME"); dataDir != "" {
-		return filepath.Join(dataDir, "opencode", "opencode.db"), nil
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("find home directory: %w", err)
-	}
-	return filepath.Join(home, ".local", "share", "opencode", "opencode.db"), nil
-}
-
 func Open(ctx context.Context, explicitPath string) (*Store, error) {
-	path, err := databasePath(explicitPath)
+	path, err := opencodeshared.DataPath(explicitPath, "opencode.db")
 	if err != nil {
 		return nil, err
 	}
-	info, err := os.Stat(path)
-	if errors.Is(err, os.ErrNotExist) || (err == nil && info.IsDir()) {
+	// opencode's schema is mid-migration: the v1 database also carries a stalled
+	// session_v2, so having session and message is what makes a file a v1 store.
+	database, err := opencodeshared.OpenReadOnly(ctx, path, "session", "message")
+	switch {
+	case errors.Is(err, opencodeshared.ErrMissing):
 		return nil, ErrStoreNotReady
-	}
-	if err != nil {
-		return nil, fmt.Errorf("stat opencode database: %w", err)
-	}
-
-	database, err := openReadOnly(ctx, path)
-	if err != nil {
-		return nil, fmt.Errorf("open opencode database: %w", err)
-	}
-	if err := hasV1Schema(ctx, database); err != nil {
-		database.Close()
+	case errors.Is(err, opencodeshared.ErrSchema):
+		return nil, ErrNoSchema
+	case err != nil:
 		return nil, err
 	}
 	return &Store{database: database}, nil
@@ -143,48 +120,6 @@ func (s *Store) ReadOccupancy(ctx context.Context, sessionID string) (int64, err
 		return 0, fmt.Errorf("iterate opencode messages: %w", err)
 	}
 	return 0, ErrNoOccupancy
-}
-
-func openReadOnly(ctx context.Context, path string) (*sql.DB, error) {
-	dsn := &url.URL{Scheme: "file", Path: path}
-	query := dsn.Query()
-	query.Set("mode", "ro")
-	query.Add("_pragma", "query_only(1)")
-	dsn.RawQuery = query.Encode()
-	database, err := sql.Open("sqlite", dsn.String())
-	if err != nil {
-		return nil, err
-	}
-	database.SetMaxOpenConns(1)
-	if err := database.PingContext(ctx); err != nil {
-		database.Close()
-		return nil, err
-	}
-	return database, nil
-}
-
-func hasV1Schema(ctx context.Context, database *sql.DB) error {
-	rows, err := database.QueryContext(ctx, `SELECT name FROM sqlite_schema WHERE type = 'table' AND name IN ('session', 'message')`)
-	if err != nil {
-		return fmt.Errorf("probe opencode schema: %w", err)
-	}
-	defer rows.Close()
-
-	present := make(map[string]bool, 2)
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			return fmt.Errorf("scan opencode schema: %w", err)
-		}
-		present[name] = true
-	}
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("iterate opencode schema: %w", err)
-	}
-	if !present["session"] || !present["message"] {
-		return ErrNoSchema
-	}
-	return nil
 }
 
 func sessionExists(ctx context.Context, database *sql.DB, sessionID string) error {
