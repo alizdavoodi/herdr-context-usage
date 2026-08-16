@@ -99,6 +99,37 @@ func TestRefreshKeepsOpenCode2OccupancyDuringInFlightTurn(t *testing.T) {
 	}
 }
 
+func TestRefreshClearsOpenCode2OccupancyAtCompactionBoundary(t *testing.T) {
+	t.Parallel()
+
+	dbPath := newAppOpenCode2Database(t,
+		[]appSession{{ID: "compacted", Directory: "/work", Title: "Compacted"}},
+		[]appMessage{
+			{ID: "pre-compaction", SessionID: "compacted", Type: "assistant", Seq: 1, Data: `{"time":{"completed":1},"model":{"id":"model"},"tokens":{"input":225000,"cache":{"read":9000,"write":0}}}`},
+			{ID: "compaction", SessionID: "compacted", Type: "compaction", Seq: 2, Data: `{"status":"completed","reason":"auto","summary":"summary","recent":"recent"}`},
+			{ID: "in-flight", SessionID: "compacted", Type: "assistant", Seq: 3, Data: `{"time":{"created":3},"model":{"id":"model"}}`},
+		},
+	)
+	var log bytes.Buffer
+	fake := &fakeHerdr{
+		agents: []herdr.Agent{{
+			Agent: "opencode", PaneID: "w1:p1", ForegroundCWD: "/work", TerminalTitle: "OC | Compacted",
+			Tokens: map[string]string{"ctx": "234k", "ctx_raw": "234000"},
+		}},
+		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "opencode2"}}},
+		reports:   make(map[string][2]string),
+	}
+	if err := Refresh(context.Background(), fake, "", &log, Config{OpenCode2DB: dbPath}); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+	if !slices.Equal(fake.clears, []string{"w1:p1"}) || len(fake.reports) != 0 {
+		t.Fatalf("clears = %v, reports = %v; want pre-compaction occupancy cleared", fake.clears, fake.reports)
+	}
+	if got := log.String(); !strings.Contains(got, `"context_state":"just_compacted"`) {
+		t.Fatalf("measurement = %q, want just_compacted state", got)
+	}
+}
+
 func TestRefreshClearsSupersededOpenCode2Values(t *testing.T) {
 	t.Parallel()
 

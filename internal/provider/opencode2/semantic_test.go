@@ -9,7 +9,7 @@ func TestSemanticStatesDeclaresEverySupersedingState(t *testing.T) {
 	t.Parallel()
 
 	states := SemanticStates()
-	for _, want := range []error{ErrNoSession, ErrUntitled, ErrNoOccupancy, ErrStoreNotReady} {
+	for _, want := range []error{ErrNoSession, ErrUntitled, ErrNoOccupancy, ErrStoreNotReady, ErrJustCompacted} {
 		if !containsError(states, want) {
 			t.Fatalf("SemanticStates() = %v, missing %v", states, want)
 		}

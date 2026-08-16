@@ -29,6 +29,7 @@ var (
 	ErrUntitled      = errors.New("opencode2 agent session is untitled")
 	ErrNoOccupancy   = errors.New("opencode2 agent session has no current context occupancy")
 	ErrStoreNotReady = errors.New("opencode2 store has not been written yet")
+	ErrJustCompacted = errors.New("opencode2 agent session was just compacted")
 )
 
 type Store struct {
@@ -159,28 +160,37 @@ func (s *Store) Resolve(ctx context.Context, directory, terminalTitle string) (R
 }
 
 func (s *Store) ReadOccupancy(ctx context.Context, sessionID string) (Reading, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT data FROM session_message
-		WHERE session_id = ? AND type = 'assistant'
+	rows, err := s.db.QueryContext(ctx, `SELECT type, data FROM session_message
+		WHERE session_id = ? AND type IN ('assistant', 'compaction')
 		ORDER BY seq DESC`, sessionID)
 	if err != nil {
-		return Reading{}, fmt.Errorf("read opencode2 assistant message: %w", err)
+		return Reading{}, fmt.Errorf("read opencode2 session messages: %w", err)
 	}
 	defer rows.Close()
 
 	for rows.Next() {
+		var messageType string
 		var data []byte
-		if err := rows.Scan(&data); err != nil {
-			return Reading{}, fmt.Errorf("read opencode2 assistant data: %w", err)
+		if err := rows.Scan(&messageType, &data); err != nil {
+			return Reading{}, fmt.Errorf("read opencode2 session message data: %w", err)
+		}
+		if messageType == "compaction" {
+			// In-flight assistant rows are safe to cross because prior usage stays
+			// a lower bound. A compaction row is always a hard boundary: even when
+			// it is not completed, crossing it risks presenting pre-boundary usage.
+			var compaction struct {
+				Status string `json:"status"`
+			}
+			if json.Unmarshal(data, &compaction) == nil && compaction.Status == "completed" {
+				return Reading{}, ErrJustCompacted
+			}
+			return Reading{}, ErrNoOccupancy
 		}
 		var payload assistantPayload
 		if err := json.Unmarshal(data, &payload); err != nil {
 			continue
 		}
 		if payload.Time.Completed == nil {
-			// An in-flight row does not supersede completed usage: occupancy can
-			// only rise during a normal turn, so the previous reading remains a
-			// valid lower bound. An explicit compaction boundary differs because
-			// it invalidates that reading and must be cleared as a semantic state.
 			continue
 		}
 		if payload.Tokens == nil || payload.Tokens.Input == nil || payload.Tokens.Cache == nil ||
@@ -201,7 +211,7 @@ func (s *Store) ReadOccupancy(ctx context.Context, sessionID string) (Reading, e
 		return Reading{Occupancy: occupancy, ModelID: payload.Model.ID}, nil
 	}
 	if err := rows.Err(); err != nil {
-		return Reading{}, fmt.Errorf("read opencode2 assistant message: %w", err)
+		return Reading{}, fmt.Errorf("read opencode2 session messages: %w", err)
 	}
 	return Reading{}, ErrNoOccupancy
 }

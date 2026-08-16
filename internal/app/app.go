@@ -199,7 +199,11 @@ func refreshOpenCode2(ctx context.Context, client Herdr, agent herdr.Agent, log 
 	mode := string(resolved.Mode)
 	reading, err := store.ReadOccupancy(ctx, resolved.ID)
 	if err != nil {
-		return handleUnknown(ctx, client, agent.PaneID, log, provider.OpenCode2, opencode2.SemanticStates(), ContextUnknown, err, &mode)
+		state := ContextUnknown
+		if errors.Is(err, opencode2.ErrJustCompacted) {
+			state = ContextJustCompacted
+		}
+		return handleUnknown(ctx, client, agent.PaneID, log, provider.OpenCode2, opencode2.SemanticStates(), state, err, &mode)
 	}
 
 	value := reading.Occupancy

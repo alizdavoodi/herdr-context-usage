@@ -183,6 +183,39 @@ func TestReadOccupancyUsesPreviousCompletedUsageDuringInFlightTurn(t *testing.T)
 	}
 }
 
+func TestReadOccupancyDoesNotWalkBackAcrossCompaction(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		status  string
+		wantErr error
+	}{
+		{status: "running", wantErr: ErrNoOccupancy},
+		{status: "completed", wantErr: ErrJustCompacted},
+		{status: "failed", wantErr: ErrNoOccupancy},
+	} {
+		t.Run(tt.status, func(t *testing.T) {
+			t.Parallel()
+			path := newTestDatabase(t)
+			db := openFixtureDatabase(t, path)
+			insertSession(t, db, testSession{ID: "session", Directory: "/work", Title: "Compacted"})
+			insertMessage(t, db, "pre-compaction", "session", "assistant", 1,
+				`{"time":{"completed":1},"model":{"id":"model"},"tokens":{"input":225000,"cache":{"read":9000,"write":0}}}`)
+			insertMessage(t, db, "compaction", "session", "compaction", 2,
+				fmt.Sprintf(`{"status":%q,"reason":"auto","summary":"summary","recent":"recent"}`, tt.status))
+			insertMessage(t, db, "in-flight", "session", "assistant", 3,
+				`{"time":{"created":3},"model":{"id":"model"},"content":[]}`)
+			db.Close()
+
+			store := openStore(t, path)
+			defer store.Close()
+			if _, err := store.ReadOccupancy(context.Background(), "session"); !errors.Is(err, tt.wantErr) {
+				t.Fatalf("ReadOccupancy() error = %v, want %v instead of pre-compaction occupancy", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestReadOccupancySkipsFailedTurnZero(t *testing.T) {
 	t.Parallel()
 
