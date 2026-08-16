@@ -10,32 +10,41 @@ metadata tokens. The plugin has no query command; read the values from Herdr.
 
 ## Read the tokens
 
-For the current pane:
+Your pane id is in `$HERDR_PANE_ID`. Confirm that id and retain the identifying
+fields while reading your current pane:
 
 ```bash
-herdr pane current --current | jq '.result.pane.tokens // {}'
+echo "$HERDR_PANE_ID"
+herdr pane current --current | jq '.result.pane | {pane_id, agent, agent_status, foreground_cwd, tokens: ((.tokens // {}) | if has("ctx_raw") then .ctx_raw |= tonumber else . end)}'
 ```
 
-For every live agent, including other panes:
+To list the other live panes, keep their identifying fields and exclude your
+own `pane_id`:
 
 ```bash
-herdr agent list | jq '.result.agents[] | {pane_id, agent, agent_status, tokens: (.tokens // {})}'
+herdr agent list | jq --arg me "$HERDR_PANE_ID" '.result.agents[] | select(.pane_id != $me) | {pane_id, agent, agent_status, foreground_cwd, tokens: ((.tokens // {}) | if has("ctx_raw") then .ctx_raw |= tonumber else . end)}'
 ```
 
 Neither command takes `--json`; both emit JSON unconditionally. Match a
-neighbour by its `pane_id` in the agent-list result. Herdr omits the `tokens`
-key when a pane has no tokens rather than returning an empty object; some JSON
-responses serialize that missing map as `null`. Use `.tokens // {}` before
-reading it.
+neighbour by choosing its `pane_id` from this list, never by matching its token
+value to another row. The current-pane response also includes `pane_id`, so it
+gives you the identity to compare with `$HERDR_PANE_ID`.
+
+On the wire, Herdr omits the `tokens` key when a pane has no tokens; it does not
+send `{}`. `.tokens // {}` is a jq-only fallback that substitutes an empty
+object for the absent key so the filter can safely inspect it. Herdr token
+values, when present, are JSON strings, including `ctx_raw`; the recipes above
+convert only `ctx_raw` to a JSON number with `tonumber`.
 
 The two token names are:
 
 - `ctx` is the compact display value, with forms such as `840`, `92k`, and
   `1.2M`.
-- `ctx_raw` is the exact integer value for machines.
+- `ctx_raw` is a string containing the exact integer value for machines.
 
-Read `ctx_raw` for decisions and calculations. Never parse `ctx`; its display
-shape is deliberately compact and varies with the magnitude.
+Read `ctx_raw` for decisions and calculations, converting it with `tonumber`
+as shown above. Never parse `ctx`; its display shape is deliberately compact
+and varies with the magnitude.
 
 ## Interpret the value
 
@@ -46,6 +55,9 @@ whole session, including superseded turns. It is not plan quota, which is a
 subscription's rolling allowance over a time window. Occupancy is a pressure
 measure; session spend is a cost measure; plan quota is neither a context-window
 measurement nor a substitute for one.
+
+The reported occupancy is for the main thread only. It excludes agent sessions
+spawned as sub-agents by the pane's main thread.
 
 This plugin reports no percentage. It does not know a universal window limit,
 so it cannot tell you a model's headroom or how close the occupancy is to that
