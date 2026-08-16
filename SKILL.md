@@ -10,31 +10,45 @@ metadata tokens. The plugin has no query command; read the values from Herdr.
 
 ## Read the tokens
 
+Before running the queries below, fail closed if this is not a Herdr pane (or
+the environment did not inherit the pane id):
+
+```bash
+if [ -z "${HERDR_PANE_ID:-}" ]; then
+  echo 'HERDR_PANE_ID is unset; run these queries from a Herdr pane.' >&2
+  exit 1
+fi
+```
+
 Your pane id is in `$HERDR_PANE_ID`. Confirm that id and retain the identifying
 fields while reading your current pane:
 
 ```bash
 echo "$HERDR_PANE_ID"
-herdr pane current --current | jq '.result.pane | {pane_id, agent, agent_status, foreground_cwd, tokens: ((.tokens // {}) | if has("ctx_raw") then .ctx_raw |= tonumber else . end)}'
+herdr pane current --current | jq '.result.pane | {pane_id, agent, foreground_cwd, tokens: ((.tokens // {}) | if has("ctx_raw") then .ctx_raw |= tonumber else . end)}'
 ```
 
 To list the other live panes, keep their identifying fields and exclude your
 own `pane_id`:
 
 ```bash
-herdr agent list | jq --arg me "$HERDR_PANE_ID" '.result.agents[] | select(.pane_id != $me) | {pane_id, agent, agent_status, foreground_cwd, tokens: ((.tokens // {}) | if has("ctx_raw") then .ctx_raw |= tonumber else . end)}'
+herdr agent list | jq --arg me "$HERDR_PANE_ID" '.result.agents[] | select(.pane_id != $me) | {pane_id, name, agent, foreground_cwd, tokens: ((.tokens // {}) | if has("ctx_raw") then try (.ctx_raw |= tonumber) catch . else . end)}'
 ```
 
 Neither command takes `--json`; both emit JSON unconditionally. Match a
-neighbour by choosing its `pane_id` from this list, never by matching its token
-value to another row. The current-pane response also includes `pane_id`, so it
-gives you the identity to compare with `$HERDR_PANE_ID`.
+neighbour by its human-readable `name` when present, then use that row's
+`pane_id` as its unambiguous identity. Never match a neighbour by token value.
+The current-pane response also includes `pane_id`, so it gives you the identity
+to compare with `$HERDR_PANE_ID`. A row can have no `name`; `pane_id` is still
+the reliable identifier.
 
 On the wire, Herdr omits the `tokens` key when a pane has no tokens; it does not
 send `{}`. `.tokens // {}` is a jq-only fallback that substitutes an empty
 object for the absent key so the filter can safely inspect it. Herdr token
 values, when present, are JSON strings, including `ctx_raw`; the recipes above
-convert only `ctx_raw` to a JSON number with `tonumber`.
+convert only valid `ctx_raw` strings to JSON numbers with `tonumber`. The jq
+`try` keeps a malformed value from truncating the rest of the agent list; the
+plugin itself writes valid integer strings.
 
 The two token names are:
 
