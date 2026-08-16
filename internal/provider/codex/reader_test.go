@@ -124,16 +124,16 @@ func TestReadOccupancyNeverAddsCachedInputToInput(t *testing.T) {
 	const (
 		input  = 85_751
 		cached = 84_736
+
+		codexRule  = input          // 85,751
+		claudeRule = input + cached // 170,487, a 1.99x overstatement
 	)
 	got, err := ReadOccupancy(filepath.Join("testdata", "input-fallback.jsonl"))
 	if err != nil {
 		t.Fatalf("ReadOccupancy() error = %v", err)
 	}
-	if got != input {
-		t.Fatalf("ReadOccupancy() = %d, want %d", got, input)
-	}
-	if got == input+cached {
-		t.Fatal("ReadOccupancy() added cached input to input, which is claude's rule and wrong here")
+	if got != codexRule {
+		t.Fatalf("ReadOccupancy() = %d, want %d; %d would be claude's rule applied to codex's fields", got, codexRule, claudeRule)
 	}
 }
 

@@ -816,17 +816,17 @@ func TestRefreshClearsValueWhenOpenCode2SessionIsJustCompacted(t *testing.T) {
 	}
 }
 
-// Provenance for the fixtures in this file. The claude usage objects are the
-// assistant records at lines 546 and 561 of
-// ~/.claude/projects/-Users-alirezadavoodi-projects-github-com-alizdavoodi-herdr-context-usage/6eb1e90f-04f1-4fa7-b553-9142da3f7913.jsonl,
-// and the codex records are lines 396, 397 and 400 of
+// Provenance for the fixtures in this file, which are about delivery to herdr
+// rather than about arithmetic, so most of them carry the design document's
+// worked example — 840 / 90000 / 1641, the same 92,481 across three providers
+// — instead of a copied record. Where an instant is what is being asserted,
+// the record is real and named at the call site: the codex compaction is lines
+// 396, 397 and 400 of
 // ~/.codex/sessions/2026/07/31/rollout-2026-07-31T17-43-45-019fb8d8-85b8-7c50-82ac-bc46ddf0d5fe.jsonl,
-// both described in full in the two providers' own reader tests. The opencode
-// v1 rows come from session ses_31c1bfde3ffeCEDhd6W270unu4, and the opencode2
-// compaction rows are the one shape taken from a binary rather than a store,
-// because no opencode2 session here has ever compacted. The numbers 840 /
-// 90000 / 1641 that appear below are the design document's worked example,
-// kept because several assertions read as the same 92,481 across providers.
+// and the opencode v1 compaction summary is msg_ce8685bc7001SiK5DcsX6T7Q34 of
+// session ses_31c1bfde3ffeCEDhd6W270unu4. Both are described in full in the
+// providers' own reader tests, as are the opencode2 compaction rows, which are
+// the one shape taken from a binary rather than a store.
 func createOpenCode2Database(t *testing.T, path, sessionID, message string) {
 	t.Helper()
 
