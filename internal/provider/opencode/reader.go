@@ -1,11 +1,13 @@
 package opencode
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -20,7 +22,11 @@ const (
 )
 
 type assistantMessage struct {
-	Role   string       `json:"role"`
+	Role    string          `json:"role"`
+	Summary json.RawMessage `json:"summary"`
+	Time    struct {
+		Completed *int64 `json:"completed"`
+	} `json:"time"`
 	Tokens *tokenCounts `json:"tokens"`
 }
 
@@ -38,10 +44,11 @@ type Store struct {
 	database *sql.DB
 }
 
-func DatabasePath(dataDir string) (string, error) {
-	if dataDir != "" {
-		return filepath.Join(dataDir, "opencode.db"), nil
+func databasePath(explicit string) (string, error) {
+	if explicit != "" {
+		return explicit, nil
 	}
+	var dataDir string
 	if dataDir = os.Getenv("XDG_DATA_HOME"); dataDir != "" {
 		return filepath.Join(dataDir, "opencode", "opencode.db"), nil
 	}
@@ -52,8 +59,8 @@ func DatabasePath(dataDir string) (string, error) {
 	return filepath.Join(home, ".local", "share", "opencode", "opencode.db"), nil
 }
 
-func Open(ctx context.Context, dataDir string) (*Store, error) {
-	path, err := DatabasePath(dataDir)
+func Open(ctx context.Context, explicitPath string) (*Store, error) {
+	path, err := databasePath(explicitPath)
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +110,10 @@ func (s *Store) ResolveTerminalTitle(ctx context.Context, directory, terminalTit
 		comparison = "substr(title, 1, length(?)) = ?"
 		args = []any{directory, title, title}
 	}
-	rows, err := s.database.QueryContext(ctx, `SELECT id FROM session WHERE directory = ? AND `+comparison+` LIMIT 2`, args...)
+	// OPENCODE_DISABLE_TERMINAL_TITLE removes this correlation signal entirely,
+	// while plugin routes share its title shape; without one positive root-session
+	// match, a pane remains blank rather than borrowing another session's reading.
+	rows, err := s.database.QueryContext(ctx, `SELECT id FROM session WHERE directory = ? AND parent_id IS NULL AND `+comparison+` LIMIT 2`, args...)
 	if err != nil {
 		return ResolvedSession{}, fmt.Errorf("resolve opencode session: %w", err)
 	}
@@ -137,6 +147,7 @@ func (s *Store) ReadOccupancy(ctx context.Context, sessionID string) (int64, err
 	}
 	defer rows.Close()
 
+	newest := true
 	for rows.Next() {
 		var data []byte
 		if err := rows.Scan(&data); err != nil {
@@ -144,12 +155,21 @@ func (s *Store) ReadOccupancy(ctx context.Context, sessionID string) (int64, err
 		}
 		var message assistantMessage
 		if err := json.Unmarshal(data, &message); err != nil {
+			newest = false
 			continue
 		}
+		if newest && isCompactionSummary(message.Summary) {
+			return 0, ErrJustCompacted
+		}
+		newest = false
 		if message.Role != "assistant" {
 			continue
 		}
-		return occupancy(message)
+		occupancy, err := occupancy(message)
+		if err != nil {
+			continue
+		}
+		return occupancy, nil
 	}
 	if err := rows.Err(); err != nil {
 		return 0, fmt.Errorf("iterate opencode messages: %w", err)
@@ -212,10 +232,13 @@ func sessionExists(ctx context.Context, database *sql.DB, sessionID string) erro
 }
 
 func occupancy(message assistantMessage) (int64, error) {
-	if message.Tokens == nil || message.Tokens.Input == nil || message.Tokens.Cache == nil || message.Tokens.Cache.Read == nil || message.Tokens.Cache.Write == nil {
+	if message.Time.Completed == nil || message.Tokens == nil || message.Tokens.Input == nil || message.Tokens.Cache == nil || message.Tokens.Cache.Read == nil || message.Tokens.Cache.Write == nil {
 		return 0, ErrNoOccupancy
 	}
 	if *message.Tokens.Input < 0 || *message.Tokens.Cache.Read < 0 || *message.Tokens.Cache.Write < 0 {
+		return 0, ErrNoOccupancy
+	}
+	if *message.Tokens.Input > math.MaxInt64-*message.Tokens.Cache.Read || *message.Tokens.Input+*message.Tokens.Cache.Read > math.MaxInt64-*message.Tokens.Cache.Write {
 		return 0, ErrNoOccupancy
 	}
 	occupancy := *message.Tokens.Input + *message.Tokens.Cache.Read + *message.Tokens.Cache.Write
@@ -223,4 +246,8 @@ func occupancy(message assistantMessage) (int64, error) {
 		return 0, ErrNoOccupancy
 	}
 	return occupancy, nil
+}
+
+func isCompactionSummary(summary json.RawMessage) bool {
+	return len(summary) != 0 && !bytes.Equal(bytes.TrimSpace(summary), []byte("null"))
 }

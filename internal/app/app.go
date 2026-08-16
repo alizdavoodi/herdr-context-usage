@@ -25,8 +25,8 @@ type Herdr interface {
 }
 
 type Config struct {
-	ClaudeHome      string
-	OpenCodeDataDir string
+	ClaudeHome string
+	OpenCodeDB string
 }
 
 type ContextState string
@@ -200,7 +200,7 @@ func refreshOpenCode(ctx context.Context, client Herdr, agent herdr.Agent, log i
 		resolvedMode := string(resolved.Mode)
 		mode = &resolvedMode
 	}
-	store, err := opencode.Open(ctx, config.OpenCodeDataDir)
+	store, err := opencode.Open(ctx, config.OpenCodeDB)
 	if err != nil {
 		return handleUnknown(ctx, client, agent.PaneID, log, provider.OpenCode, opencode.SemanticStates(), ContextUnknown, err, mode)
 	}
@@ -215,7 +215,11 @@ func refreshOpenCode(ctx context.Context, client Herdr, agent herdr.Agent, log i
 	}
 	value, err := store.ReadOccupancy(ctx, resolved.ID)
 	if err != nil {
-		return handleUnknown(ctx, client, agent.PaneID, log, provider.OpenCode, opencode.SemanticStates(), ContextUnknown, err, mode)
+		state := ContextUnknown
+		if errors.Is(err, opencode.ErrJustCompacted) {
+			state = ContextJustCompacted
+		}
+		return handleUnknown(ctx, client, agent.PaneID, log, provider.OpenCode, opencode.SemanticStates(), state, err, mode)
 	}
 
 	measurement := Measurement{PaneID: agent.PaneID, Provider: provider.OpenCode, ContextState: ContextMeasured, Occupancy: &value, ResolutionMode: mode}

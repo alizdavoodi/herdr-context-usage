@@ -16,9 +16,9 @@ func TestReadOccupancyReadsV1TablesFromReadOnlyDatabase(t *testing.T) {
 	databasePath := fixtureDatabase(t, func(database *sql.DB) {
 		exec(t, database, `INSERT INTO session (id) VALUES ('ses_current')`)
 		exec(t, database, `INSERT INTO session_v2 (id, tokens_input) VALUES ('ses_current', 999999)`)
-		exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_old', 'ses_current', 1, '{"role":"assistant","tokens":{"input":3000,"cache":{"read":4000,"write":5000}}}')`)
+		exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_old', 'ses_current', 1, '{"role":"assistant","time":{"completed":1},"tokens":{"input":3000,"cache":{"read":4000,"write":5000}}}')`)
 		exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_user', 'ses_current', 2, '{"role":"user"}')`)
-		exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_current', 'ses_current', 3, '{"role":"assistant","tokens":{"input":840,"cache":{"read":90000,"write":1641}}}')`)
+		exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_current', 'ses_current', 3, '{"role":"assistant","time":{"completed":3},"tokens":{"input":840,"cache":{"read":90000,"write":1641}}}')`)
 	})
 	legacyPath := filepath.Join(filepath.Dir(databasePath), "storage", "message", "stale.json")
 	if err := os.MkdirAll(filepath.Dir(legacyPath), 0o755); err != nil {
@@ -47,7 +47,7 @@ func TestReadOccupancyTreatsZeroAsSemantic(t *testing.T) {
 
 	databasePath := fixtureDatabase(t, func(database *sql.DB) {
 		exec(t, database, `INSERT INTO session (id) VALUES ('ses_zero')`)
-		exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_zero', 'ses_zero', 1, '{"role":"assistant","tokens":{"input":0,"cache":{"read":0,"write":0}}}')`)
+		exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_zero', 'ses_zero', 1, '{"role":"assistant","time":{"completed":1},"tokens":{"input":0,"cache":{"read":0,"write":0}}}')`)
 	})
 
 	store := openStore(t, databasePath)
@@ -57,19 +57,45 @@ func TestReadOccupancyTreatsZeroAsSemantic(t *testing.T) {
 	}
 }
 
-func TestReadOccupancyTreatsMissingLatestAssistantTokensAsSemantic(t *testing.T) {
+func TestReadOccupancyUsesPreviousCompletedReadingWhenLatestAssistantIsUnusable(t *testing.T) {
 	t.Parallel()
 
-	databasePath := fixtureDatabase(t, func(database *sql.DB) {
-		exec(t, database, `INSERT INTO session (id) VALUES ('ses_pending')`)
-		exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_complete', 'ses_pending', 1, '{"role":"assistant","tokens":{"input":840,"cache":{"read":90000,"write":1641}}}')`)
-		exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_pending', 'ses_pending', 2, '{"role":"assistant"}')`)
-	})
+	for _, latest := range []string{
+		`{"role":"assistant","time":{"created":2}}`,
+		`{"role":"assistant","time":{"completed":2}}`,
+		`{"role":"assistant","time":{"completed":2},"tokens":{"input":-1,"cache":{"read":0,"write":0}}}`,
+		`{"role":"assistant","time":{"completed":2},"tokens":{"input":0,"cache":{"read":0,"write":0}}}`,
+	} {
+		databasePath := fixtureDatabase(t, func(database *sql.DB) {
+			exec(t, database, `INSERT INTO session (id) VALUES ('ses_pending')`)
+			exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_complete', 'ses_pending', 1, '{"role":"assistant","time":{"completed":1},"tokens":{"input":840,"cache":{"read":90000,"write":1641}}}')`)
+			exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_pending', 'ses_pending', 2, ?)`, latest)
+		})
 
-	store := openStore(t, databasePath)
-	defer store.Close()
-	if _, err := store.ReadOccupancy(context.Background(), "ses_pending"); !errors.Is(err, ErrNoOccupancy) {
-		t.Fatalf("ReadOccupancy() error = %v, want ErrNoOccupancy", err)
+		store := openStore(t, databasePath)
+		got, err := store.ReadOccupancy(context.Background(), "ses_pending")
+		store.Close()
+		if err != nil || got != 92_481 {
+			t.Fatalf("ReadOccupancy() = %d, %v; want prior completed occupancy", got, err)
+		}
+	}
+}
+
+func TestReadOccupancyDoesNotWalkBackAcrossLatestCompactionSummary(t *testing.T) {
+	t.Parallel()
+
+	for _, summary := range []string{`true`, `{}`} {
+		databasePath := fixtureDatabase(t, func(database *sql.DB) {
+			exec(t, database, `INSERT INTO session (id) VALUES ('ses_compacted')`)
+			exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_before', 'ses_compacted', 1, '{"role":"assistant","time":{"completed":1},"tokens":{"input":840,"cache":{"read":90000,"write":1641}}}')`)
+			exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_summary', 'ses_compacted', 2, ?)`, `{"role":"user","summary":`+summary+`}`)
+		})
+		store := openStore(t, databasePath)
+		_, err := store.ReadOccupancy(context.Background(), "ses_compacted")
+		store.Close()
+		if !errors.Is(err, ErrJustCompacted) {
+			t.Fatalf("ReadOccupancy() error = %v, want ErrJustCompacted", err)
+		}
 	}
 }
 
@@ -86,7 +112,7 @@ func TestReadOccupancyRejectsMissingV1SchemaAndSession(t *testing.T) {
 		if err := database.Close(); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := Open(context.Background(), filepath.Dir(databasePath)); !errors.Is(err, ErrNoSchema) {
+		if _, err := Open(context.Background(), databasePath); !errors.Is(err, ErrNoSchema) {
 			t.Fatalf("Open() error = %v, want ErrNoSchema", err)
 		}
 	})
@@ -108,6 +134,7 @@ func TestResolveTerminalTitleMatchesDirectoryWithoutRecency(t *testing.T) {
 
 	databasePath := fixtureDatabase(t, func(database *sql.DB) {
 		exec(t, database, `INSERT INTO session (id, directory, title) VALUES ('target', '/work/acme', 'Probe test response')`)
+		exec(t, database, `INSERT INTO session (id, directory, title, parent_id) VALUES ('child', '/work/acme', 'Probe test response', 'target')`)
 		exec(t, database, `INSERT INTO session (id, directory, title) VALUES ('wrong-title', '/work/acme', 'Newer unrelated session')`)
 		exec(t, database, `INSERT INTO session (id, directory, title) VALUES ('wrong-directory', '/work/other', 'Probe test response')`)
 	})
@@ -180,7 +207,7 @@ func TestResolveTerminalTitleToleratesTruncationAndRefusesGuesses(t *testing.T) 
 func TestOpenMissingStoreIsSemantic(t *testing.T) {
 	t.Parallel()
 
-	if _, err := Open(context.Background(), t.TempDir()); !errors.Is(err, ErrStoreNotReady) {
+	if _, err := Open(context.Background(), filepath.Join(t.TempDir(), "opencode.db")); !errors.Is(err, ErrStoreNotReady) {
 		t.Fatalf("Open() error = %v, want ErrStoreNotReady", err)
 	}
 }
@@ -195,16 +222,28 @@ func TestOpenRejectsWrites(t *testing.T) {
 	}
 }
 
-func TestDatabasePathUsesConfiguredDataDirectory(t *testing.T) {
+func TestDatabasePathUsesExplicitPath(t *testing.T) {
 	t.Parallel()
 
-	dataDir := t.TempDir()
-	got, err := DatabasePath(dataDir)
+	want := filepath.Join(t.TempDir(), "opencode.db")
+	got, err := databasePath(want)
 	if err != nil {
-		t.Fatalf("DatabasePath() error = %v", err)
+		t.Fatalf("databasePath() error = %v", err)
 	}
-	if want := filepath.Join(dataDir, "opencode.db"); got != want {
-		t.Fatalf("DatabasePath() = %q, want %q", got, want)
+	if got != want {
+		t.Fatalf("databasePath() = %q, want %q", got, want)
+	}
+}
+
+func TestDatabasePathUsesXDGDataHome(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", "/xdg-data")
+
+	got, err := databasePath("")
+	if err != nil {
+		t.Fatalf("databasePath() error = %v", err)
+	}
+	if want := filepath.Join("/xdg-data", "opencode", "opencode.db"); got != want {
+		t.Fatalf("databasePath() = %q, want %q", got, want)
 	}
 }
 
@@ -216,7 +255,7 @@ func fixtureDatabase(t *testing.T, populate func(*sql.DB)) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	exec(t, database, `CREATE TABLE session (id TEXT PRIMARY KEY, directory TEXT, title TEXT)`)
+	exec(t, database, `CREATE TABLE session (id TEXT PRIMARY KEY, directory TEXT, title TEXT, parent_id TEXT)`)
 	exec(t, database, `CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, time_created INTEGER NOT NULL, data TEXT NOT NULL)`)
 	exec(t, database, `CREATE TABLE session_v2 (id TEXT PRIMARY KEY, tokens_input INTEGER)`)
 	populate(database)
@@ -235,7 +274,7 @@ func exec(t *testing.T, database *sql.DB, query string, args ...any) {
 
 func openStore(t *testing.T, path string) *Store {
 	t.Helper()
-	store, err := Open(context.Background(), filepath.Dir(path))
+	store, err := Open(context.Background(), path)
 	if err != nil {
 		t.Fatal(err)
 	}
