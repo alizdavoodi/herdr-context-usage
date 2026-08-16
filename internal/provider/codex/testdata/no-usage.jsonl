@@ -1,1 +1,4 @@
-{"type":"event_msg","payload":{"type":"turn_started"}}
+{"timestamp":"2026-01-29T10:42:29.343Z","type":"session_meta","payload":{"id":"019c0958-ef52-7a83-b189-7f34e6ae0841","timestamp":"2026-01-29T10:42:29.330Z","cwd":"/work/acme","originator":"codex_cli_rs","source":"cli"}}
+{"timestamp":"2026-01-29T10:42:29.344Z","type":"response_item","payload":{"type":"message","role":"developer","content":[{"type":"input_text","text":"redacted"}]}}
+{"timestamp":"2026-01-29T10:42:29.344Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"redacted"}]}}
+{"timestamp":"2026-01-29T10:42:29.344Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"redacted"}]}}

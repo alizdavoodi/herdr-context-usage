@@ -14,6 +14,15 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// Provenance for the fixtures in this file. The session title and directory
+// are the live opencode2 pane this plugin was verified against, which herdr
+// reported as `OC | Probe test response`. The assistant payload shapes are the
+// live store's, and the 2,445 / 14,848 pair is the measured turn where input
+// is smaller than cache.read — the observation that settled that opencode2
+// normalises cache out of input and that the three fields add. The compaction
+// rows are the exception, described in the store's own tests: their shape
+// comes from the opencode2 binary, because no session in this installation has
+// ever compacted.
 func TestRefreshReportsOpenCode2OccupancyResolvedFromTerminalTitle(t *testing.T) {
 	t.Parallel()
 

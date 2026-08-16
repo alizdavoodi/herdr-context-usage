@@ -1,3 +1,3 @@
-{"type":"user","message":{"role":"user"}}
-not-json
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"redacted"}]},"uuid":"efa13c3e-1e85-439a-87d1-ef3ec8443586"}
+{"type":"assistant","message":{"model":"claude-opus-5","id":"msg_011Ce6uHX4vsjJZYmum35kKm","type":"message","role":"assistant","content":[{"type":"text","text":"partially writ
 {"type":"system","subtype":"turn_duration"}
