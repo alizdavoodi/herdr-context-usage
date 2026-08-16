@@ -109,7 +109,7 @@ func TestResolveRejectsExecMainThreadWithDiagnostic(t *testing.T) {
 	t.Parallel()
 
 	home := t.TempDir()
-	writeRolloutWithMetadata(t, home, "exec-session", "/work/acme", nil, "codex-exec", "exec")
+	writeRolloutWithMetadata(t, home, "exec-session", "/work/acme", nil, "codex-exec", "exec", "")
 	writeLock(t, home, "exec-session")
 
 	_, err := Resolve(SessionInput{CodexHome: home, ForegroundCWD: "/work/acme"})
@@ -123,7 +123,7 @@ func TestResolveRejectsLegacySourceSubagent(t *testing.T) {
 
 	home := t.TempDir()
 	path := writeRollout(t, home, "tui-session", "/work/acme", nil, "cli")
-	writeRolloutWithMetadata(t, home, "legacy-subagent", "/work/acme", nil, "codex-tui", `{"subagent":"review"}`)
+	writeRolloutWithMetadata(t, home, "legacy-subagent", "/work/acme", nil, "codex-tui", `{"subagent":"review"}`, "")
 	writeLock(t, home, "tui-session")
 	writeLock(t, home, "legacy-subagent")
 
@@ -133,6 +133,40 @@ func TestResolveRejectsLegacySourceSubagent(t *testing.T) {
 	}
 	if got.Path != path {
 		t.Fatalf("Resolve() = %#v, want TUI main-thread rollout", got)
+	}
+}
+
+func TestResolveRejectsThreadSourceSubagent(t *testing.T) {
+	t.Parallel()
+
+	home := t.TempDir()
+	path := writeRollout(t, home, "tui-session", "/work/acme", nil, "cli")
+	writeRolloutWithMetadata(t, home, "thread-source-subagent", "/work/acme", nil, "codex-tui", "cli", "subagent")
+	writeLock(t, home, "tui-session")
+	writeLock(t, home, "thread-source-subagent")
+
+	got, err := Resolve(SessionInput{CodexHome: home, ForegroundCWD: "/work/acme"})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if got.Path != path {
+		t.Fatalf("Resolve() = %#v, want TUI main-thread rollout", got)
+	}
+}
+
+func TestResolveAcceptsLegacyTUIOriginator(t *testing.T) {
+	t.Parallel()
+
+	home := t.TempDir()
+	path := writeRolloutWithMetadata(t, home, "legacy-tui", "/work/acme", nil, "codex_cli_rs", "cli", "")
+	writeLock(t, home, "legacy-tui")
+
+	got, err := Resolve(SessionInput{CodexHome: home, ForegroundCWD: "/work/acme"})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if got.Path != path {
+		t.Fatalf("Resolve() = %#v, want legacy TUI rollout", got)
 	}
 }
 
@@ -159,10 +193,10 @@ func TestResolveSkipsUnreadableRollout(t *testing.T) {
 
 func writeRollout(t *testing.T, home, id, cwd string, parent *string, source string) string {
 	t.Helper()
-	return writeRolloutWithMetadata(t, home, id, cwd, parent, "codex-tui", source)
+	return writeRolloutWithMetadata(t, home, id, cwd, parent, "codex-tui", source, "")
 }
 
-func writeRolloutWithMetadata(t *testing.T, home, id, cwd string, parent *string, originator, source string) string {
+func writeRolloutWithMetadata(t *testing.T, home, id, cwd string, parent *string, originator, source, threadSource string) string {
 	t.Helper()
 	path := filepath.Join(home, "sessions", "2026", "08", "16", "rollout-2026-08-16T12-00-00-"+id+".jsonl")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -176,7 +210,7 @@ func writeRolloutWithMetadata(t *testing.T, home, id, cwd string, parent *string
 	if strings.HasPrefix(source, "{") {
 		sourceJSON = source
 	}
-	entry := `{"type":"session_meta","payload":{"id":"` + id + `","cwd":"` + cwd + `","parent_thread_id":` + parentJSON + `,"originator":"` + originator + `","source":` + sourceJSON + `}}` + "\n"
+	entry := `{"type":"session_meta","payload":{"id":"` + id + `","cwd":"` + cwd + `","parent_thread_id":` + parentJSON + `,"thread_source":"` + threadSource + `","originator":"` + originator + `","source":` + sourceJSON + `}}` + "\n"
 	if err := os.WriteFile(path, []byte(entry), 0o600); err != nil {
 		t.Fatal(err)
 	}

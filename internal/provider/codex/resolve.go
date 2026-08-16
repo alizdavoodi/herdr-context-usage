@@ -74,9 +74,6 @@ func Resolve(input SessionInput) (ResolvedSession, error) {
 	if err != nil {
 		return ResolvedSession{}, err
 	}
-	if path == "" {
-		return ResolvedSession{}, ErrNoSession
-	}
 	return ResolvedSession{Path: path, Mode: ResolutionForegroundCWD}, nil
 }
 
@@ -223,7 +220,11 @@ func (c sessionCandidates) reason(tuiMatches int) string {
 }
 
 func (metadata sessionMetadata) isTUIMainThread() bool {
-	return !metadata.isSubagent() && strings.EqualFold(metadata.Originator, "codex-tui") && metadata.sourceName() == "cli"
+	return !metadata.isSubagent() && isTUIOriginator(metadata.Originator) && metadata.sourceName() == "cli"
+}
+
+func isTUIOriginator(originator string) bool {
+	return strings.EqualFold(originator, "codex-tui") || strings.EqualFold(originator, "codex_cli_rs")
 }
 
 func (metadata sessionMetadata) isExecMainThread() bool {

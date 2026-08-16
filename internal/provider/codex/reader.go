@@ -81,5 +81,5 @@ func isCompaction(entry rolloutEntry) bool {
 }
 
 func isCompactionType(kind string) bool {
-	return strings.EqualFold(kind, "compacted") || strings.EqualFold(kind, "context_compacted")
+	return strings.EqualFold(kind, "compacted")
 }

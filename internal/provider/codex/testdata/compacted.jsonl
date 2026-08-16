@@ -1,3 +1,3 @@
 {"type":"event_msg","payload":{"info":{"last_token_usage":{"input_tokens":245400,"cached_input_tokens":238336,"output_tokens":315,"total_tokens":245715}}}}
-{"type":"event_msg","payload":{"type":"compacted"}}
+{"type":"compacted","payload":{"message":"","replacement_history":[]}}
 {"type":"event_msg","payload":{"info":{"last_token_usage":{"input_tokens":0,"cached_input_tokens":0,"output_tokens":0,"total_tokens":18162}}}}

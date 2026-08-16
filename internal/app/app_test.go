@@ -182,7 +182,7 @@ func TestRefreshReportsCodexPostCompactionOccupancy(t *testing.T) {
 	rollout := filepath.Join(t.TempDir(), "rollout.jsonl")
 	entries := "" +
 		`{"type":"event_msg","payload":{"info":{"last_token_usage":{"input_tokens":245400,"cached_input_tokens":238336,"total_tokens":245715}}}}` + "\n" +
-		`{"type":"event_msg","payload":{"type":"compacted"}}` + "\n" +
+		`{"type":"compacted","payload":{"message":"","replacement_history":[]}}` + "\n" +
 		`{"type":"event_msg","payload":{"info":{"last_token_usage":{"input_tokens":0,"cached_input_tokens":0,"total_tokens":18162},"model_context_window":272000}}}` + "\n"
 	if err := os.WriteFile(rollout, []byte(entries), 0o600); err != nil {
 		t.Fatal(err)
