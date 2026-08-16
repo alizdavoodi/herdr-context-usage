@@ -85,7 +85,7 @@ func TestNewClientDefaults(t *testing.T) {
 func TestListAgents(t *testing.T) {
 	t.Parallel()
 
-	runner := &fakeRunner{responses: [][]byte{[]byte(`{"result":{"agents":[{"agent":"claude","agent_status":"idle","foreground_cwd":"/work","terminal_title":"OC | Probe test response","pane_id":"w1:p1","tokens":{"ctx":"92k","ctx_raw":"92481"},"agent_session":{"source":"herdr:claude","agent":"claude","kind":"path","value":"/tmp/session.jsonl"}}]}}`)}}
+	runner := &fakeRunner{responses: [][]byte{[]byte(`{"result":{"agents":[{"agent":"claude","agent_status":"idle","foreground_cwd":"/work","pane_id":"w1:p1","terminal_title":"OC | Session title","tokens":{"ctx":"92k","ctx_raw":"92481"},"agent_session":{"source":"herdr:claude","agent":"claude","kind":"path","value":"/tmp/session.jsonl"}}]}}`)}}
 	client := NewClient("/nix/store/herdr", runner)
 	agents, err := client.ListAgents(context.Background())
 	if err != nil {
@@ -97,7 +97,7 @@ func TestListAgents(t *testing.T) {
 	if agents[0].Tokens["ctx_raw"] != "92481" {
 		t.Fatalf("tokens = %#v", agents[0].Tokens)
 	}
-	if agents[0].TerminalTitle != "OC | Probe test response" {
+	if agents[0].TerminalTitle != "OC | Session title" {
 		t.Fatalf("terminal title = %q", agents[0].TerminalTitle)
 	}
 }
