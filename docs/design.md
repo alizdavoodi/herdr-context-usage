@@ -156,7 +156,11 @@ produced it.
    path per pane. Exact. Requires `herdr integration install <kind>`, which is
    additive hook scripts and does not disturb an existing Claude statusLine.
 2. **Provider-specific fallback** when no integration has reported:
-   - `claude`, `codex` — derive from the pane's `foreground_cwd`.
+   - `claude` — first require an exact PID, working-directory and agent-kind
+     match in Claude's process registry (`process_registry`); if no registry
+     entry matches, accept a sole transcript under the encoded
+     `foreground_cwd` (`foreground_cwd`).
+   - `codex` — derive from the pane's `foreground_cwd`.
    - `opencode2` — match the pane's `terminal_title`. Its TUI sets the title to
      `OC | <session title>`, stock behaviour from the binary itself, and herdr
      surfaces OSC titles in `terminal_title`. Prefix-match, because titles over
@@ -175,9 +179,11 @@ recent session in its directory. Directory collision is severe — 14 sessions
 share one repository, 13 another. See
 [ADR-0004](adr/0004-provider-specific-session-correlation.md).
 
-`opencode2` panes additionally need distinguishing from `opencode` ones, because
-herdr folds the kind. `herdr pane process-info` exposes `argv0` and full `argv`.
-Match `opencode2` before `opencode`, since the latter is a prefix of the former.
+Herdr's `agent` field is the primary provider signal for `claude` and `codex`.
+`opencode2` panes additionally need distinguishing from `opencode` ones because
+Herdr folds the kind. For an `opencode` agent, inspect every foreground
+process's exact `argv0` basename and choose `opencode2` if both executables are
+present; process-list order is not meaningful.
 
 ### Reporting
 

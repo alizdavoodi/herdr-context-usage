@@ -14,6 +14,11 @@ agent — `foreground_cwd` derivation for `claude` and `codex`, `terminal_title`
 matching against `OC | <session title>` for `opencode2` — and blank when nothing
 resolves.
 
+Claude's `foreground_cwd` fallback has two diagnostic modes. An exact PID,
+working-directory and agent-kind match in Claude's process registry is recorded
+as `process_registry`; the structural fallback that accepts the sole transcript
+under the encoded working directory remains `foreground_cwd`.
+
 ## Consequences
 
 Every measurement records its resolution mode, so a wrong attribution is

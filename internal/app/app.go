@@ -58,36 +58,16 @@ func Refresh(ctx context.Context, client Herdr, eventPaneID string, log io.Write
 		live[agent.PaneID] = struct{}{}
 	}
 
-	var errs []error
-	panes, err := client.ListPanes(ctx)
-	if err != nil {
-		errs = append(errs, err)
-		// The event pane is still useful as a fallback when pane enumeration races.
-		if eventPaneID != "" {
-			if _, ok := live[eventPaneID]; !ok {
-				if clearErr := client.Clear(ctx, eventPaneID); clearErr != nil {
-					errs = append(errs, clearErr)
-				}
-			}
-		}
-	} else {
-		for _, pane := range panes {
-			if _, ok := live[pane.PaneID]; ok || !hasOccupancyToken(pane.Tokens) {
-				continue
-			}
-			if err := client.Clear(ctx, pane.PaneID); err != nil {
-				errs = append(errs, err)
-			}
-		}
-	}
+	sweepStaleMetadata(ctx, client, eventPaneID, live)
 
+	var errs []error
 	for _, agent := range agents {
 		processes, err := client.ProcessInfo(ctx, agent.PaneID)
 		if err != nil {
 			errs = append(errs, err)
 			continue
 		}
-		kind := provider.FromProcesses(processes)
+		kind := provider.FromAgent(agent.Agent, processes)
 		if !kind.Implemented() {
 			continue
 		}
@@ -97,6 +77,31 @@ func Refresh(ctx context.Context, client Herdr, eventPaneID string, log io.Write
 	}
 
 	return errors.Join(errs...)
+}
+
+func sweepStaleMetadata(ctx context.Context, client Herdr, eventPaneID string, live map[string]struct{}) {
+	panes, err := client.ListPanes(ctx)
+	if err != nil {
+		// The event pane is still useful as a fallback when pane enumeration races.
+		if eventPaneID != "" {
+			if _, ok := live[eventPaneID]; !ok {
+				if err := client.Clear(ctx, eventPaneID); err != nil {
+					return
+				}
+			}
+		}
+		return
+	}
+
+	for _, pane := range panes {
+		if _, ok := live[pane.PaneID]; ok || !hasOccupancyToken(pane.Tokens) {
+			continue
+		}
+		if err := client.Clear(ctx, pane.PaneID); err != nil {
+			// A later event retries the sweep; measurement delivery owns exit status.
+			continue
+		}
+	}
 }
 
 func hasOccupancyToken(tokens map[string]string) bool {
@@ -124,7 +129,11 @@ func refreshClaude(ctx context.Context, client Herdr, agent herdr.Agent, process
 	resolved, err := claude.Resolve(input)
 	if err != nil {
 		measurement := Measurement{PaneID: agent.PaneID, Provider: provider.Claude, ContextState: ContextUnknown, Error: err.Error()}
-		return writeMeasurement(log, measurement)
+		measurementErr := writeMeasurement(log, measurement)
+		if errors.Is(err, claude.ErrNoSession) {
+			return errors.Join(measurementErr, client.Clear(ctx, agent.PaneID))
+		}
+		return measurementErr
 	}
 	mode := resolved.Mode
 	value, err := claude.ReadOccupancy(resolved.Path)
@@ -134,27 +143,25 @@ func refreshClaude(ctx context.Context, client Herdr, agent herdr.Agent, process
 			state = ContextJustCompacted
 		}
 		measurement := Measurement{PaneID: agent.PaneID, Provider: provider.Claude, ContextState: state, ResolutionMode: &mode, Error: err.Error()}
-		return writeMeasurement(log, measurement)
+		measurementErr := writeMeasurement(log, measurement)
+		if errors.Is(err, claude.ErrNoOccupancy) || errors.Is(err, claude.ErrJustCompacted) {
+			return errors.Join(measurementErr, client.Clear(ctx, agent.PaneID))
+		}
+		return measurementErr
 	}
 
 	measurement := Measurement{PaneID: agent.PaneID, Provider: provider.Claude, ContextState: ContextMeasured, Occupancy: &value, ResolutionMode: &mode}
 	if err := writeMeasurement(log, measurement); err != nil {
 		return err
 	}
-	if !report.ShouldWrite(value) {
+	if !report.ShouldWrite(provider.Claude, value) {
 		return nil
 	}
 	return client.Report(ctx, agent.PaneID, occupancyformat.Occupancy(value), strconv.FormatInt(value, 10))
 }
 
 func claudeProcessIDs(processes []provider.Process) []int {
-	ids := make([]int, 0, 1)
-	for _, process := range processes {
-		if provider.FromProcesses([]provider.Process{process}) == provider.Claude {
-			ids = append(ids, process.PID)
-		}
-	}
-	return ids
+	return provider.ProcessIDs(processes, provider.Claude)
 }
 
 func writeMeasurement(writer io.Writer, measurement Measurement) error {

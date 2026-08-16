@@ -1,5 +1,7 @@
 package report
 
-func ShouldWrite(value int64) bool {
-	return value != 0
+import "github.com/alizdavoodi/herdr-context-usage/internal/provider"
+
+func ShouldWrite(kind provider.Kind, value int64) bool {
+	return kind != provider.Claude || value != 0
 }

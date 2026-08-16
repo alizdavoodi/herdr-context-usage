@@ -42,17 +42,29 @@ func TestRefreshReturnsListError(t *testing.T) {
 	}
 }
 
-func TestRefreshFallsBackToEventPaneWhenPaneListFails(t *testing.T) {
+func TestRefreshDoesNotFailSuccessfulMeasurementsWhenPaneListFails(t *testing.T) {
 	t.Parallel()
 
-	want := errors.New("pane list failed")
-	fake := &fakeHerdr{paneListErr: want}
-	err := Refresh(context.Background(), fake, "w1:exited", nil, Config{})
-	if !errors.Is(err, want) {
-		t.Fatalf("Refresh() error = %v, want %v", err, want)
+	home := t.TempDir()
+	transcript := filepath.Join(home, "session.jsonl")
+	entry := `{"type":"assistant","message":{"usage":{"input_tokens":840,"cache_read_input_tokens":90000,"cache_creation_input_tokens":1641}}}` + "\n"
+	if err := os.WriteFile(transcript, []byte(entry), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fake := &fakeHerdr{
+		agents:      []herdr.Agent{{Agent: "claude", PaneID: "w1:p1", AgentSession: &herdr.AgentSession{Kind: "path", Value: transcript}}},
+		paneListErr: errors.New("pane list failed"),
+		processes:   map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "claude"}}},
+		reports:     make(map[string][2]string),
+	}
+	if err := Refresh(context.Background(), fake, "w1:exited", nil, Config{ClaudeHome: home}); err != nil {
+		t.Fatalf("Refresh() error = %v, want successful measurement", err)
 	}
 	if !slices.Equal(fake.clears, []string{"w1:exited"}) {
 		t.Fatalf("clears = %v, want event-pane fallback", fake.clears)
+	}
+	if got := fake.reports["w1:p1"]; got != [2]string{"92k", "92481"} {
+		t.Fatalf("report = %v, want successful measurement", got)
 	}
 }
 
@@ -86,7 +98,7 @@ func TestRefreshFansOutAndClearsEventPaneAfterAgentExit(t *testing.T) {
 			{Agent: "codex", PaneID: "w1:p2", ForegroundCWD: "/work"},
 		},
 		processes: map[string][]provider.Process{
-			"w1:p1": {{PID: 42, Argv0: "claude"}},
+			"w1:p1": {{PID: 41, Argv0: "codex"}, {PID: 42, Argv0: "claude"}},
 			"w1:p2": {{PID: 43, Argv0: "codex"}},
 		},
 		panes: []herdr.Pane{
@@ -116,28 +128,28 @@ func TestRefreshFansOutAndClearsEventPaneAfterAgentExit(t *testing.T) {
 	}
 }
 
-func TestRefreshPreservesValueWhenClaudeSessionCannotBeResolved(t *testing.T) {
+func TestRefreshClearsValueWhenClaudeSessionCannotBeResolved(t *testing.T) {
 	t.Parallel()
 
 	var log bytes.Buffer
 	home := t.TempDir()
 	fake := &fakeHerdr{
-		agents:    []herdr.Agent{{Agent: "claude", PaneID: "w1:p1", ForegroundCWD: "/ambiguous"}},
+		agents:    []herdr.Agent{{Agent: "claude", PaneID: "w1:p1", ForegroundCWD: "/ambiguous", Tokens: map[string]string{"ctx_raw": "92481"}}},
 		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "claude"}}},
 		reports:   make(map[string][2]string),
 	}
 	if err := Refresh(context.Background(), fake, "", &log, Config{ClaudeHome: home}); err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
-	if len(fake.clears) != 0 {
-		t.Fatalf("clears = %v, want stale value preserved", fake.clears)
+	if !slices.Equal(fake.clears, []string{"w1:p1"}) {
+		t.Fatalf("clears = %v, want unresolved session cleared", fake.clears)
 	}
 	if got := log.String(); !strings.Contains(got, `"context_state":"unknown"`) || !strings.Contains(got, `"occupancy":null`) {
 		t.Fatalf("diagnostic = %s, want unknown state with null occupancy", got)
 	}
 }
 
-func TestRefreshPreservesValueWhenTranscriptIsJustCompacted(t *testing.T) {
+func TestRefreshClearsValueWhenTranscriptIsJustCompacted(t *testing.T) {
 	t.Parallel()
 
 	home := t.TempDir()
@@ -150,6 +162,7 @@ func TestRefreshPreservesValueWhenTranscriptIsJustCompacted(t *testing.T) {
 		agents: []herdr.Agent{{
 			Agent:        "claude",
 			PaneID:       "w1:p1",
+			Tokens:       map[string]string{"ctx_raw": "92481"},
 			AgentSession: &herdr.AgentSession{Kind: "path", Value: transcript},
 		}},
 		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "claude"}}},
@@ -158,8 +171,8 @@ func TestRefreshPreservesValueWhenTranscriptIsJustCompacted(t *testing.T) {
 	if err := Refresh(context.Background(), fake, "", &log, Config{ClaudeHome: home}); err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
-	if len(fake.clears) != 0 {
-		t.Fatalf("clears = %v, want stale value preserved", fake.clears)
+	if !slices.Equal(fake.clears, []string{"w1:p1"}) {
+		t.Fatalf("clears = %v, want pre-compaction value cleared", fake.clears)
 	}
 	if got := log.String(); !strings.Contains(got, `"context_state":"just_compacted"`) || !strings.Contains(got, `"occupancy":null`) {
 		t.Fatalf("diagnostic = %s, want just-compacted state with null occupancy", got)
@@ -180,6 +193,7 @@ func TestRefreshTreatsSyntheticZeroUsageAsUnknown(t *testing.T) {
 		agents: []herdr.Agent{{
 			Agent:        "claude",
 			PaneID:       "w1:p1",
+			Tokens:       map[string]string{"ctx_raw": "92481"},
 			AgentSession: &herdr.AgentSession{Kind: "path", Value: transcript},
 		}},
 		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "claude"}}},
@@ -188,8 +202,35 @@ func TestRefreshTreatsSyntheticZeroUsageAsUnknown(t *testing.T) {
 	if err := Refresh(context.Background(), fake, "", &log, Config{ClaudeHome: home}); err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
-	if len(fake.reports) != 0 || len(fake.clears) != 0 {
-		t.Fatalf("reports = %v, clears = %v; want no metadata mutation", fake.reports, fake.clears)
+	if len(fake.reports) != 0 || !slices.Equal(fake.clears, []string{"w1:p1"}) {
+		t.Fatalf("reports = %v, clears = %v; want empty transcript cleared", fake.reports, fake.clears)
+	}
+	if got := log.String(); !strings.Contains(got, `"context_state":"unknown"`) || !strings.Contains(got, `"occupancy":null`) {
+		t.Fatalf("diagnostic = %s, want unknown state with null occupancy", got)
+	}
+}
+
+func TestRefreshPreservesValueOnTransientTranscriptFailure(t *testing.T) {
+	t.Parallel()
+
+	home := t.TempDir()
+	missing := filepath.Join(home, "not-created-yet.jsonl")
+	var log bytes.Buffer
+	fake := &fakeHerdr{
+		agents: []herdr.Agent{{
+			Agent:        "claude",
+			PaneID:       "w1:p1",
+			Tokens:       map[string]string{"ctx_raw": "92481"},
+			AgentSession: &herdr.AgentSession{Kind: "path", Value: missing},
+		}},
+		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "claude"}}},
+		reports:   make(map[string][2]string),
+	}
+	if err := Refresh(context.Background(), fake, "", &log, Config{ClaudeHome: home}); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+	if len(fake.clears) != 0 {
+		t.Fatalf("clears = %v, want transient failure to preserve value", fake.clears)
 	}
 	if got := log.String(); !strings.Contains(got, `"context_state":"unknown"`) || !strings.Contains(got, `"occupancy":null`) {
 		t.Fatalf("diagnostic = %s, want unknown state with null occupancy", got)

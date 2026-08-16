@@ -1,32 +1,42 @@
 package provider
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
-func TestFromProcesses(t *testing.T) {
+func TestFromAgent(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name      string
+		agent     string
 		processes []Process
 		want      Kind
 	}{
-		{name: "claude", processes: []Process{{Argv0: "claude"}}, want: Claude},
-		{name: "codex is routed for its later provider", processes: []Process{{Argv0: "/nix/store/hash/bin/codex"}}, want: Codex},
-		{name: "opencode2 wins over its opencode prefix", processes: []Process{{Argv0: "opencode2"}}, want: OpenCode2},
-		{name: "opencode v1", processes: []Process{{Argv0: "opencode"}}, want: OpenCode},
-		{name: "nested helper does not hide agent", processes: []Process{{Argv0: "node"}, {Argv0: "claude"}}, want: Claude},
-		{name: "colliding codex helper does not capture claude", processes: []Process{{Argv0: "codex-mcp"}, {Argv0: "claude"}}, want: Claude},
-		{name: "colliding opencode helper does not capture claude", processes: []Process{{Argv0: "/tools/opencode-index"}, {Argv0: "/bin/claude"}}, want: Claude},
-		{name: "unrecognised", processes: []Process{{Argv0: "zsh"}}, want: None},
+		{name: "herdr claude wins over a child codex process", agent: "claude", processes: []Process{{Argv0: "codex"}, {Argv0: "claude"}}, want: Claude},
+		{name: "herdr codex is unambiguous", agent: "codex", processes: []Process{{Argv0: "claude"}, {Argv0: "codex"}}, want: Codex},
+		{name: "opencode2 wins regardless of process order", agent: "opencode", processes: []Process{{Argv0: "opencode"}, {Argv0: "opencode2"}}, want: OpenCode2},
+		{name: "opencode v1", agent: "opencode", processes: []Process{{Argv0: "opencode-helper"}, {Argv0: "opencode"}}, want: OpenCode},
+		{name: "unrecognised agent", agent: "unknown", processes: []Process{{Argv0: "claude"}}, want: None},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := FromProcesses(tt.processes); got != tt.want {
-				t.Fatalf("FromProcesses() = %q, want %q", got, tt.want)
+			if got := FromAgent(tt.agent, tt.processes); got != tt.want {
+				t.Fatalf("FromAgent() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestProcessIDsUsesExactBasenames(t *testing.T) {
+	t.Parallel()
+
+	processes := []Process{{PID: 1, Argv0: "claude-mcp"}, {PID: 2, Argv0: "/bin/claude"}, {PID: 3, Argv0: "codex"}}
+	if got := ProcessIDs(processes, Claude); !slices.Equal(got, []int{2}) {
+		t.Fatalf("ProcessIDs() = %v, want [2]", got)
 	}
 }
 

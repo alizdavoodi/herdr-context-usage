@@ -19,10 +19,10 @@ func TestManifestCoversAgentLifecycleWithPortableCommands(t *testing.T) {
 			t.Errorf("manifest does not subscribe to %s", event)
 		}
 	}
-	if !strings.Contains(manifest, `command = ["$HERDR_PLUGIN_ROOT/herdr-context-usage"]`) {
-		t.Error("manifest commands do not use HERDR_PLUGIN_ROOT")
+	if got, want := strings.Count(manifest, `command = ["./herdr-context-usage"]`), 5; got != want {
+		t.Errorf("relative plugin command count = %d, want %d", got, want)
 	}
-	if strings.Contains(manifest, `command = ["./herdr-context-usage"]`) {
-		t.Error("manifest retains working-directory-dependent command")
+	if strings.Contains(manifest, "$HERDR_PLUGIN_ROOT") {
+		t.Error("manifest command arrays do not expand environment variables")
 	}
 }

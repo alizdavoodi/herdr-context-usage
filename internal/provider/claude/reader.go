@@ -76,7 +76,8 @@ func ReadOccupancy(path string) (int64, error) {
 		}
 		occupancy := usage.InputTokens + usage.CacheReadTokens + usage.CacheCreationTokens
 		if occupancy == 0 {
-			// Failed turns contain a synthetic usage object; no context measurement was made.
+			// Claude alone uses all-zero usage for failed turns. Other providers may
+			// legitimately report zero and must keep it representable.
 			continue
 		}
 		return occupancy, nil
