@@ -110,9 +110,9 @@ func (s *Store) ResolveTerminalTitle(ctx context.Context, directory, terminalTit
 		comparison = "substr(title, 1, length(?)) = ?"
 		args = []any{directory, title, title}
 	}
-	// OPENCODE_DISABLE_TERMINAL_TITLE removes this correlation signal entirely,
-	// while plugin routes share its title shape; without one positive root-session
-	// match, a pane remains blank rather than borrowing another session's reading.
+	// OPENCODE_DISABLE_TERMINAL_TITLE removes this correlation signal entirely.
+	// Plugin routes share the title shape but interpolate data.id here (opencode2
+	// uses data.name), so only a positive root-session match can produce a reading.
 	rows, err := s.database.QueryContext(ctx, `SELECT id FROM session WHERE directory = ? AND parent_id IS NULL AND `+comparison+` LIMIT 2`, args...)
 	if err != nil {
 		return ResolvedSession{}, fmt.Errorf("resolve opencode session: %w", err)

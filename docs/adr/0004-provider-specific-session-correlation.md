@@ -35,5 +35,19 @@ The `opencode2` path depends on herdr surfacing the TUI's OSC title in
 `OC | Probe test response`, which resolved to exactly the expected session id
 when matched on directory plus title prefix.
 
+Title correlation has a known residual: plugin routes also emit `OC | ` titles
+but do not identify an agent session. In v1 that text is a plugin id; in
+opencode2 it is a plugin name. Plugin titles are not truncated, so they can only
+reach exact title matching; a title over 40 characters without a trailing
+ellipsis therefore cannot be a session title. That is only a partial
+discriminator: shorter plugin titles remain indistinguishable from an exact
+root-session title collision. No root-session title in this installation
+collides with a present plugin id. Thus blank on ambiguity is not an absolute
+attribution guarantee for title-based correlation.
+The only complete fixes are a discriminator herdr does not expose or a native
+`agent_session`, which retires the fallback. The fallback remains worthwhile:
+without it these providers cannot report sessions when no integration supplies
+an agent session.
+
 Recency remains tempting because it is how `opencode2 --continue` picks a
 session. That answers "what would resume here", not "what is this pane showing".

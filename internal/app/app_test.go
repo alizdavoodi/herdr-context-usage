@@ -141,7 +141,7 @@ func TestRefreshFansOutAndClearsEventPaneAfterAgentExit(t *testing.T) {
 	}
 }
 
-func TestRefreshClearsUnimplementedAgentValueWhenProcessInfoFails(t *testing.T) {
+func TestRefreshPreservesValueWhenProcessInfoFails(t *testing.T) {
 	t.Parallel()
 
 	processErr := errors.New("process info failed")
@@ -153,8 +153,8 @@ func TestRefreshClearsUnimplementedAgentValueWhenProcessInfoFails(t *testing.T) 
 	if !errors.Is(err, processErr) {
 		t.Fatalf("Refresh() error = %v, want %v", err, processErr)
 	}
-	if !slices.Equal(fake.clears, []string{"w1:p1"}) {
-		t.Fatalf("clears = %v, want superseded value cleared", fake.clears)
+	if len(fake.clears) != 0 {
+		t.Fatalf("clears = %v, want transient process failure to preserve the value", fake.clears)
 	}
 }
 
@@ -176,6 +176,64 @@ func TestRefreshClearsValueWhenClaudeSessionCannotBeResolved(t *testing.T) {
 	}
 	if got := log.String(); !strings.Contains(got, `"type":"measurement"`) || !strings.Contains(got, `"context_state":"unknown"`) || !strings.Contains(got, `"occupancy":null`) {
 		t.Fatalf("diagnostic = %s, want unknown state with null occupancy", got)
+	}
+}
+
+func TestRefreshReportsCodexPostCompactionOccupancy(t *testing.T) {
+	t.Parallel()
+
+	rollout := filepath.Join(t.TempDir(), "rollout.jsonl")
+	entries := "" +
+		`{"type":"event_msg","payload":{"info":{"last_token_usage":{"input_tokens":245400,"cached_input_tokens":238336,"total_tokens":245715}}}}` + "\n" +
+		`{"type":"compacted","payload":{"message":"","replacement_history":[]}}` + "\n" +
+		`{"type":"event_msg","payload":{"info":{"last_token_usage":{"input_tokens":0,"cached_input_tokens":0,"total_tokens":18162},"model_context_window":272000}}}` + "\n"
+	if err := os.WriteFile(rollout, []byte(entries), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var log bytes.Buffer
+	fake := &fakeHerdr{
+		agents: []herdr.Agent{{
+			Agent:        "codex",
+			PaneID:       "w1:p1",
+			AgentSession: &herdr.AgentSession{Kind: "path", Value: rollout},
+		}},
+		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "codex"}}},
+		reports:   make(map[string][2]string),
+	}
+	if err := Refresh(context.Background(), fake, "", &log, Config{}); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+	if got := fake.reports["w1:p1"]; got != [2]string{"18k", "18162"} {
+		t.Fatalf("report = %v, want post-compaction absolute occupancy", got)
+	}
+	if got := log.String(); !strings.Contains(got, `"provider":"codex"`) || !strings.Contains(got, `"resolution_mode":"agent_session"`) {
+		t.Fatalf("measurement = %s, want codex agent_session resolution", got)
+	}
+}
+
+func TestRefreshClearsValueWhenCodexRolloutIsNotWritten(t *testing.T) {
+	t.Parallel()
+
+	missing := filepath.Join(t.TempDir(), "not-written.jsonl")
+	var log bytes.Buffer
+	fake := &fakeHerdr{
+		agents: []herdr.Agent{{
+			Agent:        "codex",
+			PaneID:       "w1:p1",
+			Tokens:       map[string]string{"ctx_raw": "92481"},
+			AgentSession: &herdr.AgentSession{Kind: "path", Value: missing},
+		}},
+		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "codex"}}},
+		reports:   make(map[string][2]string),
+	}
+	if err := Refresh(context.Background(), fake, "", &log, Config{}); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+	if !slices.Equal(fake.clears, []string{"w1:p1"}) {
+		t.Fatalf("clears = %v, want previous occupancy cleared", fake.clears)
+	}
+	if got := log.String(); !strings.Contains(got, `"provider":"codex"`) || !strings.Contains(got, `"occupancy":null`) {
+		t.Fatalf("measurement = %s, want unknown Codex occupancy", got)
 	}
 }
 

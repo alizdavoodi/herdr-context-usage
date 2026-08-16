@@ -19,6 +19,7 @@ func main() {
 	client := herdr.NewClient(os.Getenv("HERDR_BIN_PATH"), nil)
 	config := app.Config{
 		ClaudeHome: os.Getenv("CLAUDE_CONFIG_DIR"),
+		CodexHome:  os.Getenv("CODEX_HOME"),
 		OpenCodeDB: os.Getenv("OPENCODE_DB"),
 	}
 	if err := app.Refresh(ctx, client, os.Getenv("HERDR_PANE_ID"), os.Stdout, config); err != nil {

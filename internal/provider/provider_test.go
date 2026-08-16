@@ -45,13 +45,12 @@ func TestProcessIDsUsesExactBasenames(t *testing.T) {
 func TestImplemented(t *testing.T) {
 	t.Parallel()
 
-	if !Claude.Implemented() {
-		t.Fatal("Claude provider should be implemented")
+	for _, kind := range []Kind{Claude, Codex, OpenCode} {
+		if !kind.Implemented() {
+			t.Fatalf("%q provider should be implemented", kind)
+		}
 	}
-	if !OpenCode.Implemented() {
-		t.Fatal("opencode v1 provider should be implemented")
-	}
-	for _, kind := range []Kind{Codex, OpenCode2, None} {
+	for _, kind := range []Kind{OpenCode2, None} {
 		if kind.Implemented() {
 			t.Fatalf("%q provider should not be implemented", kind)
 		}

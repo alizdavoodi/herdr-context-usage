@@ -12,6 +12,7 @@ import (
 	"github.com/alizdavoodi/herdr-context-usage/internal/herdr"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/claude"
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider/codex"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/opencode"
 	"github.com/alizdavoodi/herdr-context-usage/internal/report"
 )
@@ -26,6 +27,7 @@ type Herdr interface {
 
 type Config struct {
 	ClaudeHome string
+	CodexHome  string
 	OpenCodeDB string
 }
 
@@ -75,25 +77,24 @@ func Refresh(ctx context.Context, client Herdr, eventPaneID string, log io.Write
 	for _, agent := range agents {
 		processes, processErr := client.ProcessInfo(ctx, agent.PaneID)
 		kind := provider.FromAgent(agent.Agent, provider.ProcessList{Entries: processes, Available: processErr == nil})
+		if processErr != nil {
+			errs = append(errs, processErr)
+			continue
+		}
 		if !kind.Implemented() {
 			if hasOccupancyToken(agent.Tokens) {
 				if err := client.Clear(ctx, agent.PaneID); err != nil {
 					errs = append(errs, fmt.Errorf("clear superseded metadata for %s: %w", agent.PaneID, err))
 				}
 			}
-			if processErr != nil {
-				errs = append(errs, processErr)
-			}
-			continue
-		}
-		if processErr != nil {
-			errs = append(errs, processErr)
 			continue
 		}
 		var refreshErr error
 		switch kind {
 		case provider.Claude:
 			refreshErr = refreshClaude(ctx, client, agent, processes, log, config)
+		case provider.Codex:
+			refreshErr = refreshCodex(ctx, client, agent, log, config)
 		case provider.OpenCode:
 			refreshErr = refreshOpenCode(ctx, client, agent, log, config)
 		}
@@ -238,6 +239,38 @@ func handleUnknown(ctx context.Context, client Herdr, paneID string, log io.Writ
 		return errors.Join(measurementErr, client.Clear(ctx, paneID))
 	}
 	return measurementErr
+}
+
+func refreshCodex(ctx context.Context, client Herdr, agent herdr.Agent, log io.Writer, config Config) error {
+	input := codex.SessionInput{CodexHome: config.CodexHome, ForegroundCWD: agent.ForegroundCWD}
+	if agent.AgentSession != nil {
+		input.AgentSession = &codex.AgentSession{
+			Source: agent.AgentSession.Source,
+			Agent:  agent.AgentSession.Agent,
+			Kind:   agent.AgentSession.Kind,
+			Value:  agent.AgentSession.Value,
+		}
+	}
+
+	resolved, err := codex.Resolve(input)
+	if err != nil {
+		return handleUnknown(ctx, client, agent.PaneID, log, provider.Codex, codex.SemanticStates(), ContextUnknown, err, nil)
+	}
+
+	mode := string(resolved.Mode)
+	value, err := codex.ReadOccupancy(resolved.Path)
+	if err != nil {
+		state := ContextUnknown
+		if errors.Is(err, codex.ErrJustCompacted) {
+			state = ContextJustCompacted
+		}
+		return handleUnknown(ctx, client, agent.PaneID, log, provider.Codex, codex.SemanticStates(), state, err, &mode)
+	}
+
+	measurement := Measurement{PaneID: agent.PaneID, Provider: provider.Codex, ContextState: ContextMeasured, Occupancy: &value, ResolutionMode: &mode}
+	reportErr := client.Report(ctx, agent.PaneID, occupancyformat.Occupancy(value), strconv.FormatInt(value, 10))
+	measurementErr := writeMeasurement(log, measurement)
+	return errors.Join(measurementErr, reportErr)
 }
 
 func claudeProcessIDs(processes []provider.Process) []int {
