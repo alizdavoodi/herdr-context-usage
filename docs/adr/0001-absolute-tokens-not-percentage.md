@@ -19,12 +19,6 @@ pair the count with a model in the sidebar today. That ambiguity is accepted
 rather than introducing a model lookup table or pretending the host provides a
 mitigation.
 
-This correction was checked against Herdr 0.8.0's built-in row tokens:
-`state_icon`, `state_text`, `workspace`, `tab`, `pane`, `agent`,
-`terminal_title`, and `terminal_title_stripped`. None is a model token; a
-`$name` slot comes from pane metadata written by a plugin. Do not re-add the
-previous model-token claim from memory.
-
 herdr's sidebar styling is static per slot and cannot vary by value, so a
 severity colour was never available anyway. Adding a percentage later means
 adding the table and its maintenance, not rewriting the extractors.

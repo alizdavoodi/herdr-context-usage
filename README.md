@@ -15,21 +15,23 @@ Requirements:
 - Linux or macOS.
 - Go 1.22 or newer available to Herdr's plugin build environment.
 
-The repository is not published at a resolvable GitHub location yet. For a
-local checkout, link it with:
+This repository is not published as `alizdavoodi/herdr-context-usage` on GitHub
+yet. For a local checkout, link it with:
 
 ```bash
 herdr plugin link --enabled /path/to/herdr-context-usage
 ```
 
-When a published repository is available, the corresponding Herdr command is
-`herdr plugin install -y OWNER/REPO[/SUBDIR]`; do not use the project name above
-as a GitHub target until one exists.
+When a repository is published, replace `OWNER/REPO` with its actual path and
+run `herdr plugin install -y OWNER/REPO`. Herdr also accepts an optional
+`OWNER/REPO/SUBDIR` path for a plugin in a subdirectory.
 
 The manifest's `[[build]]` command builds the plugin with `CGO_ENABLED=0`. If
-that build fails, the install or link stops with the build error; fix the Go or
-source error and run it again. The binary is not put on `$PATH`: Herdr invokes
-it from the plugin root with the relative command `./herdr-context-usage`.
+that build fails during installation, installation stops with the build error;
+fix the Go or source error and run it again. The same manifest supplies the
+build command for the local plugin workflow. The binary is not put on `$PATH`:
+Herdr invokes it from the plugin root with the relative command
+`./herdr-context-usage`.
 
 ## Add the sidebar row
 
@@ -54,8 +56,9 @@ after saving:
 herdr server reload-config
 ```
 
-Focus a Claude agent or let it complete a turn. Claude is the implemented
-provider today. The plugin refreshes on
+Focus an agent whose provider is marked `Implemented` in the
+[coverage table](#agent-kinds-and-provider-coverage), or let it complete a
+turn. The plugin refreshes on
 `pane.agent_status_changed`, `pane.focused`, `pane.exited`, and `pane.closed`,
 and the `[[startup]]` hook restores tokens after a Herdr server restart.
 Sidebar rows are not visible in Herdr's collapsed or mobile layouts.
@@ -86,8 +89,8 @@ A blank row means the plugin has no current occupancy it can stand behind. It
 does not mean zero. Examples include:
 
 - an agent restarted in place and its new session has not completed a turn;
-- an agent kind whose provider is not implemented yet; on this branch that is
-  `codex`, `opencode`, or `opencode2`;
+- an agent kind whose provider is marked `In progress` in the
+  [coverage table](#agent-kinds-and-provider-coverage);
 - an untitled `opencode2` session, whose pane cannot be correlated safely;
 - a pane whose agent session cannot be resolved; or
 - the interval immediately after compaction, before a new readable occupancy
@@ -101,11 +104,10 @@ unnecessary blanks during a temporary read failure.
 
 ## Agent kinds and provider coverage
 
-Only the Claude provider is implemented on this branch. For an agent kind whose
-provider is not implemented, the plugin clears `ctx` and `ctx_raw`, so its row
-stays blank rather than looking stale. The remaining rows are the agreed
-provider plan and can be marked implemented as their tickets land. No provider
-guesses by newest-file or newest-session recency.
+The table below is the source of truth for provider status. An agent kind whose
+provider is marked `In progress` has no current measurement: the plugin clears
+`ctx` and `ctx_raw`, so its row stays blank rather than looking stale. No
+provider guesses by newest-file or newest-session recency.
 
 | Status | Agent kind | Store and occupancy | Session correlation |
 | --- | --- | --- | --- |
