@@ -21,6 +21,9 @@ func main() {
 		ClaudeHome: os.Getenv("CLAUDE_CONFIG_DIR"),
 		CodexHome:  os.Getenv("CODEX_HOME"),
 		OpenCodeDB: os.Getenv("OPENCODE_DB"),
+		// The two opencode databases are overridable independently because a
+		// machine can host both versions at once, each with its own store.
+		OpenCode2DB: os.Getenv("OPENCODE2_DB"),
 	}
 	if err := app.Refresh(ctx, client, os.Getenv("HERDR_PANE_ID"), os.Stdout, config); err != nil {
 		fmt.Fprintf(os.Stderr, "herdr-context-usage: %v\n", err)
