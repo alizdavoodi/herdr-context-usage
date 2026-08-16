@@ -1,7 +1,27 @@
 package codex
 
-// SemanticStates declares every answer that proves a previous measurement no
-// longer describes the current agent session.
-func SemanticStates() []error {
-	return []error{ErrNoSession, ErrNoOccupancy, ErrJustCompacted}
+import (
+	"io/fs"
+
+	"github.com/alizdavoodi/herdr-context-usage/internal/report"
+)
+
+// SemanticStates declares what each of this provider's answers proves about the
+// occupancy already displayed: superseded answers clear it, stale-low answers
+// leave it standing as a lower bound, and anything undeclared is transient.
+func SemanticStates() report.States {
+	return report.States{
+		Superseded: []error{
+			ErrNoSession,
+			ErrNoOccupancy,
+			ErrJustCompacted,
+			// Codex names a rollout before it writes it, so the window between
+			// resolving a path and the file existing is a real lifecycle state and
+			// not an I/O failure. report used to special-case this for every
+			// provider, which is why codex classified correctly without ever
+			// declaring it; the declaration has to live here now.
+			fs.ErrNotExist,
+		},
+		StaleLow: nil,
+	}
 }

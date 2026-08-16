@@ -176,10 +176,7 @@ func refreshClaude(ctx context.Context, client Herdr, agent herdr.Agent, process
 	mode := string(resolved.Mode)
 	value, err := claude.ReadOccupancy(resolved.Path)
 	if err != nil {
-		state := ContextUnknown
-		if errors.Is(err, claude.ErrJustCompacted) {
-			state = ContextJustCompacted
-		}
+		state := contextState(err, claude.ErrJustCompacted)
 		return handleUnknown(ctx, client, agent.PaneID, log, provider.Claude, claude.SemanticStates(), state, err, &mode)
 	}
 
@@ -221,10 +218,7 @@ func refreshOpenCode(ctx context.Context, client Herdr, agent herdr.Agent, log i
 	}
 	value, err := store.ReadOccupancy(ctx, resolved.ID)
 	if err != nil {
-		state := ContextUnknown
-		if errors.Is(err, opencode.ErrJustCompacted) {
-			state = ContextJustCompacted
-		}
+		state := contextState(err, opencode.ErrJustCompacted)
 		return handleUnknown(ctx, client, agent.PaneID, log, provider.OpenCode, opencode.SemanticStates(), state, err, mode)
 	}
 
@@ -234,16 +228,32 @@ func refreshOpenCode(ctx context.Context, client Herdr, agent herdr.Agent, log i
 	return errors.Join(measurementErr, reportErr)
 }
 
-func handleUnknown(ctx context.Context, client Herdr, paneID string, log io.Writer, kind provider.Kind, semanticStates []error, state ContextState, err error, mode *string) error {
+// handleUnknown is the one place a failed reading becomes a decision about the
+// pane, for every provider. Each provider brings its own states; only the
+// classification is shared.
+func handleUnknown(ctx context.Context, client Herdr, paneID string, log io.Writer, kind provider.Kind, states report.States, state ContextState, err error, mode *string) error {
 	measurement := Measurement{
 		PaneID: paneID, Provider: kind, ContextState: state,
 		ResolutionMode: mode, Error: err.Error(),
 	}
 	measurementErr := writeMeasurement(log, measurement)
-	if report.SupersedesCurrentValue(err, semanticStates) {
+	if report.Classify(err, states) == report.Superseded {
 		return errors.Join(measurementErr, client.Clear(ctx, paneID))
 	}
+	// Stale-low and transient answers both leave the displayed value alone: one
+	// is a valid lower bound, the other is a failure to read, and neither is
+	// evidence that the value belongs to a superseded session.
 	return measurementErr
+}
+
+// contextState maps a provider's own just-compacted answer onto the state herdr
+// sees. Each provider detects a compaction against its own store, in shapes
+// that have nothing in common; reporting it is what they share.
+func contextState(err, justCompacted error) ContextState {
+	if errors.Is(err, justCompacted) {
+		return ContextJustCompacted
+	}
+	return ContextUnknown
 }
 
 func refreshOpenCode2(ctx context.Context, client Herdr, agent herdr.Agent, log io.Writer, config Config) error {
@@ -260,10 +270,7 @@ func refreshOpenCode2(ctx context.Context, client Herdr, agent herdr.Agent, log 
 	mode := string(resolved.Mode)
 	reading, err := store.ReadOccupancy(ctx, resolved.ID)
 	if err != nil {
-		state := ContextUnknown
-		if errors.Is(err, opencode2.ErrJustCompacted) {
-			state = ContextJustCompacted
-		}
+		state := contextState(err, opencode2.ErrJustCompacted)
 		return handleUnknown(ctx, client, agent.PaneID, log, provider.OpenCode2, opencode2.SemanticStates(), state, err, &mode)
 	}
 
@@ -296,10 +303,7 @@ func refreshCodex(ctx context.Context, client Herdr, agent herdr.Agent, log io.W
 	mode := string(resolved.Mode)
 	value, err := codex.ReadOccupancy(resolved.Path)
 	if err != nil {
-		state := ContextUnknown
-		if errors.Is(err, codex.ErrJustCompacted) {
-			state = ContextJustCompacted
-		}
+		state := contextState(err, codex.ErrJustCompacted)
 		return handleUnknown(ctx, client, agent.PaneID, log, provider.Codex, codex.SemanticStates(), state, err, &mode)
 	}
 

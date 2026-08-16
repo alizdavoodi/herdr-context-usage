@@ -1,6 +1,10 @@
 package opencode
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/alizdavoodi/herdr-context-usage/internal/report"
+)
 
 var (
 	ErrNoOccupancy   = errors.New("opencode agent session has no current context occupancy")
@@ -10,8 +14,19 @@ var (
 	ErrJustCompacted = errors.New("opencode agent session was just compacted")
 )
 
-// SemanticStates declares every answer that proves a previous measurement no
-// longer describes the current agent session.
-func SemanticStates() []error {
-	return []error{ErrNoSession, ErrUntitled, ErrNoOccupancy, ErrNoSchema, ErrStoreNotReady, ErrJustCompacted}
+// SemanticStates declares what each of this provider's answers proves about the
+// occupancy already displayed: superseded answers clear it, stale-low answers
+// leave it standing as a lower bound, and anything undeclared is transient.
+//
+// fs.ErrNotExist is deliberately absent. Unlike the two file-backed providers,
+// this one turns a missing or uninitialised store into ErrStoreNotReady or
+// ErrNoSchema at the point it opens the database, so a raw missing-file error
+// reaching here would be a bug rather than a lifecycle state.
+func SemanticStates() report.States {
+	return report.States{
+		Superseded: []error{ErrNoSession, ErrUntitled, ErrNoOccupancy, ErrNoSchema, ErrStoreNotReady, ErrJustCompacted},
+		// A turn in flight never surfaces as an error here: ReadOccupancy walks
+		// back to the previous completed assistant message and reports it.
+		StaleLow: nil,
+	}
 }
