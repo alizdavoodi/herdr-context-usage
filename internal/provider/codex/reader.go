@@ -67,15 +67,19 @@ func ReadOccupancy(path string) (int64, error) {
 	if latest == nil {
 		return 0, ErrNoOccupancy
 	}
-	if latest.TotalTokens != nil && *latest.TotalTokens >= 0 {
+	if latest.TotalTokens != nil && *latest.TotalTokens > 0 {
 		return *latest.TotalTokens, nil
 	}
-	if latest.InputTokens != nil && *latest.InputTokens >= 0 {
+	if latest.InputTokens != nil && *latest.InputTokens > 0 {
 		return *latest.InputTokens, nil
 	}
 	return 0, ErrNoOccupancy
 }
 
 func isCompaction(entry rolloutEntry) bool {
-	return strings.EqualFold(entry.Type, "compacted") || strings.EqualFold(entry.Payload.Type, "compacted")
+	return isCompactionType(entry.Type) || isCompactionType(entry.Payload.Type)
+}
+
+func isCompactionType(kind string) bool {
+	return strings.EqualFold(kind, "compacted") || strings.EqualFold(kind, "context_compacted")
 }
