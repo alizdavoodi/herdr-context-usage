@@ -13,9 +13,11 @@ conveys.
 ## Consequences
 
 The same digits mean different things on adjacent rows — `92k` is comfortable on
-a 200k window and dire on a 128k one. Mitigated at config time rather than in
-the plugin: the model is available as a separate sidebar token, so a row can
-read `92k · opus` without the plugin resolving any limit.
+a 200k window and dire on a 128k one. Herdr 0.8.0 has no built-in model token,
+and this plugin writes only `ctx` and `ctx_raw`, so there is no supported way to
+pair the count with a model in the sidebar today. That ambiguity is accepted
+rather than introducing a model lookup table or pretending the host provides a
+mitigation.
 
 herdr's sidebar styling is static per slot and cannot vary by value, so a
 severity colour was never available anyway. Adding a percentage later means
