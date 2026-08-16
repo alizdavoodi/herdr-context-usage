@@ -160,7 +160,15 @@ produced it.
      match in Claude's process registry (`process_registry`); if no registry
      entry matches, accept a sole transcript under the encoded
      `foreground_cwd` (`foreground_cwd`).
-   - `codex` — derive from the pane's `foreground_cwd`.
+   - `codex` — derive from the pane's `foreground_cwd`, accepting only an active
+     TUI main thread. `exec` and TUI rollouts are otherwise indistinguishable,
+     and 159 of 307 rollouts measured here were `exec`.
+   - `opencode` (v1) — match the pane's `terminal_title`, exactly as v2 does.
+     This was not in the original design, which left v1 with no fallback at all
+     and therefore inert, since no integration reports `agent_session`. Reading
+     the v1 binary settled it: v1 emits the same `OC | <session title>` format
+     with the same truncation, and title plus directory is unique across all
+     2160 v1 sessions on this machine.
    - `opencode2` — match the pane's `terminal_title`. Its TUI sets the title to
      `OC | <session title>`, stock behaviour from the binary itself, and herdr
      surfaces OSC titles in `terminal_title`. Prefix-match, because titles over
@@ -172,6 +180,15 @@ and matching on `directory` plus a title prefix resolved to exactly the expected
 session id, yielding its occupancy. The whole opencode2 path is confirmed
 working, not merely plausible.
 3. **Blank** when neither resolves.
+
+Title correlation carries a limitation worth stating plainly, because it makes a
+row blank forever rather than briefly. Both opencode versions can switch their
+terminal title off: v1 honours `OPENCODE_DISABLE_TERMINAL_TITLE`, and both expose
+an undocumented palette command that persists to `~/.config/opencode/tui.json`.
+With no title there is no fallback — herdr reports no session for these panes and
+recency is banned — so the row blanks permanently and looks exactly like an agent
+that has not taken a turn. The environment variable is detected; the palette
+toggle is not, until the plugin reads that file.
 
 Naive recency is banned outright. On the only live opencode2 sample available,
 three methods gave three different answers and the pane was on the *third*-most
