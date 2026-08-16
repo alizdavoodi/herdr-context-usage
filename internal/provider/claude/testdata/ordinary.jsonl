@@ -1,0 +1,4 @@
+{"type":"user","message":{"role":"user"}}
+{"type":"assistant","message":{"id":"msg_old","role":"assistant","usage":{"input_tokens":50000,"cache_read_input_tokens":10000,"cache_creation_input_tokens":2000,"output_tokens":999}}}
+{"type":"assistant","message":{"id":"msg_current","role":"assistant","usage":{"input_tokens":840,"cache_read_input_tokens":90000,"cache_creation_input_tokens":1641,"output_tokens":9999}}}
+{"type":"system","subtype":"turn_duration"}

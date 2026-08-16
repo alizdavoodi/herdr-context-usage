@@ -15,8 +15,10 @@ The plugin writes; herdr answers.
 ## Consequences
 
 Nothing goes on `$PATH`. This matches the ecosystem — of eleven plugins
-surveyed, nine are invoked only through herdr, and the conventional way to
-reference a plugin's own binary is `$HERDR_PLUGIN_ROOT`, not `$PATH`.
+surveyed, nine are invoked only through herdr. Herdr starts commands in the
+plugin root and exports `$HERDR_PLUGIN_ROOT` to the child process, but manifest
+command arrays are executed literally and do not expand environment variables.
+The manifest therefore invokes its binary as `./herdr-context-usage`.
 
 Queries work even when the plugin is disabled or absent, because they read
 herdr's state rather than ours. They are also stale by definition: a token is

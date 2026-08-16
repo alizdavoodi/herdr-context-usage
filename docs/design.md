@@ -37,7 +37,7 @@ leaving the rest of the budget for other tools.
 ## Architecture
 
 ```
-herdr emits pane.agent_status_changed / pane.focused
+herdr emits pane.agent_status_changed / pane.focused / pane.exited / pane.closed
   └─> plugin binary (short-lived, one process per event)
         ├─ herdr agent list                    → live agents, pane ids, cwds
         ├─ resolve session per pane            → resolution mode recorded
@@ -69,6 +69,13 @@ from its own read commands, the plugin writes and herdr answers. See
 `pane.agent_status_changed` is a turn boundary, which is exactly when occupancy
 changes and when the number becomes actionable. `pane.focused` covers the case
 where you look at a pane whose agent has been quiet.
+
+`pane.exited` and `pane.closed` cover the other side of that lifecycle. They
+trigger the same all-agent refresh. Each refresh also compares `herdr pane list`
+with `herdr agent list` and clears every non-agent pane that still exposes a
+context-occupancy token, because Herdr does not clear source-scoped metadata
+when an agent is released. The event pane remains a fallback if pane enumeration
+races or fails.
 
 Every event refreshes **all** live agents, not only the event's pane. This looks
 wasteful and is deliberate: herdr's detection rules for opencode match the string
@@ -149,7 +156,11 @@ produced it.
    path per pane. Exact. Requires `herdr integration install <kind>`, which is
    additive hook scripts and does not disturb an existing Claude statusLine.
 2. **Provider-specific fallback** when no integration has reported:
-   - `claude`, `codex` — derive from the pane's `foreground_cwd`.
+   - `claude` — first require an exact PID, working-directory and agent-kind
+     match in Claude's process registry (`process_registry`); if no registry
+     entry matches, accept a sole transcript under the encoded
+     `foreground_cwd` (`foreground_cwd`).
+   - `codex` — derive from the pane's `foreground_cwd`.
    - `opencode2` — match the pane's `terminal_title`. Its TUI sets the title to
      `OC | <session title>`, stock behaviour from the binary itself, and herdr
      surfaces OSC titles in `terminal_title`. Prefix-match, because titles over
@@ -168,9 +179,14 @@ recent session in its directory. Directory collision is severe — 14 sessions
 share one repository, 13 another. See
 [ADR-0004](adr/0004-provider-specific-session-correlation.md).
 
-`opencode2` panes additionally need distinguishing from `opencode` ones, because
-herdr folds the kind. `herdr pane process-info` exposes `argv0` and full `argv`.
-Match `opencode2` before `opencode`, since the latter is a prefix of the former.
+Herdr's `agent` field is the primary provider signal for `claude` and `codex`.
+`opencode2` panes additionally need distinguishing from `opencode` ones because
+Herdr folds the kind. For an `opencode` agent, compare every foreground
+process's `argv0` basename case-insensitively after stripping a leading dot,
+and choose `opencode2` if any such process is present; process-list order is not
+meaningful. An unavailable process list leaves the provider undetermined rather
+than defaulting to `opencode`; a successfully observed empty list selects
+`opencode`.
 
 ### Reporting
 
@@ -246,7 +262,7 @@ surveyed ships one, and herdr's own agent skill says nothing about tokens.
 | Compaction | Number drops — a correctness requirement on the provider |
 | Just-compacted | Report the state, not `0` and not the previous number |
 | herdr server restart | `[[startup]]` re-reads everything |
-| Agent exits | Tokens cleared explicitly |
+| Agent exits | Tokens cleared explicitly; Herdr does not clear them on agent release |
 | Pane moved across workspaces | Pane id changes; re-resolve rather than caching ids |
 
 ## Risks and unverified assumptions
@@ -267,8 +283,14 @@ surveyed ships one, and herdr's own agent skill says nothing about tokens.
    `pane process-info` reporting `argv0: "opencode2"` while herdr's `agent`
    field reads `opencode`, confirming both the title channel and the version
    discriminator.
-6. **Unverified:** whether herdr clears source-scoped tokens when an agent is
-   released, which determines how much explicit clearing we must do.
+6. ~~Unverified: whether herdr clears source-scoped tokens when an agent is
+   released.~~ **Verified against Herdr 0.8.0:** a temporary pane was given a
+   synthetic `claude` agent, one ordinary metadata token, and one token scoped
+   with `--agent claude --applies-to-source <agent-source>`. Before release,
+   `herdr pane get` returned both tokens. After `herdr pane release-agent`, the
+   pane's agent status became `unknown` but `pane get` still returned both token
+   values. The plugin must therefore clear `ctx` and `ctx_raw` explicitly from
+   every pane that no longer appears in `herdr agent list`.
 7. Any percentage feature would reintroduce a model-to-window lookup table that
    rots with every model release. Codex supplies `model_context_window` for free;
    Claude and opencode do not.
