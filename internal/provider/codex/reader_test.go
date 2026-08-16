@@ -66,6 +66,19 @@ func TestReadOccupancy(t *testing.T) {
 			wantErr: ErrJustCompacted,
 		},
 		{
+			// The same two records, then line 400's with every count zeroed. A
+			// usage row that yields nothing must not end the just-compacted window:
+			// the reading it would leave standing is 245,715, the size of the
+			// context that was just thrown away.
+			//
+			// A stand-in, and doubly so: no rollout has an all-zero usage row at
+			// all, and all 11 compaction markers in the corpus are followed by a
+			// usage row carrying a real total, between 15,502 and 21,857.
+			name:    "an empty usage row does not end the just-compacted window",
+			fixture: "compacted-then-zero.jsonl",
+			wantErr: ErrJustCompacted,
+		},
+		{
 			// The whole of
 			// ~/.codex/sessions/2026/01/29/rollout-2026-01-29T11-42-29-019c0958-ef52-7a83-b189-7f34e6ae0841.jsonl,
 			// a four-record rollout whose session never took a turn: session_meta
