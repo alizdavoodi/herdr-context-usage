@@ -1,0 +1,6 @@
+[
+  {"name":"exact below one thousand","tokens":840,"want":"840"},
+  {"name":"rounded thousands","tokens":92481,"want":"92k"},
+  {"name":"one decimal million","tokens":1249999,"want":"1.2M"},
+  {"name":"zero remains a real reading","tokens":0,"want":"0"}
+]

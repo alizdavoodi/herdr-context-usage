@@ -246,7 +246,7 @@ surveyed ships one, and herdr's own agent skill says nothing about tokens.
 | Compaction | Number drops — a correctness requirement on the provider |
 | Just-compacted | Report the state, not `0` and not the previous number |
 | herdr server restart | `[[startup]]` re-reads everything |
-| Agent exits | Tokens cleared explicitly |
+| Agent exits | Tokens cleared explicitly; Herdr does not clear them on agent release |
 | Pane moved across workspaces | Pane id changes; re-resolve rather than caching ids |
 
 ## Risks and unverified assumptions
@@ -267,8 +267,14 @@ surveyed ships one, and herdr's own agent skill says nothing about tokens.
    `pane process-info` reporting `argv0: "opencode2"` while herdr's `agent`
    field reads `opencode`, confirming both the title channel and the version
    discriminator.
-6. **Unverified:** whether herdr clears source-scoped tokens when an agent is
-   released, which determines how much explicit clearing we must do.
+6. ~~Unverified: whether herdr clears source-scoped tokens when an agent is
+   released.~~ **Verified against Herdr 0.8.0:** a temporary pane was given a
+   synthetic `claude` agent, one ordinary metadata token, and one token scoped
+   with `--agent claude --applies-to-source <agent-source>`. Before release,
+   `herdr pane get` returned both tokens. After `herdr pane release-agent`, the
+   pane's agent status became `unknown` but `pane get` still returned both token
+   values. The plugin must therefore clear `ctx` and `ctx_raw` explicitly when
+   the event pane no longer appears in `herdr agent list`.
 7. Any percentage feature would reintroduce a model-to-window lookup table that
    rots with every model release. Codex supplies `model_context_window` for free;
    Claude and opencode do not.

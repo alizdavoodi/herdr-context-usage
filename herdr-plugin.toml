@@ -1,0 +1,20 @@
+id = "herdr-context-usage"
+name = "Herdr Context Occupancy"
+version = "0.1.0"
+min_herdr_version = "0.8.0"
+description = "Report coding-agent context occupancy as Herdr metadata tokens"
+platforms = ["linux", "macos"]
+
+[[build]]
+command = ["env", "CGO_ENABLED=0", "go", "build", "-trimpath", "-ldflags=-s -w", "-o", "herdr-context-usage", "./cmd/herdr-context-usage"]
+
+[[startup]]
+command = ["./herdr-context-usage"]
+
+[[events]]
+on = "pane.agent_status_changed"
+command = ["./herdr-context-usage"]
+
+[[events]]
+on = "pane.focused"
+command = ["./herdr-context-usage"]

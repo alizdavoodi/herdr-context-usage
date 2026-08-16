@@ -1,0 +1,4 @@
+{"type":"assistant","message":{"id":"msg_before_compaction","role":"assistant","usage":{"input_tokens":100000,"cache_read_input_tokens":80000,"cache_creation_input_tokens":20000}}}
+{"type":"user","isCompactSummary":true,"message":{"role":"user"}}
+{"type":"assistant","message":{"id":"msg_after_compaction","role":"assistant","usage":{"input_tokens":2,"cache_read_input_tokens":16000,"cache_creation_input_tokens":2160}}}
+{"type":"system","subtype":"turn_duration"}
