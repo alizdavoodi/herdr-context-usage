@@ -9,12 +9,20 @@ platforms = ["linux", "macos"]
 command = ["env", "CGO_ENABLED=0", "go", "build", "-trimpath", "-ldflags=-s -w", "-o", "herdr-context-usage", "./cmd/herdr-context-usage"]
 
 [[startup]]
-command = ["./herdr-context-usage"]
+command = ["$HERDR_PLUGIN_ROOT/herdr-context-usage"]
 
 [[events]]
 on = "pane.agent_status_changed"
-command = ["./herdr-context-usage"]
+command = ["$HERDR_PLUGIN_ROOT/herdr-context-usage"]
 
 [[events]]
 on = "pane.focused"
-command = ["./herdr-context-usage"]
+command = ["$HERDR_PLUGIN_ROOT/herdr-context-usage"]
+
+[[events]]
+on = "pane.exited"
+command = ["$HERDR_PLUGIN_ROOT/herdr-context-usage"]
+
+[[events]]
+on = "pane.closed"
+command = ["$HERDR_PLUGIN_ROOT/herdr-context-usage"]

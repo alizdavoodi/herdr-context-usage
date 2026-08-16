@@ -3,13 +3,55 @@ package herdr
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"reflect"
+	"strings"
 	"testing"
 )
 
 type recordedCall struct {
 	name string
 	args []string
+}
+
+func TestExecRunnerSeparatesStdoutAndStderr(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("success warning does not corrupt JSON", func(t *testing.T) {
+		output, err := (execRunner{}).Run(context.Background(), executable, "-test.run=^TestExecRunnerHelperProcess$", "--", "success")
+		if err != nil {
+			t.Fatalf("execRunner.Run() error = %v", err)
+		}
+		if got, want := string(output), `{"result":{"agents":[]}}`; got != want {
+			t.Fatalf("output = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("failure retains stderr diagnostic", func(t *testing.T) {
+		_, err := (execRunner{}).Run(context.Background(), executable, "-test.run=^TestExecRunnerHelperProcess$", "--", "failure")
+		if err == nil || !strings.Contains(err.Error(), "future warning") {
+			t.Fatalf("execRunner.Run() error = %v, want stderr diagnostic", err)
+		}
+	})
+}
+
+func TestExecRunnerHelperProcess(t *testing.T) {
+	if len(os.Args) == 0 {
+		return
+	}
+	switch os.Args[len(os.Args)-1] {
+	case "success":
+		fmt.Fprint(os.Stdout, `{"result":{"agents":[]}}`)
+		fmt.Fprint(os.Stderr, "future warning")
+		os.Exit(0)
+	case "failure":
+		fmt.Fprint(os.Stderr, "future warning")
+		os.Exit(7)
+	}
 }
 
 type fakeRunner struct {
@@ -57,6 +99,20 @@ func TestListAgents(t *testing.T) {
 	}
 }
 
+func TestListPanes(t *testing.T) {
+	t.Parallel()
+
+	runner := &fakeRunner{responses: [][]byte{[]byte(`{"result":{"panes":[{"pane_id":"w1:p1","tokens":{"ctx":"92k","ctx_raw":"92481"}},{"pane_id":"w1:p2"}]}}`)}}
+	client := NewClient("/nix/store/herdr", runner)
+	panes, err := client.ListPanes(context.Background())
+	if err != nil {
+		t.Fatalf("ListPanes() error = %v", err)
+	}
+	if len(panes) != 2 || panes[0].PaneID != "w1:p1" || panes[0].Tokens["ctx_raw"] != "92481" {
+		t.Fatalf("ListPanes() = %#v", panes)
+	}
+}
+
 func TestProcessInfo(t *testing.T) {
 	t.Parallel()
 
@@ -101,6 +157,9 @@ func TestClientErrors(t *testing.T) {
 		if _, err := client.ListAgents(context.Background()); err == nil {
 			t.Fatal("ListAgents() error = nil")
 		}
+		if _, err := client.ListPanes(context.Background()); err == nil {
+			t.Fatal("ListPanes() error = nil")
+		}
 		if _, err := client.ProcessInfo(context.Background(), "w1:p1"); err == nil {
 			t.Fatal("ProcessInfo() error = nil")
 		}
@@ -113,13 +172,16 @@ func TestClientErrors(t *testing.T) {
 	})
 
 	t.Run("malformed JSON", func(t *testing.T) {
-		runner := &fakeRunner{responses: [][]byte{[]byte("{"), []byte("{")}}
+		runner := &fakeRunner{responses: [][]byte{[]byte("{"), []byte("{"), []byte("{")}}
 		client := NewClient("herdr", runner)
 		if _, err := client.ListAgents(context.Background()); err == nil {
 			t.Fatal("ListAgents() error = nil")
 		}
 		if _, err := client.ProcessInfo(context.Background(), "w1:p1"); err == nil {
 			t.Fatal("ProcessInfo() error = nil")
+		}
+		if _, err := client.ListPanes(context.Background()); err == nil {
+			t.Fatal("ListPanes() error = nil")
 		}
 	})
 

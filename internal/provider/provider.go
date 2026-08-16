@@ -24,14 +24,15 @@ type Process struct {
 func FromProcesses(processes []Process) Kind {
 	for _, process := range processes {
 		name := strings.ToLower(strings.TrimPrefix(filepath.Base(process.Argv0), "."))
-		switch {
-		case strings.HasPrefix(name, "opencode2"):
+		// Helper processes commonly borrow provider names as prefixes.
+		switch name {
+		case "opencode2":
 			return OpenCode2
-		case strings.HasPrefix(name, "opencode"):
+		case "opencode":
 			return OpenCode
-		case strings.HasPrefix(name, "claude"):
+		case "claude":
 			return Claude
-		case strings.HasPrefix(name, "codex"):
+		case "codex":
 			return Codex
 		}
 	}

@@ -9,9 +9,14 @@ import (
 	"os"
 )
 
-const maxScanBytes int64 = 1 << 20
+// This remains bounded while retaining several consecutive records at the
+// observed 600 KiB upper end of Claude tool results.
+const maxScanBytes int64 = 8 << 20
 
-var ErrNoOccupancy = errors.New("claude transcript has no current context occupancy")
+var (
+	ErrNoOccupancy   = errors.New("claude transcript has no current context occupancy")
+	ErrJustCompacted = errors.New("claude agent session is just-compacted")
+)
 
 type transcriptEntry struct {
 	IsCompactSummary bool `json:"isCompactSummary"`
@@ -60,7 +65,7 @@ func ReadOccupancy(path string) (int64, error) {
 			continue
 		}
 		if entry.IsCompactSummary {
-			return 0, ErrNoOccupancy
+			return 0, ErrJustCompacted
 		}
 		if entry.Message == nil || entry.Message.Usage == nil {
 			continue
@@ -69,7 +74,12 @@ func ReadOccupancy(path string) (int64, error) {
 		if usage.InputTokens < 0 || usage.CacheReadTokens < 0 || usage.CacheCreationTokens < 0 {
 			continue
 		}
-		return usage.InputTokens + usage.CacheReadTokens + usage.CacheCreationTokens, nil
+		occupancy := usage.InputTokens + usage.CacheReadTokens + usage.CacheCreationTokens
+		if occupancy == 0 {
+			// Failed turns contain a synthetic usage object; no context measurement was made.
+			continue
+		}
+		return occupancy, nil
 	}
 
 	return 0, ErrNoOccupancy

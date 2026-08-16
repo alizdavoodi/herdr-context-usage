@@ -62,8 +62,8 @@ func TestResolveFromForegroundCWDAndClaudeProcess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
 	}
-	if got.Path != want || got.Mode != ResolutionForegroundCWD {
-		t.Fatalf("Resolve() = %#v, want %q and foreground_cwd mode", got, want)
+	if got.Path != want || got.Mode != ResolutionProcessRegistry {
+		t.Fatalf("Resolve() = %#v, want %q and process_registry mode", got, want)
 	}
 }
 

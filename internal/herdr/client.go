@@ -3,8 +3,10 @@ package herdr
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
+	"strings"
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 )
@@ -25,6 +27,11 @@ type Agent struct {
 	PaneID        string            `json:"pane_id"`
 	Tokens        map[string]string `json:"tokens"`
 	AgentSession  *AgentSession     `json:"agent_session"`
+}
+
+type Pane struct {
+	PaneID string            `json:"pane_id"`
+	Tokens map[string]string `json:"tokens"`
 }
 
 type Runner interface {
@@ -60,6 +67,22 @@ func (c *Client) ListAgents(ctx context.Context) ([]Agent, error) {
 		return nil, fmt.Errorf("decode herdr agent list: %w", err)
 	}
 	return response.Result.Agents, nil
+}
+
+func (c *Client) ListPanes(ctx context.Context) ([]Pane, error) {
+	data, err := c.runner.Run(ctx, c.binary, "pane", "list")
+	if err != nil {
+		return nil, fmt.Errorf("list herdr panes: %w", err)
+	}
+	var response struct {
+		Result struct {
+			Panes []Pane `json:"panes"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(data, &response); err != nil {
+		return nil, fmt.Errorf("decode herdr pane list: %w", err)
+	}
+	return response.Result.Panes, nil
 }
 
 func (c *Client) ProcessInfo(ctx context.Context, paneID string) ([]provider.Process, error) {
@@ -110,9 +133,16 @@ type execRunner struct{}
 
 func (execRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
 	command := exec.CommandContext(ctx, name, args...)
-	output, err := command.CombinedOutput()
+	output, err := command.Output()
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w: %s", name, err, output)
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			stderr := strings.TrimSpace(string(exitErr.Stderr))
+			if stderr != "" {
+				return nil, fmt.Errorf("%s: %w: %s", name, err, stderr)
+			}
+		}
+		return nil, fmt.Errorf("%s: %w", name, err)
 	}
 	return output, nil
 }

@@ -2,7 +2,9 @@ package claude
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -26,9 +28,19 @@ func TestReadOccupancy(t *testing.T) {
 			want:    18_162,
 		},
 		{
+			name:    "skips a synthetic zero usage entry after a failed turn",
+			fixture: "rate-limited.jsonl",
+			want:    129_000,
+		},
+		{
+			name:    "zero-only usage is unknown",
+			fixture: "zero-only.jsonl",
+			wantErr: ErrNoOccupancy,
+		},
+		{
 			name:    "does not walk past a just-compacted boundary",
 			fixture: "just-compacted.jsonl",
-			wantErr: ErrNoOccupancy,
+			wantErr: ErrJustCompacted,
 		},
 		{
 			name:    "no usable number is unknown",
@@ -48,6 +60,25 @@ func TestReadOccupancy(t *testing.T) {
 				t.Fatalf("ReadOccupancy() = %d, want %d", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestReadOccupancyKeepsUsageBeyondTwoLargeRecords(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "large-tail.jsonl")
+	usage := `{"type":"assistant","message":{"usage":{"input_tokens":1000,"cache_read_input_tokens":120000,"cache_creation_input_tokens":8000}}}` + "\n"
+	large := `{"type":"user","message":{"content":"` + strings.Repeat("x", 700_000) + `"}}` + "\n"
+	if err := os.WriteFile(path, []byte(usage+large+large), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := ReadOccupancy(path)
+	if err != nil {
+		t.Fatalf("ReadOccupancy() error = %v", err)
+	}
+	if got != 129_000 {
+		t.Fatalf("ReadOccupancy() = %d, want 129000", got)
 	}
 }
 

@@ -13,8 +13,9 @@ import (
 type ResolutionMode string
 
 const (
-	ResolutionAgentSession  ResolutionMode = "agent_session"
-	ResolutionForegroundCWD ResolutionMode = "foreground_cwd"
+	ResolutionAgentSession    ResolutionMode = "agent_session"
+	ResolutionProcessRegistry ResolutionMode = "process_registry"
+	ResolutionForegroundCWD   ResolutionMode = "foreground_cwd"
 )
 
 var ErrNoSession = errors.New("claude agent session cannot be resolved")
@@ -70,7 +71,7 @@ func Resolve(input SessionInput) (ResolvedSession, error) {
 		if session.PID == pid && session.CWD == input.ForegroundCWD && session.SessionID != "" && (session.Kind == "" || session.Kind == "interactive") {
 			return ResolvedSession{
 				Path: transcriptPath(home, input.ForegroundCWD, session.SessionID),
-				Mode: ResolutionForegroundCWD,
+				Mode: ResolutionProcessRegistry,
 			}, nil
 		}
 	}

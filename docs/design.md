@@ -37,7 +37,7 @@ leaving the rest of the budget for other tools.
 ## Architecture
 
 ```
-herdr emits pane.agent_status_changed / pane.focused
+herdr emits pane.agent_status_changed / pane.focused / pane.exited / pane.closed
   └─> plugin binary (short-lived, one process per event)
         ├─ herdr agent list                    → live agents, pane ids, cwds
         ├─ resolve session per pane            → resolution mode recorded
@@ -69,6 +69,13 @@ from its own read commands, the plugin writes and herdr answers. See
 `pane.agent_status_changed` is a turn boundary, which is exactly when occupancy
 changes and when the number becomes actionable. `pane.focused` covers the case
 where you look at a pane whose agent has been quiet.
+
+`pane.exited` and `pane.closed` cover the other side of that lifecycle. They
+trigger the same all-agent refresh. Each refresh also compares `herdr pane list`
+with `herdr agent list` and clears every non-agent pane that still exposes a
+context-occupancy token, because Herdr does not clear source-scoped metadata
+when an agent is released. The event pane remains a fallback if pane enumeration
+races or fails.
 
 Every event refreshes **all** live agents, not only the event's pane. This looks
 wasteful and is deliberate: herdr's detection rules for opencode match the string
@@ -273,8 +280,8 @@ surveyed ships one, and herdr's own agent skill says nothing about tokens.
    with `--agent claude --applies-to-source <agent-source>`. Before release,
    `herdr pane get` returned both tokens. After `herdr pane release-agent`, the
    pane's agent status became `unknown` but `pane get` still returned both token
-   values. The plugin must therefore clear `ctx` and `ctx_raw` explicitly when
-   the event pane no longer appears in `herdr agent list`.
+   values. The plugin must therefore clear `ctx` and `ctx_raw` explicitly from
+   every pane that no longer appears in `herdr agent list`.
 7. Any percentage feature would reintroduce a model-to-window lookup table that
    rots with every model release. Codex supplies `model_context_window` for free;
    Claude and opencode do not.

@@ -15,6 +15,8 @@ func TestFromProcesses(t *testing.T) {
 		{name: "opencode2 wins over its opencode prefix", processes: []Process{{Argv0: "opencode2"}}, want: OpenCode2},
 		{name: "opencode v1", processes: []Process{{Argv0: "opencode"}}, want: OpenCode},
 		{name: "nested helper does not hide agent", processes: []Process{{Argv0: "node"}, {Argv0: "claude"}}, want: Claude},
+		{name: "colliding codex helper does not capture claude", processes: []Process{{Argv0: "codex-mcp"}, {Argv0: "claude"}}, want: Claude},
+		{name: "colliding opencode helper does not capture claude", processes: []Process{{Argv0: "/tools/opencode-index"}, {Argv0: "/bin/claude"}}, want: Claude},
 		{name: "unrecognised", processes: []Process{{Argv0: "zsh"}}, want: None},
 	}
 
