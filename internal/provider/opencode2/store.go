@@ -10,24 +10,21 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
+
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider/opencodeshared"
 
 	_ "modernc.org/sqlite"
 )
 
-const (
-	terminalTitlePrefix = "OC | "
-	untitledWindowTitle = "OpenCode"
-	occupancyScanLimit  = 256
-)
+const occupancyScanLimit = 256
 
 type ResolutionMode string
 
-const ResolutionTerminalTitle ResolutionMode = "terminal_title"
+// Both opencode providers record the same mode for a title-resolved session.
+const ResolutionTerminalTitle ResolutionMode = opencodeshared.ResolutionTerminalTitle
 
 var (
 	ErrNoSession     = errors.New("opencode2 agent session cannot be resolved")
-	ErrUntitled      = errors.New("opencode2 agent session is untitled")
 	ErrNoOccupancy   = errors.New("opencode2 agent session has no current context occupancy")
 	ErrStoreNotReady = errors.New("opencode2 store has not been written yet")
 	ErrJustCompacted = errors.New("opencode2 agent session was just compacted")
@@ -109,55 +106,27 @@ func (s *Store) Close() error {
 }
 
 func (s *Store) Resolve(ctx context.Context, directory, terminalTitle string) (ResolvedSession, error) {
-	if terminalTitle == untitledWindowTitle {
-		return ResolvedSession{}, ErrUntitled
-	}
-	if directory == "" || !strings.HasPrefix(terminalTitle, terminalTitlePrefix) {
-		return ResolvedSession{}, ErrNoSession
-	}
-
-	title := strings.TrimPrefix(terminalTitle, terminalTitlePrefix)
-	if title == "" {
-		return ResolvedSession{}, ErrNoSession
-	}
-
-	comparison := "title = ?"
-	if strings.HasSuffix(title, "...") {
-		title = strings.TrimSuffix(title, "...")
-		if title == "" {
-			return ResolvedSession{}, ErrNoSession
-		}
-		comparison = "substr(title, 1, length(?)) = ?"
-	}
-
-	query := `SELECT id FROM session_v2
-		WHERE directory = ? AND parent_id IS NULL AND ` + comparison + `
-		LIMIT 2`
-	args := []any{directory, title}
-	if strings.HasPrefix(comparison, "substr") {
-		args = append(args, title)
-	}
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	id, err := opencodeshared.ResolveTitle(ctx, directory, terminalTitle, s.sessionsByTitle)
 	if err != nil {
-		return ResolvedSession{}, fmt.Errorf("resolve opencode2 session: %w", err)
+		return ResolvedSession{}, err
+	}
+	return ResolvedSession{ID: id, Mode: ResolutionTerminalTitle}, nil
+}
+
+// sessionsByTitle is this store's own half of title correlation. The v2 schema
+// keeps root sessions in `session_v2`, and a v2 plugin route interpolates its
+// plugin name into the same title shape v1 fills with a plugin id, so only a
+// positive root-session match here can produce a reading.
+func (s *Store) sessionsByTitle(ctx context.Context, directory string, title opencodeshared.Title) ([]string, error) {
+	comparison, args := title.Comparison()
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id FROM session_v2 WHERE directory = ? AND parent_id IS NULL AND `+comparison+` LIMIT 2`,
+		append([]any{directory}, args...)...)
+	if err != nil {
+		return nil, fmt.Errorf("resolve opencode2 session: %w", err)
 	}
 	defer rows.Close()
-
-	var matches []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return ResolvedSession{}, fmt.Errorf("read resolved opencode2 session: %w", err)
-		}
-		matches = append(matches, id)
-	}
-	if err := rows.Err(); err != nil {
-		return ResolvedSession{}, fmt.Errorf("resolve opencode2 session: %w", err)
-	}
-	if len(matches) != 1 {
-		return ResolvedSession{}, ErrNoSession
-	}
-	return ResolvedSession{ID: matches[0], Mode: ResolutionTerminalTitle}, nil
+	return opencodeshared.CollectIDs(rows)
 }
 
 func (s *Store) ReadOccupancy(ctx context.Context, sessionID string) (Reading, error) {

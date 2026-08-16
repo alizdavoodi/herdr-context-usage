@@ -189,6 +189,59 @@ func TestRefreshClearsSupersededOpenCode2Values(t *testing.T) {
 	}
 }
 
+// A blank opencode row is only useful if the plugin can say why it is blank.
+// These two reasons are invisible from the store: a plugin route's title looks
+// like a session title, and a suppressed title looks like no agent at all.
+func TestRefreshExplainsAnOpenCodeTitleThatNamesNoSession(t *testing.T) {
+	t.Parallel()
+
+	dbPath := newAppOpenCode2Database(t, []appSession{{ID: "target", Directory: "/work", Title: "Probe test response"}}, nil)
+	var log bytes.Buffer
+	fake := &fakeHerdr{
+		agents: []herdr.Agent{{
+			Agent: "opencode", PaneID: "w1:p1", ForegroundCWD: "/work",
+			// A plugin route interpolates its plugin name here, and plugin titles
+			// are never shortened, so one this long cannot be a session title.
+			TerminalTitle: "OC | herdr-navigator plugin workspace inspector route",
+			Tokens:        map[string]string{"ctx_raw": "92481"},
+		}},
+		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "opencode2"}}},
+		reports:   make(map[string][2]string),
+	}
+	if err := Refresh(context.Background(), fake, "", &log, Config{OpenCode2DB: dbPath}); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+	if !slices.Equal(fake.clears, []string{"w1:p1"}) {
+		t.Fatalf("clears = %v, want a plugin route to blank the row", fake.clears)
+	}
+	if got := log.String(); !strings.Contains(got, "plugin route") {
+		t.Fatalf("diagnostic = %s, want the plugin route named", got)
+	}
+}
+
+func TestRefreshExplainsASuppressedOpenCodeTerminalTitle(t *testing.T) {
+	// Not parallel: the variable is process-wide, and the point of the test is
+	// that this process inherits it the way the herdr server would.
+	t.Setenv("OPENCODE_DISABLE_TERMINAL_TITLE", "1")
+
+	dbPath := newAppOpenCode2Database(t, []appSession{{ID: "target", Directory: "/work", Title: "Probe test response"}}, nil)
+	var log bytes.Buffer
+	fake := &fakeHerdr{
+		agents: []herdr.Agent{{
+			Agent: "opencode", PaneID: "w1:p1", ForegroundCWD: "/work",
+			TerminalTitle: "zsh", Tokens: map[string]string{"ctx_raw": "92481"},
+		}},
+		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "opencode2"}}},
+		reports:   make(map[string][2]string),
+	}
+	if err := Refresh(context.Background(), fake, "", &log, Config{OpenCode2DB: dbPath}); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+	if got := log.String(); !strings.Contains(got, "OPENCODE_DISABLE_TERMINAL_TITLE") {
+		t.Fatalf("diagnostic = %s, want the permanently blank row explained", got)
+	}
+}
+
 func TestRefreshPreservesOpenCode2ValueOnTransientDatabaseFailure(t *testing.T) {
 	t.Parallel()
 

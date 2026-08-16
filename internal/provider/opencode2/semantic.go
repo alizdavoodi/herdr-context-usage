@@ -1,6 +1,9 @@
 package opencode2
 
-import "github.com/alizdavoodi/herdr-context-usage/internal/report"
+import (
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider/opencodeshared"
+	"github.com/alizdavoodi/herdr-context-usage/internal/report"
+)
 
 // SemanticStates declares what each of this provider's answers proves about the
 // occupancy already displayed: superseded answers clear it, stale-low answers
@@ -11,7 +14,16 @@ import "github.com/alizdavoodi/herdr-context-usage/internal/report"
 // database is opened, so nothing downstream should ever see the raw error.
 func SemanticStates() report.States {
 	return report.States{
-		Superseded: []error{ErrNoSession, ErrUntitled, ErrNoOccupancy, ErrStoreNotReady, ErrJustCompacted},
+		Superseded: []error{
+			ErrNoSession, ErrNoOccupancy, ErrStoreNotReady, ErrJustCompacted,
+			// A pane whose title cannot name a session is a pane we must blank,
+			// whichever of the four reasons applies. The reasons are separate so the
+			// blank is diagnosable; the classification is the same for all of them.
+			opencodeshared.ErrUntitled,
+			opencodeshared.ErrTitleUnavailable,
+			opencodeshared.ErrPluginTitle,
+			opencodeshared.ErrNoTitleMatch,
+		},
 		// A turn in flight never surfaces as an error here: ReadOccupancy crosses
 		// in-flight assistant rows and reports the previous completed reading.
 		StaleLow: nil,

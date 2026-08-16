@@ -6,6 +6,7 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider/opencodeshared"
 	"github.com/alizdavoodi/herdr-context-usage/internal/report"
 )
 
@@ -19,10 +20,14 @@ func TestSemanticStatesClassifyEveryAnswer(t *testing.T) {
 		want report.Class
 	}{
 		{name: "unresolvable session", err: ErrNoSession, want: report.Superseded},
-		{name: "untitled session", err: ErrUntitled, want: report.Superseded},
 		{name: "session has produced no reading", err: ErrNoOccupancy, want: report.Superseded},
 		{name: "store not written yet", err: ErrStoreNotReady, want: report.Superseded},
 		{name: "just compacted", err: ErrJustCompacted, want: report.Superseded},
+		{name: "untitled session", err: opencodeshared.ErrUntitled, want: report.Superseded},
+		{name: "pane reports no opencode title", err: opencodeshared.ErrTitleUnavailable, want: report.Superseded},
+		{name: "terminal title disabled in this environment", err: opencodeshared.ErrTitleDisabled, want: report.Superseded},
+		{name: "plugin route title", err: opencodeshared.ErrPluginTitle, want: report.Superseded},
+		{name: "title matches no single session", err: opencodeshared.ErrNoTitleMatch, want: report.Superseded},
 		{
 			// Open turns a missing database into ErrStoreNotReady, so a raw
 			// missing-file error here would mean the store taxonomy was bypassed.

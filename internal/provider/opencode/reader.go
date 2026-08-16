@@ -11,14 +11,10 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
+
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider/opencodeshared"
 
 	_ "modernc.org/sqlite"
-)
-
-const (
-	terminalTitlePrefix = "OC | "
-	untitledWindowTitle = "OpenCode"
 )
 
 type assistantMessage struct {
@@ -88,52 +84,27 @@ func (s *Store) Close() error {
 }
 
 func (s *Store) ResolveTerminalTitle(ctx context.Context, directory, terminalTitle string) (ResolvedSession, error) {
-	if terminalTitle == untitledWindowTitle {
-		return ResolvedSession{}, ErrUntitled
-	}
-	if directory == "" || !strings.HasPrefix(terminalTitle, terminalTitlePrefix) {
-		return ResolvedSession{}, ErrNoSession
-	}
-
-	title := strings.TrimPrefix(terminalTitle, terminalTitlePrefix)
-	if title == "" {
-		return ResolvedSession{}, ErrNoSession
-	}
-
-	comparison := "title = ?"
-	args := []any{directory, title}
-	if strings.HasSuffix(title, "...") {
-		title = strings.TrimSuffix(title, "...")
-		if title == "" {
-			return ResolvedSession{}, ErrNoSession
-		}
-		comparison = "substr(title, 1, length(?)) = ?"
-		args = []any{directory, title, title}
-	}
-	// OPENCODE_DISABLE_TERMINAL_TITLE removes this correlation signal entirely.
-	// Plugin routes share the title shape but interpolate data.id here (opencode2
-	// uses data.name), so only a positive root-session match can produce a reading.
-	rows, err := s.database.QueryContext(ctx, `SELECT id FROM session WHERE directory = ? AND parent_id IS NULL AND `+comparison+` LIMIT 2`, args...)
+	id, err := opencodeshared.ResolveTitle(ctx, directory, terminalTitle, s.sessionsByTitle)
 	if err != nil {
-		return ResolvedSession{}, fmt.Errorf("resolve opencode session: %w", err)
+		return ResolvedSession{}, err
+	}
+	return ResolvedSession{ID: id, Mode: opencodeshared.ResolutionTerminalTitle}, nil
+}
+
+// sessionsByTitle is this store's own half of title correlation. The v1 schema
+// keeps root sessions in `session`, and a v1 plugin route interpolates its
+// plugin id into the same title shape opencode2 fills with a plugin name, so
+// only a positive root-session match here can produce a reading.
+func (s *Store) sessionsByTitle(ctx context.Context, directory string, title opencodeshared.Title) ([]string, error) {
+	comparison, args := title.Comparison()
+	rows, err := s.database.QueryContext(ctx,
+		`SELECT id FROM session WHERE directory = ? AND parent_id IS NULL AND `+comparison+` LIMIT 2`,
+		append([]any{directory}, args...)...)
+	if err != nil {
+		return nil, fmt.Errorf("resolve opencode session: %w", err)
 	}
 	defer rows.Close()
-
-	var matches []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return ResolvedSession{}, fmt.Errorf("read resolved opencode session: %w", err)
-		}
-		matches = append(matches, id)
-	}
-	if err := rows.Err(); err != nil {
-		return ResolvedSession{}, fmt.Errorf("resolve opencode session: %w", err)
-	}
-	if len(matches) != 1 {
-		return ResolvedSession{}, ErrNoSession
-	}
-	return ResolvedSession{ID: matches[0], Mode: ResolutionTerminalTitle}, nil
+	return opencodeshared.CollectIDs(rows)
 }
 
 func (s *Store) ReadOccupancy(ctx context.Context, sessionID string) (int64, error) {

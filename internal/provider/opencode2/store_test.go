@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider/opencodeshared"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -78,7 +80,7 @@ func TestResolveRefusesGuesses(t *testing.T) {
 			name:          "bare OpenCode title is deliberately untitled",
 			directory:     "/work/acme",
 			terminalTitle: "OpenCode",
-			wantErr:       ErrUntitled,
+			wantErr:       opencodeshared.ErrUntitled,
 		},
 		{
 			name:          "missing title prefix does not fall back to recency",
@@ -87,7 +89,7 @@ func TestResolveRefusesGuesses(t *testing.T) {
 			prepare: func(t *testing.T, db *sql.DB) {
 				insertSession(t, db, testSession{ID: "newest", Directory: "/work/acme", Title: "Newest", Updated: 999})
 			},
-			wantErr: ErrNoSession,
+			wantErr: opencodeshared.ErrTitleUnavailable,
 		},
 		{
 			name:          "unmatched title does not fall back to recency",
@@ -96,7 +98,7 @@ func TestResolveRefusesGuesses(t *testing.T) {
 			prepare: func(t *testing.T, db *sql.DB) {
 				insertSession(t, db, testSession{ID: "newest", Directory: "/work/acme", Title: "Newest", Updated: 999})
 			},
-			wantErr: ErrNoSession,
+			wantErr: opencodeshared.ErrNoTitleMatch,
 		},
 		{
 			name:          "ambiguous truncated prefix stays blank",
@@ -106,7 +108,7 @@ func TestResolveRefusesGuesses(t *testing.T) {
 				insertSession(t, db, testSession{ID: "older", Directory: "/work/acme", Title: strings.Repeat("x", 37) + " old", Updated: 100})
 				insertSession(t, db, testSession{ID: "newer", Directory: "/work/acme", Title: strings.Repeat("x", 37) + " new", Updated: 200})
 			},
-			wantErr: ErrNoSession,
+			wantErr: opencodeshared.ErrNoTitleMatch,
 		},
 	}
 

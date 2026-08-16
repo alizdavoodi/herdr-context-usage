@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider/opencodeshared"
 )
 
 func TestReadOccupancyReadsV1TablesFromReadOnlyDatabase(t *testing.T) {
@@ -180,10 +182,10 @@ func TestResolveTerminalTitleToleratesTruncationAndRefusesGuesses(t *testing.T) 
 				exec(t, database, `INSERT INTO session (id, directory, title) VALUES ('first', '/work/acme', ?)`, prefix+" first")
 				exec(t, database, `INSERT INTO session (id, directory, title) VALUES ('second', '/work/acme', ?)`, prefix+" second")
 			},
-			wantErr: ErrNoSession,
+			wantErr: opencodeshared.ErrNoTitleMatch,
 		},
-		{name: "bare title is untitled", directory: "/work/acme", terminalTitle: "OpenCode", wantErr: ErrUntitled},
-		{name: "missing title prefix has no fallback", directory: "/work/acme", terminalTitle: "shell", wantErr: ErrNoSession},
+		{name: "bare title is untitled", directory: "/work/acme", terminalTitle: "OpenCode", wantErr: opencodeshared.ErrUntitled},
+		{name: "missing title prefix has no fallback", directory: "/work/acme", terminalTitle: "shell", wantErr: opencodeshared.ErrTitleUnavailable},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
