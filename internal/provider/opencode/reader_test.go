@@ -8,17 +8,43 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider/opencodeshared"
 )
 
+// Provenance for the fixtures in this file: session
+// ses_31c1bfde3ffeCEDhd6W270unu4 of the live opencode v1 store, whose
+// messages, oldest first, are
+//
+//	msg_ce86820f6001vq8ZqNZcLMdJpE  t=…664246  assistant  input 1  read 0      write 168969
+//	msg_ce8685bb6001qP8D2cbu3XY4bl  t=…679286  user       summary {"diffs":[]}
+//	msg_ce8685bc7001SiK5DcsX6T7Q34  t=…679303  assistant  summary true, mode "compaction", input 2 read 0 write 131757
+//	msg_ce8693c60001WODzJWBJkpkKUz  t=…736800  user       summary {"diffs":[]}
+//	msg_ce8693c67001uXhw9SKU1RFVDc  t=…736807  assistant  input 3  read 39016  write 3341
+//
+// which is one whole compaction: 168,970 tokens before it and 42,360 after.
+// The compaction row is the assistant message that wrote the summary, and its
+// own 131,759 tokens are what it cost to summarise the old context, not the
+// size of the new one — so it is a boundary to stop at rather than a reading.
+//
+// The two encodings of `summary` are not two encodings of one thing. Across
+// the whole store, `summary: true` appears on 233 rows, every one an assistant
+// message with mode and agent "compaction"; `summary: {…}` appears on 4,910
+// rows, every one a user message carrying {"diffs":[]} or
+// {"title":…,"diffs":[]}. The first is the compaction boundary. The second is
+// ordinary prompt metadata that this provider also treats as one.
 func TestReadOccupancyReadsV1TablesFromReadOnlyDatabase(t *testing.T) {
 	t.Parallel()
 
 	databasePath := fixtureDatabase(t, func(database *sql.DB) {
 		exec(t, database, `INSERT INTO session (id) VALUES ('ses_current')`)
+		// session_v2 in the v1 database is a stalled migration whose token columns
+		// are cumulative and rise across a compaction. Set impossibly high here so
+		// that reading them instead of the messages fails.
 		exec(t, database, `INSERT INTO session_v2 (id, tokens_input) VALUES ('ses_current', 999999)`)
-		exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_old', 'ses_current', 1, '{"role":"assistant","time":{"completed":1},"tokens":{"input":3000,"cache":{"read":4000,"write":5000}}}')`)
-		exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_user', 'ses_current', 2, '{"role":"user"}')`)
-		exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_current', 'ses_current', 3, '{"role":"assistant","time":{"completed":3},"tokens":{"input":840,"cache":{"read":90000,"write":1641}}}')`)
+		exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_ce86820f6001vq8ZqNZcLMdJpE', 'ses_current', 1773425664246, '{"role":"assistant","mode":"Atlas (Plan Executor)","time":{"created":1773425650000,"completed":1773425679285},"tokens":{"input":1,"cache":{"read":0,"write":168969}}}')`)
+		exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_ce8693c60001WODzJWBJkpkKUz', 'ses_current', 1773425736800, '{"role":"user","time":{"created":1773425736800},"summary":{"diffs":[]},"agent":"build"}')`)
+		exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_ce8693c67001uXhw9SKU1RFVDc', 'ses_current', 1773425736807, '{"role":"assistant","mode":"Atlas (Plan Executor)","time":{"created":1773425736807,"completed":1773425740912},"tokens":{"input":3,"cache":{"read":39016,"write":3341}}}')`)
 	})
 	legacyPath := filepath.Join(filepath.Dir(databasePath), "storage", "message", "stale.json")
 	if err := os.MkdirAll(filepath.Dir(legacyPath), 0o755); err != nil {
@@ -37,8 +63,8 @@ func TestReadOccupancyReadsV1TablesFromReadOnlyDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadOccupancy() error = %v", err)
 	}
-	if got != 92_481 {
-		t.Fatalf("ReadOccupancy() = %d, want 92481", got)
+	if got != 42_360 {
+		t.Fatalf("ReadOccupancy() = %d, want the newest completed turn's 3 + 39016 + 3341", got)
 	}
 }
 
@@ -84,19 +110,45 @@ func TestReadOccupancyUsesPreviousCompletedReadingWhenLatestAssistantIsUnusable(
 func TestReadOccupancyDoesNotWalkBackAcrossLatestCompactionSummary(t *testing.T) {
 	t.Parallel()
 
-	for _, summary := range []string{`true`, `{}`} {
-		databasePath := fixtureDatabase(t, func(database *sql.DB) {
-			exec(t, database, `INSERT INTO session (id) VALUES ('ses_compacted')`)
-			exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_before', 'ses_compacted', 1, '{"role":"assistant","time":{"completed":1},"tokens":{"input":840,"cache":{"read":90000,"write":1641}}}')`)
-			exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_summary', 'ses_compacted', 2, ?)`, `{"role":"user","summary":`+summary+`}`)
-			exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_in_flight', 'ses_compacted', 3, '{"role":"assistant","time":{"created":3}}')`)
-		})
-		store := openStore(t, databasePath)
-		_, err := store.ReadOccupancy(context.Background(), "ses_compacted")
-		store.Close()
-		if !errors.Is(err, ErrJustCompacted) {
-			t.Fatalf("ReadOccupancy() error = %v, want ErrJustCompacted", err)
-		}
+	// The first three messages of the session above, ending at the compaction
+	// summary: 168,970 tokens are recorded before it and the next real reading,
+	// 42,360, does not exist yet. Both numbers would be wrong to display, which
+	// is why the instant has its own state rather than a number.
+	databasePath := fixtureDatabase(t, func(database *sql.DB) {
+		exec(t, database, `INSERT INTO session (id) VALUES ('ses_compacted')`)
+		exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_ce86820f6001vq8ZqNZcLMdJpE', 'ses_compacted', 1773425664246, '{"role":"assistant","mode":"Atlas (Plan Executor)","time":{"created":1773425650000,"completed":1773425679285},"tokens":{"input":1,"cache":{"read":0,"write":168969}}}')`)
+		exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_ce8685bb6001qP8D2cbu3XY4bl', 'ses_compacted', 1773425679286, '{"role":"user","time":{"created":1773425679286},"summary":{"diffs":[]},"agent":"build"}')`)
+		exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_ce8685bc7001SiK5DcsX6T7Q34', 'ses_compacted', 1773425679303, '{"role":"assistant","mode":"compaction","agent":"compaction","summary":true,"time":{"created":1773425679303,"completed":1773425736799},"tokens":{"input":2,"cache":{"read":0,"write":131757}}}')`)
+	})
+	store := openStore(t, databasePath)
+	defer store.Close()
+	if _, err := store.ReadOccupancy(context.Background(), "ses_compacted"); !errors.Is(err, ErrJustCompacted) {
+		t.Fatalf("ReadOccupancy() error = %v, want ErrJustCompacted", err)
+	}
+}
+
+func TestReadOccupancyCrossesAnOrdinaryPromptSummary(t *testing.T) {
+	t.Parallel()
+
+	// The same three messages, one turn earlier: the pre-compaction reading, the
+	// user's next prompt, and the assistant row that turn created before it has
+	// completed. A prompt is not a boundary — the previous reading is still a
+	// valid lower bound — and this is the state every v1 session is in for the
+	// whole of every turn.
+	databasePath := fixtureDatabase(t, func(database *sql.DB) {
+		exec(t, database, `INSERT INTO session (id) VALUES ('ses_running')`)
+		exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_ce86820f6001vq8ZqNZcLMdJpE', 'ses_running', 1773425664246, '{"role":"assistant","mode":"Atlas (Plan Executor)","time":{"created":1773425650000,"completed":1773425679285},"tokens":{"input":1,"cache":{"read":0,"write":168969}}}')`)
+		exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_ce8685bb6001qP8D2cbu3XY4bl', 'ses_running', 1773425679286, '{"role":"user","time":{"created":1773425679286},"summary":{"diffs":[]},"agent":"build"}')`)
+		exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_ce8685bc7001SiK5DcsX6T7Q34', 'ses_running', 1773425679303, '{"role":"assistant","mode":"Atlas (Plan Executor)","time":{"created":1773425679303}}')`)
+	})
+	store := openStore(t, databasePath)
+	defer store.Close()
+	got, err := store.ReadOccupancy(context.Background(), "ses_running")
+	if err != nil {
+		t.Fatalf("ReadOccupancy() error = %v, want the previous completed reading", err)
+	}
+	if got != 168_970 {
+		t.Fatalf("ReadOccupancy() = %d, want the lower bound 1 + 0 + 168969", got)
 	}
 }
 
@@ -180,10 +232,10 @@ func TestResolveTerminalTitleToleratesTruncationAndRefusesGuesses(t *testing.T) 
 				exec(t, database, `INSERT INTO session (id, directory, title) VALUES ('first', '/work/acme', ?)`, prefix+" first")
 				exec(t, database, `INSERT INTO session (id, directory, title) VALUES ('second', '/work/acme', ?)`, prefix+" second")
 			},
-			wantErr: ErrNoSession,
+			wantErr: opencodeshared.ErrNoTitleMatch,
 		},
-		{name: "bare title is untitled", directory: "/work/acme", terminalTitle: "OpenCode", wantErr: ErrUntitled},
-		{name: "missing title prefix has no fallback", directory: "/work/acme", terminalTitle: "shell", wantErr: ErrNoSession},
+		{name: "bare title is untitled", directory: "/work/acme", terminalTitle: "OpenCode", wantErr: opencodeshared.ErrUntitled},
+		{name: "missing title prefix has no fallback", directory: "/work/acme", terminalTitle: "shell", wantErr: opencodeshared.ErrTitleUnavailable},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -213,6 +265,17 @@ func TestOpenMissingStoreIsSemantic(t *testing.T) {
 	}
 }
 
+func TestOpenDirectoryIsTransient(t *testing.T) {
+	t.Parallel()
+
+	// Both opencode providers answer this the same way now: a directory where
+	// the database should be is not a store that has not been written yet, so it
+	// preserves the pane's value instead of blanking it.
+	if _, err := Open(context.Background(), t.TempDir()); err == nil || errors.Is(err, ErrStoreNotReady) || errors.Is(err, ErrNoSchema) {
+		t.Fatalf("Open() error = %v, want a transient database failure", err)
+	}
+}
+
 func TestOpenRejectsWrites(t *testing.T) {
 	t.Parallel()
 
@@ -220,31 +283,6 @@ func TestOpenRejectsWrites(t *testing.T) {
 	defer store.Close()
 	if _, err := store.database.ExecContext(context.Background(), `INSERT INTO session (id) VALUES ('write')`); err == nil {
 		t.Fatal("read-only opencode store accepted a write")
-	}
-}
-
-func TestDatabasePathUsesExplicitPath(t *testing.T) {
-	t.Parallel()
-
-	want := filepath.Join(t.TempDir(), "opencode.db")
-	got, err := databasePath(want)
-	if err != nil {
-		t.Fatalf("databasePath() error = %v", err)
-	}
-	if got != want {
-		t.Fatalf("databasePath() = %q, want %q", got, want)
-	}
-}
-
-func TestDatabasePathUsesXDGDataHome(t *testing.T) {
-	t.Setenv("XDG_DATA_HOME", "/xdg-data")
-
-	got, err := databasePath("")
-	if err != nil {
-		t.Fatalf("databasePath() error = %v", err)
-	}
-	if want := filepath.Join("/xdg-data", "opencode", "opencode.db"); got != want {
-		t.Fatalf("databasePath() = %q, want %q", got, want)
 	}
 }
 

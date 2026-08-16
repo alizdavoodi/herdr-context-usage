@@ -211,6 +211,38 @@ func TestRefreshReportsCodexPostCompactionOccupancy(t *testing.T) {
 	}
 }
 
+func TestRefreshPreservesCodexValueAfterATurnThatRecordedNoUsage(t *testing.T) {
+	t.Parallel()
+
+	// Codex reads the newest usage row rather than walking back, so a turn that
+	// recorded nothing has to leave the previous reading standing rather than
+	// blank the pane. No rollout in the local corpus has produced this row.
+	rollout := filepath.Join(t.TempDir(), "rollout.jsonl")
+	entries := "" +
+		`{"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":85751,"cached_input_tokens":84736,"total_tokens":86542}}}}` + "\n" +
+		`{"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":0,"cached_input_tokens":0,"total_tokens":0}}}}` + "\n"
+	if err := os.WriteFile(rollout, []byte(entries), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var log bytes.Buffer
+	fake := &fakeHerdr{
+		agents: []herdr.Agent{{
+			Agent:        "codex",
+			PaneID:       "w1:p1",
+			Tokens:       map[string]string{"ctx": "86k", "ctx_raw": "86542"},
+			AgentSession: &herdr.AgentSession{Kind: "path", Value: rollout},
+		}},
+		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "codex"}}},
+		reports:   make(map[string][2]string),
+	}
+	if err := Refresh(context.Background(), fake, "", &log, Config{}); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+	if len(fake.clears) != 0 || len(fake.reports) != 0 {
+		t.Fatalf("clears = %v, reports = %v; want the previous reading left standing", fake.clears, fake.reports)
+	}
+}
+
 func TestRefreshClearsValueWhenCodexRolloutIsNotWritten(t *testing.T) {
 	t.Parallel()
 
@@ -607,7 +639,11 @@ func TestRefreshOpenCodeClearsValueWhenNewestMessageIsCompactionSummary(t *testi
 	dataDir := t.TempDir()
 	databasePath := filepath.Join(dataDir, "opencode.db")
 	createOpenCodeDatabase(t, databasePath, "ses_current", `{"role":"assistant","time":{"completed":1},"tokens":{"input":840,"cache":{"read":90000,"write":1641}}}`)
-	appendOpenCodeMessage(t, databasePath, "msg_summary", "ses_current", 2, `{"role":"user","summary":true}`)
+	// msg_ce8685bc7001SiK5DcsX6T7Q34 of session ses_31c1bfde3ffeCEDhd6W270unu4:
+	// the assistant message that wrote a compaction summary. Its own token counts
+	// are what summarising the old context cost, not the size of the new one.
+	appendOpenCodeMessage(t, databasePath, "msg_summary", "ses_current", 2,
+		`{"role":"assistant","mode":"compaction","agent":"compaction","summary":true,"time":{"created":1773425679303,"completed":1773425736799},"tokens":{"input":2,"cache":{"read":0,"write":131757}}}`)
 	var log bytes.Buffer
 	fake := &fakeHerdr{
 		agents: []herdr.Agent{{
@@ -628,6 +664,36 @@ func TestRefreshOpenCodeClearsValueWhenNewestMessageIsCompactionSummary(t *testi
 	}
 	if got := log.String(); !strings.Contains(got, `"context_state":"just_compacted"`) {
 		t.Fatalf("diagnostic = %s, want just-compacted state", got)
+	}
+}
+
+func TestRefreshKeepsOpenCodeV1OccupancyDuringInFlightTurn(t *testing.T) {
+	t.Parallel()
+
+	// herdr fires an event when an agent starts working, so this is the state a
+	// v1 pane is read in for the whole of every turn: a completed reading, the
+	// prompt that started the turn, and an assistant row with nothing in it yet.
+	dataDir := t.TempDir()
+	databasePath := filepath.Join(dataDir, "opencode.db")
+	createOpenCodeDatabase(t, databasePath, "ses_current", `{"role":"assistant","time":{"completed":1},"tokens":{"input":840,"cache":{"read":90000,"write":1641}}}`)
+	appendOpenCodeMessage(t, databasePath, "msg_prompt", "ses_current", 2, `{"role":"user","time":{"created":2},"summary":{"diffs":[]},"agent":"build"}`)
+	appendOpenCodeMessage(t, databasePath, "msg_in_flight", "ses_current", 3, `{"role":"assistant","mode":"Atlas (Plan Executor)","time":{"created":3}}`)
+	fake := &fakeHerdr{
+		agents: []herdr.Agent{{
+			Agent:        "opencode",
+			PaneID:       "w1:p1",
+			Tokens:       map[string]string{"ctx": "92k", "ctx_raw": "92481"},
+			AgentSession: &herdr.AgentSession{Kind: "id", Value: "ses_current"},
+		}},
+		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "opencode"}}},
+		reports:   make(map[string][2]string),
+	}
+
+	if err := Refresh(context.Background(), fake, "", nil, Config{OpenCodeDB: databasePath}); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+	if got := fake.reports["w1:p1"]; got != [2]string{"92k", "92481"} || len(fake.clears) != 0 {
+		t.Fatalf("report = %v, clears = %v; want the running turn to keep its lower bound", got, fake.clears)
 	}
 }
 
@@ -750,6 +816,17 @@ func TestRefreshClearsValueWhenOpenCode2SessionIsJustCompacted(t *testing.T) {
 	}
 }
 
+// Provenance for the fixtures in this file, which are about delivery to herdr
+// rather than about arithmetic, so most of them carry the design document's
+// worked example — 840 / 90000 / 1641, the same 92,481 across three providers
+// — instead of a copied record. Where an instant is what is being asserted,
+// the record is real and named at the call site: the codex compaction is lines
+// 396, 397 and 400 of
+// ~/.codex/sessions/2026/07/31/rollout-2026-07-31T17-43-45-019fb8d8-85b8-7c50-82ac-bc46ddf0d5fe.jsonl,
+// and the opencode v1 compaction summary is msg_ce8685bc7001SiK5DcsX6T7Q34 of
+// session ses_31c1bfde3ffeCEDhd6W270unu4. Both are described in full in the
+// providers' own reader tests, as are the opencode2 compaction rows, which are
+// the one shape taken from a binary rather than a store.
 func createOpenCode2Database(t *testing.T, path, sessionID, message string) {
 	t.Helper()
 

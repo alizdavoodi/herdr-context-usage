@@ -9,9 +9,32 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider/opencodeshared"
+
 	_ "modernc.org/sqlite"
 )
 
+// Provenance for the fixtures in this file.
+//
+// Assistant rows and session titles are taken from the live opencode2 store,
+// named per test with their session id and seq. Sessions there are 56 root
+// sessions, 6 of them untitled and 6 with titles too long to fit a terminal
+// title untruncated.
+//
+// Compaction rows are the one thing that cannot be taken from the store: it
+// contains 1,254 session_message rows and not one of type 'compaction',
+// because this installation has never compacted an opencode2 session. Their
+// shape comes instead from the opencode2 binary itself
+// (opencode2 0.0.0-next-17444), whose own query for the boundary is
+//
+//	select({seq}).from(session_message).where(and(
+//	  eq(session_id, ...), eq(type, "compaction"),
+//	  sql`json_extract(data, '$.status') = 'completed'`))
+//	  .orderBy(desc(seq)).limit(1)
+//
+// which is where both the row type and the status predicate this provider
+// matches on come from. The statuses other than "completed" are inferred from
+// that predicate rather than observed.
 func TestResolveMatchesDirectoryAndTerminalTitle(t *testing.T) {
 	t.Parallel()
 
@@ -78,7 +101,7 @@ func TestResolveRefusesGuesses(t *testing.T) {
 			name:          "bare OpenCode title is deliberately untitled",
 			directory:     "/work/acme",
 			terminalTitle: "OpenCode",
-			wantErr:       ErrUntitled,
+			wantErr:       opencodeshared.ErrUntitled,
 		},
 		{
 			name:          "missing title prefix does not fall back to recency",
@@ -87,7 +110,7 @@ func TestResolveRefusesGuesses(t *testing.T) {
 			prepare: func(t *testing.T, db *sql.DB) {
 				insertSession(t, db, testSession{ID: "newest", Directory: "/work/acme", Title: "Newest", Updated: 999})
 			},
-			wantErr: ErrNoSession,
+			wantErr: opencodeshared.ErrTitleUnavailable,
 		},
 		{
 			name:          "unmatched title does not fall back to recency",
@@ -96,7 +119,7 @@ func TestResolveRefusesGuesses(t *testing.T) {
 			prepare: func(t *testing.T, db *sql.DB) {
 				insertSession(t, db, testSession{ID: "newest", Directory: "/work/acme", Title: "Newest", Updated: 999})
 			},
-			wantErr: ErrNoSession,
+			wantErr: opencodeshared.ErrNoTitleMatch,
 		},
 		{
 			name:          "ambiguous truncated prefix stays blank",
@@ -106,7 +129,7 @@ func TestResolveRefusesGuesses(t *testing.T) {
 				insertSession(t, db, testSession{ID: "older", Directory: "/work/acme", Title: strings.Repeat("x", 37) + " old", Updated: 100})
 				insertSession(t, db, testSession{ID: "newer", Directory: "/work/acme", Title: strings.Repeat("x", 37) + " new", Updated: 200})
 			},
-			wantErr: ErrNoSession,
+			wantErr: opencodeshared.ErrNoTitleMatch,
 		},
 	}
 
@@ -132,18 +155,29 @@ func TestResolveRefusesGuesses(t *testing.T) {
 func TestReadOccupancyUsesLatestAssistantPayload(t *testing.T) {
 	t.Parallel()
 
+	// msg_00c36acf0001WXPsa02H1XQ8Hi at seq 1325 and
+	// msg_00c36c148001alHfsqgUb2Wdg4 at seq 1331 of session
+	// ses_ff4059ac8ffe7NvtWxFA4cwGWo in the live opencode2 store: consecutive
+	// completed turns where input is two orders of magnitude smaller than
+	// cache.read, so a reading that ignored the cache fields would report 185
+	// tokens for a 234k context.
+	//
+	// session_v2's own tokens_* columns are set to something impossible on
+	// purpose. They look exactly like what is wanted and are cumulative
+	// accumulators that keep rising across a compaction, so anything that reads
+	// them instead of the messages fails here.
 	path := newTestDatabase(t)
 	db := openFixtureDatabase(t, path)
 	insertSession(t, db, testSession{
 		ID: "session", Directory: "/work/acme", Title: "Measured",
 		TokensInput: 900_000, TokensCacheRead: 800_000, TokensCacheWrite: 700_000,
 	})
-	insertMessage(t, db, "old-assistant", "session", "assistant", 1,
-		`{"time":{"completed":1},"model":{"id":"old-model"},"tokens":{"input":100,"cache":{"read":200,"write":300}}}`)
-	insertMessage(t, db, "newer-user", "session", "user", 3,
+	insertMessage(t, db, "old-assistant", "session", "assistant", 1325,
+		`{"time":{"completed":1786911310146},"model":{"id":"deepseek-v4-pro"},"tokens":{"input":92,"output":58,"cache":{"read":233728,"write":0}}}`)
+	insertMessage(t, db, "newer-user", "session", "user", 1333,
 		`{"role":"assistant","model":{"id":"wrong-role"},"tokens":{"input":999999,"cache":{"read":999999,"write":999999}}}`)
-	insertMessage(t, db, "current-assistant", "session", "assistant", 2,
-		`{"time":{"completed":2},"model":{"id":"deepseek-v4-pro"},"tokens":{"input":14829,"output":100,"cache":{"read":16896,"write":7}}}`)
+	insertMessage(t, db, "current-assistant", "session", "assistant", 1331,
+		`{"time":{"completed":1786911314014},"model":{"id":"deepseek-v4-pro"},"tokens":{"input":185,"output":100,"cache":{"read":233984,"write":0}}}`)
 	db.Close()
 
 	store := openStore(t, path)
@@ -152,8 +186,8 @@ func TestReadOccupancyUsesLatestAssistantPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadOccupancy() error = %v", err)
 	}
-	if got.Occupancy != 31_732 {
-		t.Fatalf("occupancy = %d, want input + cache read + cache write = 31732", got.Occupancy)
+	if got.Occupancy != 234_169 {
+		t.Fatalf("occupancy = %d, want input + cache read + cache write = 234169", got.Occupancy)
 	}
 	if got.ModelID != "deepseek-v4-pro" {
 		t.Fatalf("model id = %q, want value from data.model.id", got.ModelID)
@@ -169,7 +203,7 @@ func TestReadOccupancyWalksBackAcrossUnusableAssistantsWithoutCompaction(t *test
 	insertMessage(t, db, "old", "session", "assistant", 1,
 		`{"time":{"completed":1},"model":{"id":"model"},"tokens":{"input":129000,"cache":{"read":0,"write":0}}}`)
 	insertMessage(t, db, "in-flight", "session", "assistant", 2,
-		`{"time":{"created":2},"model":{"id":"model"},"content":[]}`)
+		`{"time":{"created":1786808200629},"agent":"build","model":{"id":"glm-5.2","providerID":"ollama-cloud","variant":"max"},"content":[{"type":"reasoning","text":"redacted"}]}`)
 	insertMessage(t, db, "failed", "session", "assistant", 3,
 		`{"time":{"completed":3},"model":{"id":"model"},"tokens":{"input":0,"cache":{"read":0,"write":0}}}`)
 	insertMessage(t, db, "malformed", "session", "assistant", 4, `{`)
@@ -358,17 +392,6 @@ func TestOpenDirectoryIsTransient(t *testing.T) {
 
 	if _, err := Open(context.Background(), t.TempDir()); err == nil || errors.Is(err, ErrStoreNotReady) {
 		t.Fatalf("Open() error = %v, want transient database failure", err)
-	}
-}
-
-func TestDatabasePathUsesExplicitOrXDGDataHome(t *testing.T) {
-	if got, err := databasePath("/explicit/opencode2.db"); err != nil || got != "/explicit/opencode2.db" {
-		t.Fatalf("databasePath(explicit) = %q, %v", got, err)
-	}
-	t.Setenv("XDG_DATA_HOME", "/xdg-data")
-	got, err := databasePath("")
-	if err != nil || got != filepath.Join("/xdg-data", "opencode", "opencode2.db") {
-		t.Fatalf("databasePath(XDG) = %q, %v", got, err)
 	}
 }
 

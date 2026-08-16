@@ -91,7 +91,9 @@ does not mean zero. Examples include:
 - an agent restarted in place and its new session has not completed a turn;
 - an agent kind whose provider is marked `In progress` in the
   [coverage table](#agent-kinds-and-provider-coverage);
-- an untitled `opencode2` session, whose pane cannot be correlated safely;
+- an untitled `opencode` session, whose pane cannot be correlated safely;
+- an `opencode` pane whose terminal title has been turned off — see
+  [when an opencode row never fills in](#when-an-opencode-row-never-fills-in);
 - a pane whose agent session cannot be resolved; or
 - the interval immediately after compaction, before a new readable occupancy
   exists.
@@ -112,15 +114,43 @@ provider guesses by newest-file or newest-session recency.
 | Status | Agent kind | Store and occupancy | Session correlation |
 | --- | --- | --- | --- |
 | Implemented | `claude` | `~/.claude/projects/<dir>/<session>.jsonl`; `input_tokens + cache_read_input_tokens + cache_creation_input_tokens` | Herdr's reported `agent_session`, then an exact process-registry match, then a sole transcript under `foreground_cwd` |
-| In progress | `codex` | Planned: `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`; `total_tokens`, falling back to `input_tokens` | Planned: Herdr's reported `agent_session`, then `foreground_cwd` |
-| In progress | `opencode` (v1) | Planned: `~/.local/share/opencode/opencode.db`, `session` plus `message`; latest assistant `input + cache.read + cache.write` | Not shipped yet; its provider ticket must define a positive correlation method. No recency fallback. |
-| In progress | `opencode2` | Planned: `~/.local/share/opencode/opencode2.db`, `session_v2` plus `session_message`; latest assistant `input + cache.read + cache.write` | Planned: pane directory plus the `OC | <session title>` terminal-title prefix; untitled sessions remain blank |
+| Implemented | `codex` | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`; `total_tokens`, falling back to `input_tokens` | Herdr's reported `agent_session`, then the sole active TUI main thread under `foreground_cwd` |
+| Implemented | `opencode` (v1) | `~/.local/share/opencode/opencode.db`, `session` plus `message`; newest completed assistant `input + cache.read + cache.write` | Herdr's reported `agent_session`, then the pane directory plus its `OC \| <session title>` terminal title |
+| Implemented | `opencode2` | `~/.local/share/opencode/opencode2.db`, `session_v2` plus `session_message`; newest completed assistant `input + cache.read + cache.write` | Pane directory plus its `OC \| <session title>` terminal title; untitled sessions remain blank |
 
-The planned opencode providers use separate stores. Their provider tickets
-require read-only access; the v1 provider will not read legacy JSON message
-files or the v1 database's unrelated `session_v2` tables. Herdr folds `opencode2`
-into the `opencode` agent kind, so the planned dispatch also checks the
-foreground process name to choose the right provider.
+The two opencode providers use separate stores, both opened read-only; the v1
+provider does not read legacy JSON message files or the v1 database's unrelated
+`session_v2` tables. Herdr folds `opencode2` into the `opencode` agent kind, so
+dispatch also checks the foreground process name to choose the right provider.
+
+### When an opencode row never fills in
+
+Neither opencode version reports a session id to Herdr, so both correlate a
+pane to a session through the terminal title its TUI sets: `OC | <session
+title>`. That title is the only signal available, which makes three things
+worth knowing before concluding the plugin is broken.
+
+**`OPENCODE_DISABLE_TERMINAL_TITLE` turns correlation off entirely.** opencode
+v1 reads it and, when it is set to `true` or `1`, never writes a terminal
+title. With no title there is nothing to match, so every opencode row stays
+blank for as long as the variable is set — permanently, and with no other
+fallback to fall back to. The plugin cannot see the agent's environment, but it
+can see its own: when it is set for the plugin too, which is the usual case
+when it is exported from a shell profile, the measurement record names the
+variable as the reason. opencode2 `0.0.0-next-17444` does not read this
+variable, so its titles survive it.
+
+**The TUI's own toggle does the same thing invisibly.** Both versions have a
+`Disable terminal title` command in their palette, remembered across restarts.
+Nothing in the environment records that it was used, so a blank opencode row
+with no explanation in the plugin's output is worth checking there.
+
+**Plugin routes look like sessions.** A plugin route sets `OC | <plugin>` using
+the same format, and it names no session, so a pane sitting on one is blank by
+design. The plugin recognises the case when the title is longer than a session
+title can be — session titles over 40 characters are shortened to 37 plus an
+ellipsis, and plugin titles are never shortened — and says so rather than
+reporting a session it could not find.
 
 ## Query the tokens
 
