@@ -114,9 +114,9 @@ provider guesses by newest-file or newest-session recency.
 | Status | Agent kind | Store and occupancy | Session correlation |
 | --- | --- | --- | --- |
 | Implemented | `claude` | `~/.claude/projects/<dir>/<session>.jsonl`; `input_tokens + cache_read_input_tokens + cache_creation_input_tokens` | Herdr's reported `agent_session`, then an exact process-registry match, then a sole transcript under `foreground_cwd` |
-| In progress | `codex` | Planned: `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`; `total_tokens`, falling back to `input_tokens` | Planned: Herdr's reported `agent_session`, then `foreground_cwd` |
-| In progress | `opencode` (v1) | Planned: `~/.local/share/opencode/opencode.db`, `session` plus `message`; latest assistant `input + cache.read + cache.write` | Not shipped yet; its provider ticket must define a positive correlation method. No recency fallback. |
-| In progress | `opencode2` | Planned: `~/.local/share/opencode/opencode2.db`, `session_v2` plus `session_message`; latest assistant `input + cache.read + cache.write` | Planned: pane directory plus the `OC | <session title>` terminal-title prefix; untitled sessions remain blank |
+| Implemented | `codex` | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`; `total_tokens`, falling back to `input_tokens` | Herdr's reported `agent_session`, then the sole active TUI main thread under `foreground_cwd` |
+| Implemented | `opencode` (v1) | `~/.local/share/opencode/opencode.db`, `session` plus `message`; newest completed assistant `input + cache.read + cache.write` | Herdr's reported `agent_session`, then the pane directory plus its `OC \| <session title>` terminal title |
+| Implemented | `opencode2` | `~/.local/share/opencode/opencode2.db`, `session_v2` plus `session_message`; newest completed assistant `input + cache.read + cache.write` | Pane directory plus its `OC \| <session title>` terminal title; untitled sessions remain blank |
 
 The two opencode providers use separate stores, both opened read-only; the v1
 provider does not read legacy JSON message files or the v1 database's unrelated
