@@ -2,6 +2,7 @@ package opencodeshared
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"errors"
 	"os"
@@ -93,18 +94,68 @@ func TestOpenReadOnlySeparatesLifecycleStatesFromReadFailures(t *testing.T) {
 	}
 }
 
-func TestOpenReadOnlyRefusesToWrite(t *testing.T) {
+// These stores belong to running agents, so the read-only guarantee is the one
+// property of this package that cannot be allowed to regress quietly. Two DSN
+// parameters carry it and they are not equals: mode=ro is what refuses the
+// writes, and query_only(1) is a second latch that a connection can turn off
+// by itself. Both are pinned, and the difference between them is pinned too.
+func TestOpenReadOnlyRefusesEveryWrite(t *testing.T) {
 	t.Parallel()
 
 	path := fixture(t, `CREATE TABLE session (id TEXT PRIMARY KEY)`, `CREATE TABLE message (id TEXT PRIMARY KEY)`)
+	before := checksum(t, path)
 	database, err := OpenReadOnly(context.Background(), path, "session", "message")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer database.Close()
-	if _, err := database.ExecContext(context.Background(), `INSERT INTO session (id) VALUES ('write')`); err == nil {
-		t.Fatal("a store opened for reading accepted a write into a live agent's database")
+	ctx := context.Background()
+
+	var queryOnly int
+	if err := database.QueryRowContext(ctx, `PRAGMA query_only`).Scan(&queryOnly); err != nil {
+		t.Fatalf("read query_only: %v", err)
 	}
+	if queryOnly != 1 {
+		t.Fatalf("query_only = %d on a freshly opened store, want 1", queryOnly)
+	}
+
+	writes := []string{
+		`INSERT INTO session (id) VALUES ('write')`,
+		`UPDATE session SET id = 'write'`,
+		`DELETE FROM session`,
+		`CREATE TABLE injected (id TEXT)`,
+		`DROP TABLE session`,
+	}
+	for _, write := range writes {
+		if _, err := database.ExecContext(ctx, write); err == nil {
+			t.Fatalf("a store opened for reading accepted %q against a live agent's database", write)
+		}
+	}
+
+	// query_only is advisory: the connection can clear it. Every write above
+	// must still be refused afterwards, which is what proves mode=ro is the half
+	// carrying the guarantee rather than a belt beside a brace.
+	if _, err := database.ExecContext(ctx, `PRAGMA query_only = 0`); err != nil {
+		t.Fatalf("clearing query_only: %v", err)
+	}
+	for _, write := range writes {
+		if _, err := database.ExecContext(ctx, write); err == nil {
+			t.Fatalf("with query_only cleared, %q was accepted; mode=ro is no longer refusing writes", write)
+		}
+	}
+
+	if after := checksum(t, path); after != before {
+		t.Fatal("the database file changed while it was open for reading")
+	}
+}
+
+func checksum(t *testing.T, path string) [sha256.Size]byte {
+	t.Helper()
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sha256.Sum256(contents)
 }
 
 func TestDataPathFollowsOpenCodesOwnLayout(t *testing.T) {

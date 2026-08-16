@@ -52,16 +52,31 @@ func TestParseTitleRecognisesEveryForm(t *testing.T) {
 			wantErr:       ErrPluginTitle,
 		},
 		{
-			name:          "session title at the truncation threshold is not a plugin",
-			terminalTitle: "OC | " + strings.Repeat("x", maxSessionTitle),
-			want:          Title{Text: strings.Repeat("x", maxSessionTitle)},
+			// The boundary, written out rather than derived from the constant
+			// under test, because a test that reads maxSessionTitle moves with any
+			// change to it and stops being a boundary at all. The TUI shortens a
+			// title only when it is longer than 40, so 40 arrives whole and is a
+			// session title; 29 root sessions across the two live stores are
+			// exactly this length, and reading them as plugin routes would blank
+			// every one of them.
+			name:          "session title of exactly forty characters is not a plugin",
+			terminalTitle: "OC | " + strings.Repeat("x", 40),
+			want:          Title{Text: strings.Repeat("x", 40)},
+		},
+		{
+			// One character past it, with no ellipsis, cannot have come from the
+			// TUI's session path at all.
+			name:          "unshortened title of forty-one characters is a plugin",
+			terminalTitle: "OC | " + strings.Repeat("x", 41),
+			wantErr:       ErrPluginTitle,
 		},
 		{
 			// A title counted in bytes rather than runes would be dismissed as a
-			// plugin's and the pane would blank with the wrong explanation.
+			// plugin's and the pane would blank with the wrong explanation. 40
+			// two-byte runes are 80 bytes, twice the limit.
 			name:          "long multi-byte session title stays a session title",
-			terminalTitle: "OC | " + strings.Repeat("é", 39),
-			want:          Title{Text: strings.Repeat("é", 39)},
+			terminalTitle: "OC | " + strings.Repeat("é", 40),
+			want:          Title{Text: strings.Repeat("é", 40)},
 		},
 		{name: "another program's title", terminalTitle: "zsh", wantErr: ErrTitleUnavailable},
 		{name: "no title at all", terminalTitle: "", wantErr: ErrTitleUnavailable},
