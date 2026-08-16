@@ -79,6 +79,16 @@ func TestReadOccupancy(t *testing.T) {
 			wantErr: ErrJustCompacted,
 		},
 		{
+			// Line 396 alone, which is the file as it stood before the compaction
+			// marker was written. Both numbers are present and they differ, so
+			// this is what pins the preference: total_tokens, not input_tokens.
+			// Every rollout writes both, so nothing else in the suite distinguishes
+			// the two orders.
+			name:    "prefers total tokens over input tokens",
+			fixture: "prefers-total.jsonl",
+			want:    245_715,
+		},
+		{
 			// The whole of
 			// ~/.codex/sessions/2026/01/29/rollout-2026-01-29T11-42-29-019c0958-ef52-7a83-b189-7f34e6ae0841.jsonl,
 			// a four-record rollout whose session never took a turn: session_meta
