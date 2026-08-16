@@ -160,7 +160,7 @@ func TestReadOccupancyUsesLatestAssistantPayload(t *testing.T) {
 	}
 }
 
-func TestReadOccupancyUsesPreviousCompletedUsageDuringInFlightTurn(t *testing.T) {
+func TestReadOccupancyWalksBackAcrossUnusableAssistantsWithoutCompaction(t *testing.T) {
 	t.Parallel()
 
 	path := newTestDatabase(t)
@@ -168,8 +168,11 @@ func TestReadOccupancyUsesPreviousCompletedUsageDuringInFlightTurn(t *testing.T)
 	insertSession(t, db, testSession{ID: "session", Directory: "/work", Title: "No occupancy yet"})
 	insertMessage(t, db, "old", "session", "assistant", 1,
 		`{"time":{"completed":1},"model":{"id":"model"},"tokens":{"input":129000,"cache":{"read":0,"write":0}}}`)
-	insertMessage(t, db, "current", "session", "assistant", 2,
+	insertMessage(t, db, "in-flight", "session", "assistant", 2,
 		`{"time":{"created":2},"model":{"id":"model"},"content":[]}`)
+	insertMessage(t, db, "failed", "session", "assistant", 3,
+		`{"time":{"completed":3},"model":{"id":"model"},"tokens":{"input":0,"cache":{"read":0,"write":0}}}`)
+	insertMessage(t, db, "malformed", "session", "assistant", 4, `{`)
 	db.Close()
 
 	store := openStore(t, path)
@@ -183,7 +186,7 @@ func TestReadOccupancyUsesPreviousCompletedUsageDuringInFlightTurn(t *testing.T)
 	}
 }
 
-func TestReadOccupancyDoesNotWalkBackAcrossCompaction(t *testing.T) {
+func TestReadOccupancyStopsAtBuriedCompaction(t *testing.T) {
 	t.Parallel()
 
 	for _, tt := range []struct {
@@ -192,7 +195,6 @@ func TestReadOccupancyDoesNotWalkBackAcrossCompaction(t *testing.T) {
 	}{
 		{status: "running", wantErr: ErrNoOccupancy},
 		{status: "completed", wantErr: ErrJustCompacted},
-		{status: "failed", wantErr: ErrNoOccupancy},
 	} {
 		t.Run(tt.status, func(t *testing.T) {
 			t.Parallel()
@@ -203,8 +205,11 @@ func TestReadOccupancyDoesNotWalkBackAcrossCompaction(t *testing.T) {
 				`{"time":{"completed":1},"model":{"id":"model"},"tokens":{"input":225000,"cache":{"read":9000,"write":0}}}`)
 			insertMessage(t, db, "compaction", "session", "compaction", 2,
 				fmt.Sprintf(`{"status":%q,"reason":"auto","summary":"summary","recent":"recent"}`, tt.status))
-			insertMessage(t, db, "in-flight", "session", "assistant", 3,
-				`{"time":{"created":3},"model":{"id":"model"},"content":[]}`)
+			insertMessage(t, db, "malformed", "session", "assistant", 3, `{`)
+			insertMessage(t, db, "failed", "session", "assistant", 4,
+				`{"time":{"completed":4},"model":{"id":"model"},"tokens":{"input":0,"cache":{"read":0,"write":0}}}`)
+			insertMessage(t, db, "in-flight", "session", "assistant", 5,
+				`{"time":{"created":5},"model":{"id":"model"},"content":[]}`)
 			db.Close()
 
 			store := openStore(t, path)
@@ -213,6 +218,52 @@ func TestReadOccupancyDoesNotWalkBackAcrossCompaction(t *testing.T) {
 				t.Fatalf("ReadOccupancy() error = %v, want %v instead of pre-compaction occupancy", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestReadOccupancyWalksBackAcrossFailedCompaction(t *testing.T) {
+	t.Parallel()
+
+	path := newTestDatabase(t)
+	db := openFixtureDatabase(t, path)
+	insertSession(t, db, testSession{ID: "session", Directory: "/work", Title: "Failed compaction"})
+	insertMessage(t, db, "current", "session", "assistant", 1,
+		`{"time":{"completed":1},"model":{"id":"model"},"tokens":{"input":120000,"cache":{"read":9000,"write":0}}}`)
+	insertMessage(t, db, "failed-compaction", "session", "compaction", 2,
+		`{"status":"failed","reason":"auto","error":{"message":"context deadline exceeded"}}`)
+	insertMessage(t, db, "in-flight", "session", "assistant", 3,
+		`{"time":{"created":3},"model":{"id":"model"},"content":[]}`)
+	db.Close()
+
+	store := openStore(t, path)
+	defer store.Close()
+	got, err := store.ReadOccupancy(context.Background(), "session")
+	if err != nil {
+		t.Fatalf("ReadOccupancy() error = %v", err)
+	}
+	if got.Occupancy != 129_000 {
+		t.Fatalf("occupancy = %d, want unchanged pre-attempt occupancy", got.Occupancy)
+	}
+}
+
+func TestReadOccupancyBoundsWalkBack(t *testing.T) {
+	t.Parallel()
+
+	path := newTestDatabase(t)
+	db := openFixtureDatabase(t, path)
+	insertSession(t, db, testSession{ID: "session", Directory: "/work", Title: "Bounded"})
+	insertMessage(t, db, "too-old", "session", "assistant", 1,
+		`{"time":{"completed":1},"model":{"id":"model"},"tokens":{"input":129000,"cache":{"read":0,"write":0}}}`)
+	for seq := int64(2); seq <= 257; seq++ {
+		insertMessage(t, db, fmt.Sprintf("in-flight-%d", seq), "session", "assistant", seq,
+			fmt.Sprintf(`{"time":{"created":%d},"model":{"id":"model"}}`, seq))
+	}
+	db.Close()
+
+	store := openStore(t, path)
+	defer store.Close()
+	if _, err := store.ReadOccupancy(context.Background(), "session"); !errors.Is(err, ErrNoOccupancy) {
+		t.Fatalf("ReadOccupancy() error = %v, want bounded scan to return ErrNoOccupancy", err)
 	}
 }
 

@@ -18,6 +18,7 @@ import (
 const (
 	terminalTitlePrefix = "OC | "
 	untitledWindowTitle = "OpenCode"
+	occupancyScanLimit  = 256
 )
 
 type ResolutionMode string
@@ -162,7 +163,8 @@ func (s *Store) Resolve(ctx context.Context, directory, terminalTitle string) (R
 func (s *Store) ReadOccupancy(ctx context.Context, sessionID string) (Reading, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT type, data FROM session_message
 		WHERE session_id = ? AND type IN ('assistant', 'compaction')
-		ORDER BY seq DESC`, sessionID)
+		ORDER BY seq DESC
+		LIMIT ?`, sessionID, occupancyScanLimit)
 	if err != nil {
 		return Reading{}, fmt.Errorf("read opencode2 session messages: %w", err)
 	}
@@ -176,13 +178,16 @@ func (s *Store) ReadOccupancy(ctx context.Context, sessionID string) (Reading, e
 		}
 		if messageType == "compaction" {
 			// In-flight assistant rows are safe to cross because prior usage stays
-			// a lower bound. A compaction row is always a hard boundary: even when
-			// it is not completed, crossing it risks presenting pre-boundary usage.
+			// a lower bound. A completed or running compaction is a hard boundary;
+			// a failed attempt changed no context, so its prior usage remains valid.
 			var compaction struct {
 				Status string `json:"status"`
 			}
 			if json.Unmarshal(data, &compaction) == nil && compaction.Status == "completed" {
 				return Reading{}, ErrJustCompacted
+			}
+			if compaction.Status == "failed" {
+				continue
 			}
 			return Reading{}, ErrNoOccupancy
 		}
