@@ -147,7 +147,6 @@ func (s *Store) ReadOccupancy(ctx context.Context, sessionID string) (int64, err
 	}
 	defer rows.Close()
 
-	newest := true
 	for rows.Next() {
 		var data []byte
 		if err := rows.Scan(&data); err != nil {
@@ -155,13 +154,11 @@ func (s *Store) ReadOccupancy(ctx context.Context, sessionID string) (int64, err
 		}
 		var message assistantMessage
 		if err := json.Unmarshal(data, &message); err != nil {
-			newest = false
 			continue
 		}
-		if newest && isCompactionSummary(message.Summary) {
+		if isCompactionSummary(message.Summary) {
 			return 0, ErrJustCompacted
 		}
-		newest = false
 		if message.Role != "assistant" {
 			continue
 		}
