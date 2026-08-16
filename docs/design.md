@@ -182,7 +182,7 @@ share one repository, 13 another. See
 Herdr's `agent` field is the primary provider signal for `claude` and `codex`.
 `opencode2` panes additionally need distinguishing from `opencode` ones because
 Herdr folds the kind. For an `opencode` agent, inspect every foreground
-process's exact `argv0` basename and choose `opencode2` if both executables are
+process's exact `argv0` basename and choose `opencode2` if any such process is
 present; process-list order is not meaningful.
 
 ### Reporting

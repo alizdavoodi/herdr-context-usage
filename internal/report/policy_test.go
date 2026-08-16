@@ -1,31 +1,34 @@
 package report
 
 import (
+	"errors"
+	"fmt"
+	"io/fs"
+	"syscall"
 	"testing"
-
-	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 )
 
-func TestShouldWrite(t *testing.T) {
+func TestSupersedesCurrentValue(t *testing.T) {
 	t.Parallel()
 
+	errUnknown := errors.New("unknown occupancy")
 	tests := []struct {
-		name     string
-		provider provider.Kind
-		value    int64
-		want     bool
+		name string
+		err  error
+		want bool
 	}{
-		{name: "positive measurement", provider: provider.Claude, value: 92_481, want: true},
-		{name: "synthetic Claude zero is rejected defensively", provider: provider.Claude, value: 0, want: false},
-		{name: "Codex zero remains representable", provider: provider.Codex, value: 0, want: true},
-		{name: "OpenCode zero remains representable", provider: provider.OpenCode, value: 0, want: true},
+		{name: "missing resolved resource", err: fmt.Errorf("open transcript: %w", fs.ErrNotExist), want: true},
+		{name: "provider semantic state", err: errUnknown, want: true},
+		{name: "wrapped provider semantic state", err: fmt.Errorf("read transcript: %w", errUnknown), want: true},
+		{name: "permission failure", err: fs.ErrPermission, want: false},
+		{name: "I/O failure", err: syscall.EIO, want: false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := ShouldWrite(tt.provider, tt.value); got != tt.want {
-				t.Fatalf("ShouldWrite() = %v, want %v", got, tt.want)
+			if got := SupersedesCurrentValue(tt.err, errUnknown); got != tt.want {
+				t.Fatalf("SupersedesCurrentValue() = %v, want %v", got, tt.want)
 			}
 		})
 	}
