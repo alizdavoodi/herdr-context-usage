@@ -76,8 +76,12 @@ func ReadOccupancy(path string) (int64, error) {
 		}
 		occupancy := usage.InputTokens + usage.CacheReadTokens + usage.CacheCreationTokens
 		if occupancy == 0 {
-			// Claude alone uses all-zero usage for failed turns. Other providers may
-			// legitimately report zero and must keep it representable.
+			// An all-zero usage row is a failed turn, not an empty window. Claude
+			// writes one on rate-limit and billing errors; opencode v1 writes one on
+			// an aborted turn. No store examined has produced a genuine zero for a
+			// live session, so treat it as no occupancy rather than as a value.
+			// Representing unknown as null rather than zero is a separate rule and
+			// still holds — see docs/design.md.
 			continue
 		}
 		return occupancy, nil
