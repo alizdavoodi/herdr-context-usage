@@ -25,6 +25,7 @@ type Agent struct {
 	AgentStatus   string            `json:"agent_status"`
 	ForegroundCWD string            `json:"foreground_cwd"`
 	PaneID        string            `json:"pane_id"`
+	TerminalTitle string            `json:"terminal_title"`
 	Tokens        map[string]string `json:"tokens"`
 	AgentSession  *AgentSession     `json:"agent_session"`
 }

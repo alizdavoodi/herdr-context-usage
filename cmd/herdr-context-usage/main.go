@@ -20,6 +20,7 @@ func main() {
 	config := app.Config{
 		ClaudeHome: os.Getenv("CLAUDE_CONFIG_DIR"),
 		CodexHome:  os.Getenv("CODEX_HOME"),
+		OpenCodeDB: os.Getenv("OPENCODE_DB"),
 	}
 	if err := app.Refresh(ctx, client, os.Getenv("HERDR_PANE_ID"), os.Stdout, config); err != nil {
 		fmt.Fprintf(os.Stderr, "herdr-context-usage: %v\n", err)

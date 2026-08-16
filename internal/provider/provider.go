@@ -77,5 +77,5 @@ func processKind(process Process) Kind {
 }
 
 func (k Kind) Implemented() bool {
-	return k == Claude || k == Codex
+	return k == Claude || k == Codex || k == OpenCode
 }
