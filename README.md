@@ -1,7 +1,8 @@
 # Herdr Context Occupancy
 
 Herdr Context Occupancy reports the **context occupancy** of the main thread in
-each supported coding-agent pane. It writes two Herdr metadata tokens:
+each coding-agent pane whose provider is implemented. It writes two Herdr
+metadata tokens:
 
 - `ctx`: a compact display value such as `92k`.
 - `ctx_raw`: the exact integer, such as `92481`, for machines and agents.
@@ -14,22 +15,21 @@ Requirements:
 - Linux or macOS.
 - Go 1.22 or newer available to Herdr's plugin build environment.
 
-Install the plugin from GitHub:
-
-```bash
-herdr plugin install -y alizdavoodi/herdr-context-usage
-```
-
-For a local checkout, link it instead:
+The repository is not published at a resolvable GitHub location yet. For a
+local checkout, link it with:
 
 ```bash
 herdr plugin link --enabled /path/to/herdr-context-usage
 ```
 
-Herdr builds the plugin from `herdr-plugin.toml` with `CGO_ENABLED=0`. If that
-build fails, the install stops with the build error; fix the Go or source error
-and run the install again. The binary is not put on `$PATH`: Herdr invokes it
-from the plugin root with the relative command `./herdr-context-usage`.
+When a published repository is available, the corresponding Herdr command is
+`herdr plugin install -y OWNER/REPO[/SUBDIR]`; do not use the project name above
+as a GitHub target until one exists.
+
+The manifest's `[[build]]` command builds the plugin with `CGO_ENABLED=0`. If
+that build fails, the install or link stops with the build error; fix the Go or
+source error and run it again. The binary is not put on `$PATH`: Herdr invokes
+it from the plugin root with the relative command `./herdr-context-usage`.
 
 ## Add the sidebar row
 
@@ -54,10 +54,11 @@ after saving:
 herdr server reload-config
 ```
 
-Focus a supported agent or let it complete a turn. The plugin refreshes on
-agent status and focus events, and the `[[startup]]` hook restores tokens after
-a Herdr server restart. Sidebar rows are not visible in Herdr's collapsed or
-mobile layouts.
+Focus a Claude agent or let it complete a turn. Claude is the implemented
+provider today. The plugin refreshes on
+`pane.agent_status_changed`, `pane.focused`, `pane.exited`, and `pane.closed`,
+and the `[[startup]]` hook restores tokens after a Herdr server restart.
+Sidebar rows are not visible in Herdr's collapsed or mobile layouts.
 
 ## What the number means
 
@@ -70,9 +71,10 @@ sub-agent sessions are excluded.
 The sidebar shows an absolute count, not a percentage. A percentage requires a
 model-to-window lookup table that silently becomes wrong as models change, and
 it tends to be wrong in the confident direction. See
-[ADR-0001](docs/adr/0001-absolute-tokens-not-percentage.md). Herdr's model token
-can be placed in another sidebar slot, so a row can provide context such as
-`92k · opus` without this plugin maintaining a window-limit table.
+[ADR-0001](docs/adr/0001-absolute-tokens-not-percentage.md). Herdr 0.8.0 has no
+built-in model token, and this plugin writes only `ctx` and `ctx_raw`, so there
+is no supported `92k · opus` pairing in the sidebar today. The count must be
+interpreted without that host-provided disambiguation.
 
 Styling is static per sidebar slot, so values cannot change colour by magnitude;
 there is no red-above-80% mode. The displayed value is intentionally compact;
@@ -84,6 +86,8 @@ A blank row means the plugin has no current occupancy it can stand behind. It
 does not mean zero. Examples include:
 
 - an agent restarted in place and its new session has not completed a turn;
+- an agent kind whose provider is not implemented yet; on this branch that is
+  `codex`, `opencode`, or `opencode2`;
 - an untitled `opencode2` session, whose pane cannot be correlated safely;
 - a pane whose agent session cannot be resolved; or
 - the interval immediately after compaction, before a new readable occupancy
@@ -95,23 +99,26 @@ may still describe the current session. This distinction prevents a previous
 session or pre-compaction count from being presented as current while avoiding
 unnecessary blanks during a temporary read failure.
 
-## Supported agent kinds
+## Agent kinds and provider coverage
 
-The provider reads each agent's own store and correlates the pane to a specific
-agent session. It never guesses by newest-file or newest-session recency.
+Only the Claude provider is implemented on this branch. For an agent kind whose
+provider is not implemented, the plugin clears `ctx` and `ctx_raw`, so its row
+stays blank rather than looking stale. The remaining rows are the agreed
+provider plan and can be marked implemented as their tickets land. No provider
+guesses by newest-file or newest-session recency.
 
-| Agent kind | Store and occupancy | Session correlation |
-| --- | --- | --- |
-| `claude` | `~/.claude/projects/<dir>/<session>.jsonl`; `input_tokens + cache_read_input_tokens + cache_creation_input_tokens` | Herdr's reported `agent_session`, then an exact process-registry match, then a sole transcript under `foreground_cwd` |
-| `codex` | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`; `total_tokens`, falling back to `input_tokens` | Herdr's reported `agent_session`, then `foreground_cwd` |
-| `opencode` (v1) | `~/.local/share/opencode/opencode.db`, `session` plus `message`; latest assistant `input + cache.read + cache.write` | The v1 provider's positive session correlation; ambiguous directories remain blank |
-| `opencode2` | `~/.local/share/opencode/opencode2.db`, `session_v2` plus `session_message`; latest assistant `input + cache.read + cache.write` | Pane directory plus the `OC | <session title>` terminal-title prefix; untitled sessions remain blank |
+| Status | Agent kind | Store and occupancy | Session correlation |
+| --- | --- | --- | --- |
+| Implemented | `claude` | `~/.claude/projects/<dir>/<session>.jsonl`; `input_tokens + cache_read_input_tokens + cache_creation_input_tokens` | Herdr's reported `agent_session`, then an exact process-registry match, then a sole transcript under `foreground_cwd` |
+| In progress | `codex` | Planned: `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`; `total_tokens`, falling back to `input_tokens` | Planned: Herdr's reported `agent_session`, then `foreground_cwd` |
+| In progress | `opencode` (v1) | Planned: `~/.local/share/opencode/opencode.db`, `session` plus `message`; latest assistant `input + cache.read + cache.write` | Not shipped yet; its provider ticket must define a positive correlation method. No recency fallback. |
+| In progress | `opencode2` | Planned: `~/.local/share/opencode/opencode2.db`, `session_v2` plus `session_message`; latest assistant `input + cache.read + cache.write` | Planned: pane directory plus the `OC | <session title>` terminal-title prefix; untitled sessions remain blank |
 
-The two opencode stores are separate. Both are read-only, and the v1 provider
-does not read legacy JSON message files or the v1 database's unrelated
-`session_v2` tables. Herdr folds `opencode2` into the `opencode` agent kind, so
-the plugin also checks the foreground process name to choose the right
-provider.
+The planned opencode providers use separate stores. Their provider tickets
+require read-only access; the v1 provider will not read legacy JSON message
+files or the v1 database's unrelated `session_v2` tables. Herdr folds `opencode2`
+into the `opencode` agent kind, so the planned dispatch also checks the
+foreground process name to choose the right provider.
 
 ## Query the tokens
 
