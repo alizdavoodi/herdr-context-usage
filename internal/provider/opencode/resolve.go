@@ -9,6 +9,8 @@ type ResolutionMode string
 
 const ResolutionAgentSession ResolutionMode = "agent_session"
 
+const ResolutionTerminalTitle ResolutionMode = "terminal_title"
+
 var ErrNoSession = errors.New("opencode agent session cannot be resolved")
 
 type AgentSession struct {

@@ -427,6 +427,96 @@ func TestRefreshReportsOpenCodeV1Occupancy(t *testing.T) {
 	}
 }
 
+func TestRefreshReportsOpenCodeV1OccupancyResolvedFromTerminalTitle(t *testing.T) {
+	t.Parallel()
+
+	dataDir := t.TempDir()
+	databasePath := filepath.Join(dataDir, "opencode.db")
+	createOpenCodeDatabase(t, databasePath, "ses_current", `{"role":"assistant","tokens":{"input":840,"cache":{"read":90000,"write":1641}}}`)
+	database, err := sql.Open("sqlite", databasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`UPDATE session SET directory = ?, title = ? WHERE id = ?`, "/work/acme", "Probe test response", "ses_current"); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	var log bytes.Buffer
+	fake := &fakeHerdr{
+		agents: []herdr.Agent{{
+			Agent:         "opencode",
+			PaneID:        "w1:p1",
+			ForegroundCWD: "/work/acme",
+			TerminalTitle: "OC | Probe test response",
+		}},
+		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "opencode"}}},
+		reports:   make(map[string][2]string),
+	}
+
+	if err := Refresh(context.Background(), fake, "", &log, Config{OpenCodeDataDir: dataDir}); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+	if got := fake.reports["w1:p1"]; got != [2]string{"92k", "92481"} {
+		t.Fatalf("report = %v, want opencode v1 occupancy", got)
+	}
+	if got := log.String(); !strings.Contains(got, `"resolution_mode":"terminal_title"`) {
+		t.Fatalf("diagnostic = %s, want terminal_title resolution", got)
+	}
+}
+
+func TestRefreshOpenCodeClearsValueWhenStoreIsMissing(t *testing.T) {
+	t.Parallel()
+
+	var log bytes.Buffer
+	fake := &fakeHerdr{
+		agents: []herdr.Agent{{
+			Agent:        "opencode",
+			PaneID:       "w1:p1",
+			Tokens:       map[string]string{"ctx_raw": "92481"},
+			AgentSession: &herdr.AgentSession{Kind: "id", Value: "ses_current"},
+		}},
+		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "opencode"}}},
+		reports:   make(map[string][2]string),
+	}
+
+	if err := Refresh(context.Background(), fake, "", &log, Config{OpenCodeDataDir: t.TempDir()}); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+	if !slices.Equal(fake.clears, []string{"w1:p1"}) {
+		t.Fatalf("clears = %v, want missing store to clear stale occupancy", fake.clears)
+	}
+	if !strings.Contains(log.String(), `"resolution_mode":"agent_session"`) {
+		t.Fatalf("diagnostic = %s, want known agent_session mode", log.String())
+	}
+}
+
+func TestRefreshOpenCodeClearsValueForZeroOccupancy(t *testing.T) {
+	t.Parallel()
+
+	dataDir := t.TempDir()
+	createOpenCodeDatabase(t, filepath.Join(dataDir, "opencode.db"), "ses_aborted", `{"role":"assistant","tokens":{"input":0,"cache":{"read":0,"write":0}}}`)
+	fake := &fakeHerdr{
+		agents: []herdr.Agent{{
+			Agent:        "opencode",
+			PaneID:       "w1:p1",
+			Tokens:       map[string]string{"ctx_raw": "92481"},
+			AgentSession: &herdr.AgentSession{Kind: "id", Value: "ses_aborted"},
+		}},
+		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "opencode"}}},
+		reports:   make(map[string][2]string),
+	}
+
+	if err := Refresh(context.Background(), fake, "", nil, Config{OpenCodeDataDir: dataDir}); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+	if !slices.Equal(fake.clears, []string{"w1:p1"}) || len(fake.reports) != 0 {
+		t.Fatalf("clears = %v, reports = %v; want zero occupancy to clear stale metadata", fake.clears, fake.reports)
+	}
+}
+
 func TestRefreshOpenCodeClearsWhenSessionCannotBeResolved(t *testing.T) {
 	t.Parallel()
 
@@ -483,7 +573,7 @@ func createOpenCodeDatabase(t *testing.T, path, sessionID, message string) {
 	}
 	defer database.Close()
 	for _, query := range []string{
-		`CREATE TABLE session (id TEXT PRIMARY KEY)`,
+		`CREATE TABLE session (id TEXT PRIMARY KEY, directory TEXT, title TEXT)`,
 		`CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, time_created INTEGER NOT NULL, data TEXT NOT NULL)`,
 	} {
 		if _, err := database.Exec(query); err != nil {
