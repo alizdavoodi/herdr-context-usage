@@ -48,9 +48,12 @@ func TestImplemented(t *testing.T) {
 	if !Claude.Implemented() {
 		t.Fatal("Claude provider should be implemented")
 	}
-	for _, kind := range []Kind{Codex, OpenCode, OpenCode2, None} {
+	if !OpenCode.Implemented() {
+		t.Fatal("opencode v1 provider should be implemented")
+	}
+	for _, kind := range []Kind{Codex, OpenCode2, None} {
 		if kind.Implemented() {
-			t.Fatalf("%q provider should not be implemented in the walking skeleton", kind)
+			t.Fatalf("%q provider should not be implemented", kind)
 		}
 	}
 }
