@@ -12,6 +12,7 @@ import (
 
 var (
 	ErrNoOccupancy   = errors.New("codex rollout has no current context occupancy")
+	ErrFailedTurn    = errors.New("codex turn recorded no context occupancy")
 	ErrJustCompacted = errors.New("codex agent session is just-compacted")
 )
 
@@ -65,6 +66,8 @@ func ReadOccupancy(path string) (int64, error) {
 		return 0, ErrJustCompacted
 	}
 	if latest == nil {
+		// The session has produced no reading at all, so whatever is displayed
+		// belongs to a session this pane has left.
 		return 0, ErrNoOccupancy
 	}
 	if latest.TotalTokens != nil && *latest.TotalTokens > 0 {
@@ -73,7 +76,14 @@ func ReadOccupancy(path string) (int64, error) {
 	if latest.InputTokens != nil && *latest.InputTokens > 0 {
 		return *latest.InputTokens, nil
 	}
-	return 0, ErrNoOccupancy
+	// An all-zero usage row is a turn that recorded nothing, not an empty
+	// window. The other three providers walk back to the previous reading here;
+	// codex reads only the newest row, so it says so instead and the value
+	// already on the pane stands as the lower bound. No rollout in the local
+	// corpus has produced this row, which is why it needs its own name: one
+	// error covering both this and "nothing recorded yet" makes the difference
+	// between clearing and preserving invisible.
+	return 0, ErrFailedTurn
 }
 
 func isCompaction(entry rolloutEntry) bool {

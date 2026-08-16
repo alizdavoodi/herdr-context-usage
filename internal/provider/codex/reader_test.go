@@ -17,7 +17,7 @@ func TestReadOccupancy(t *testing.T) {
 	}{
 		{name: "prefers total tokens after compaction", fixture: "compacted.jsonl", want: 18_162},
 		{name: "falls back to input without adding cached input", fixture: "input-fallback.jsonl", want: 85_751},
-		{name: "all-zero usage is unknown", fixture: "zero-total.jsonl", wantErr: ErrNoOccupancy},
+		{name: "all-zero usage is a failed turn, not an empty window", fixture: "zero-total.jsonl", wantErr: ErrFailedTurn},
 		{name: "just compacted is not an old occupancy", fixture: "just-compacted.jsonl", wantErr: ErrJustCompacted},
 		{name: "no token usage is unknown", fixture: "no-usage.jsonl", wantErr: ErrNoOccupancy},
 	}

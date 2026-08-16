@@ -20,6 +20,7 @@ func TestSemanticStatesClassifyEveryAnswer(t *testing.T) {
 	}{
 		{name: "unresolvable session", err: ErrNoSession, want: report.Superseded},
 		{name: "no token usage recorded yet", err: ErrNoOccupancy, want: report.Superseded},
+		{name: "turn recorded no usage", err: ErrFailedTurn, want: report.StaleLow},
 		{name: "just compacted", err: ErrJustCompacted, want: report.Superseded},
 		{
 			// The rollout path is known before codex writes the file. Without this

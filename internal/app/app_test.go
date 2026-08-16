@@ -211,6 +211,38 @@ func TestRefreshReportsCodexPostCompactionOccupancy(t *testing.T) {
 	}
 }
 
+func TestRefreshPreservesCodexValueAfterATurnThatRecordedNoUsage(t *testing.T) {
+	t.Parallel()
+
+	// Codex reads the newest usage row rather than walking back, so a turn that
+	// recorded nothing has to leave the previous reading standing rather than
+	// blank the pane. No rollout in the local corpus has produced this row.
+	rollout := filepath.Join(t.TempDir(), "rollout.jsonl")
+	entries := "" +
+		`{"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":85751,"cached_input_tokens":84736,"total_tokens":86542}}}}` + "\n" +
+		`{"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":0,"cached_input_tokens":0,"total_tokens":0}}}}` + "\n"
+	if err := os.WriteFile(rollout, []byte(entries), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var log bytes.Buffer
+	fake := &fakeHerdr{
+		agents: []herdr.Agent{{
+			Agent:        "codex",
+			PaneID:       "w1:p1",
+			Tokens:       map[string]string{"ctx": "86k", "ctx_raw": "86542"},
+			AgentSession: &herdr.AgentSession{Kind: "path", Value: rollout},
+		}},
+		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "codex"}}},
+		reports:   make(map[string][2]string),
+	}
+	if err := Refresh(context.Background(), fake, "", &log, Config{}); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+	if len(fake.clears) != 0 || len(fake.reports) != 0 {
+		t.Fatalf("clears = %v, reports = %v; want the previous reading left standing", fake.clears, fake.reports)
+	}
+}
+
 func TestRefreshClearsValueWhenCodexRolloutIsNotWritten(t *testing.T) {
 	t.Parallel()
 

@@ -22,6 +22,9 @@ func SemanticStates() report.States {
 			// declaring it; the declaration has to live here now.
 			fs.ErrNotExist,
 		},
-		StaleLow: nil,
+		// A turn that recorded no usage leaves the previous reading valid: this
+		// provider reads only the newest usage row rather than walking back, so
+		// the reading already on the pane is the lower bound.
+		StaleLow: []error{ErrFailedTurn},
 	}
 }
