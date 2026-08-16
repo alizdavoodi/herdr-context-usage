@@ -90,6 +90,30 @@ func TestReadOccupancy(t *testing.T) {
 	}
 }
 
+// The mirror of claude's TestReadOccupancyAddsInputAndBothCacheFields. Codex's
+// cached_input_tokens is a subset of input_tokens, so adding the two roughly
+// doubles the answer: 84,736 of 85,751 input tokens were cached in this
+// measured turn, a 1.99x overstatement that is plausible enough to go
+// unnoticed on a sidebar.
+func TestReadOccupancyNeverAddsCachedInputToInput(t *testing.T) {
+	t.Parallel()
+
+	const (
+		input  = 85_751
+		cached = 84_736
+	)
+	got, err := ReadOccupancy(filepath.Join("testdata", "input-fallback.jsonl"))
+	if err != nil {
+		t.Fatalf("ReadOccupancy() error = %v", err)
+	}
+	if got != input {
+		t.Fatalf("ReadOccupancy() = %d, want %d", got, input)
+	}
+	if got == input+cached {
+		t.Fatal("ReadOccupancy() added cached input to input, which is claude's rule and wrong here")
+	}
+}
+
 func TestReadOccupancyMissingRollout(t *testing.T) {
 	t.Parallel()
 

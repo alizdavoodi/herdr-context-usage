@@ -96,6 +96,31 @@ func TestReadOccupancy(t *testing.T) {
 	}
 }
 
+// Claude's and codex's cache fields are opposites, and both now live in one
+// tree. Claude's three fields are disjoint segments of one prefix and add;
+// codex's cached_input_tokens is a subset of input_tokens and must never be
+// added. Applying codex's rule here reports 2 tokens for a 149k context, so
+// this asserts the whole sum rather than only the total.
+func TestReadOccupancyAddsInputAndBothCacheFields(t *testing.T) {
+	t.Parallel()
+
+	const (
+		input         = 2
+		cacheRead     = 145_977
+		cacheCreation = 3_500
+	)
+	got, err := ReadOccupancy(filepath.Join("testdata", "ordinary.jsonl"))
+	if err != nil {
+		t.Fatalf("ReadOccupancy() error = %v", err)
+	}
+	if got != input+cacheRead+cacheCreation {
+		t.Fatalf("ReadOccupancy() = %d, want %d", got, input+cacheRead+cacheCreation)
+	}
+	if got == input {
+		t.Fatal("ReadOccupancy() returned input_tokens alone, which is codex's rule and wrong here")
+	}
+}
+
 func TestReadOccupancyKeepsUsageBeyondTwoLargeRecords(t *testing.T) {
 	t.Parallel()
 
