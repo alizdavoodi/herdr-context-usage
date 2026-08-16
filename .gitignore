@@ -1,0 +1,7 @@
+# Agent scratch state, not project history
+.omc/
+.scratch/
+
+# Go build output
+/herdr-context-usage
+/bin/
