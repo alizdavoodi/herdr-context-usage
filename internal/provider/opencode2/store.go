@@ -45,6 +45,22 @@ type Reading struct {
 	ModelID   string
 }
 
+type assistantPayload struct {
+	Time struct {
+		Completed *int64 `json:"completed"`
+	} `json:"time"`
+	Model struct {
+		ID string `json:"id"`
+	} `json:"model"`
+	Tokens *struct {
+		Input *int64 `json:"input"`
+		Cache *struct {
+			Read  *int64 `json:"read"`
+			Write *int64 `json:"write"`
+		} `json:"cache"`
+	} `json:"tokens"`
+}
+
 func Open(ctx context.Context, explicitPath string) (*Store, error) {
 	path, err := databasePath(explicitPath)
 	if err != nil {
@@ -143,48 +159,51 @@ func (s *Store) Resolve(ctx context.Context, directory, terminalTitle string) (R
 }
 
 func (s *Store) ReadOccupancy(ctx context.Context, sessionID string) (Reading, error) {
-	var data []byte
-	err := s.db.QueryRowContext(ctx, `SELECT data FROM session_message
+	rows, err := s.db.QueryContext(ctx, `SELECT data FROM session_message
 		WHERE session_id = ? AND type = 'assistant'
-		ORDER BY seq DESC
-		LIMIT 1`, sessionID).Scan(&data)
-	if errors.Is(err, sql.ErrNoRows) {
-		return Reading{}, ErrNoOccupancy
-	}
+		ORDER BY seq DESC`, sessionID)
 	if err != nil {
 		return Reading{}, fmt.Errorf("read opencode2 assistant message: %w", err)
 	}
+	defer rows.Close()
 
-	var payload struct {
-		Model struct {
-			ID string `json:"id"`
-		} `json:"model"`
-		Tokens *struct {
-			Input *int64 `json:"input"`
-			Cache *struct {
-				Read  *int64 `json:"read"`
-				Write *int64 `json:"write"`
-			} `json:"cache"`
-		} `json:"tokens"`
-	}
-	if err := json.Unmarshal(data, &payload); err != nil {
-		return Reading{}, fmt.Errorf("%w: decode assistant data: %v", ErrNoOccupancy, err)
-	}
-	if payload.Tokens == nil || payload.Tokens.Input == nil || payload.Tokens.Cache == nil ||
-		payload.Tokens.Cache.Read == nil || payload.Tokens.Cache.Write == nil {
-		return Reading{}, ErrNoOccupancy
-	}
+	for rows.Next() {
+		var data []byte
+		if err := rows.Scan(&data); err != nil {
+			return Reading{}, fmt.Errorf("read opencode2 assistant data: %w", err)
+		}
+		var payload assistantPayload
+		if err := json.Unmarshal(data, &payload); err != nil {
+			continue
+		}
+		if payload.Time.Completed == nil {
+			// An in-flight row does not supersede completed usage: occupancy can
+			// only rise during a normal turn, so the previous reading remains a
+			// valid lower bound. An explicit compaction boundary differs because
+			// it invalidates that reading and must be cleared as a semantic state.
+			continue
+		}
+		if payload.Tokens == nil || payload.Tokens.Input == nil || payload.Tokens.Cache == nil ||
+			payload.Tokens.Cache.Read == nil || payload.Tokens.Cache.Write == nil {
+			continue
+		}
 
-	input := *payload.Tokens.Input
-	cacheRead := *payload.Tokens.Cache.Read
-	cacheWrite := *payload.Tokens.Cache.Write
-	if input < 0 || cacheRead < 0 || cacheWrite < 0 || input > math.MaxInt64-cacheRead || input+cacheRead > math.MaxInt64-cacheWrite {
-		return Reading{}, ErrNoOccupancy
+		input := *payload.Tokens.Input
+		cacheRead := *payload.Tokens.Cache.Read
+		cacheWrite := *payload.Tokens.Cache.Write
+		if input < 0 || cacheRead < 0 || cacheWrite < 0 || input > math.MaxInt64-cacheRead || input+cacheRead > math.MaxInt64-cacheWrite {
+			continue
+		}
+		occupancy := input + cacheRead + cacheWrite
+		if occupancy == 0 {
+			continue
+		}
+		return Reading{Occupancy: occupancy, ModelID: payload.Model.ID}, nil
 	}
-	return Reading{
-		Occupancy: input + cacheRead + cacheWrite,
-		ModelID:   payload.Model.ID,
-	}, nil
+	if err := rows.Err(); err != nil {
+		return Reading{}, fmt.Errorf("read opencode2 assistant message: %w", err)
+	}
+	return Reading{}, ErrNoOccupancy
 }
 
 func databasePath(explicit string) (string, error) {

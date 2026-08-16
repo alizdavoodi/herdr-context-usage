@@ -139,11 +139,11 @@ func TestReadOccupancyUsesLatestAssistantPayload(t *testing.T) {
 		TokensInput: 900_000, TokensCacheRead: 800_000, TokensCacheWrite: 700_000,
 	})
 	insertMessage(t, db, "old-assistant", "session", "assistant", 1,
-		`{"model":{"id":"old-model"},"tokens":{"input":100,"cache":{"read":200,"write":300}}}`)
+		`{"time":{"completed":1},"model":{"id":"old-model"},"tokens":{"input":100,"cache":{"read":200,"write":300}}}`)
 	insertMessage(t, db, "newer-user", "session", "user", 3,
 		`{"role":"assistant","model":{"id":"wrong-role"},"tokens":{"input":999999,"cache":{"read":999999,"write":999999}}}`)
 	insertMessage(t, db, "current-assistant", "session", "assistant", 2,
-		`{"model":{"id":"deepseek-v4-pro"},"tokens":{"input":14829,"output":100,"cache":{"read":16896,"write":7}}}`)
+		`{"time":{"completed":2},"model":{"id":"deepseek-v4-pro"},"tokens":{"input":14829,"output":100,"cache":{"read":16896,"write":7}}}`)
 	db.Close()
 
 	store := openStore(t, path)
@@ -160,33 +160,16 @@ func TestReadOccupancyUsesLatestAssistantPayload(t *testing.T) {
 	}
 }
 
-func TestReadOccupancyDoesNotWalkBackPastLatestAssistant(t *testing.T) {
+func TestReadOccupancyUsesPreviousCompletedUsageDuringInFlightTurn(t *testing.T) {
 	t.Parallel()
 
 	path := newTestDatabase(t)
 	db := openFixtureDatabase(t, path)
 	insertSession(t, db, testSession{ID: "session", Directory: "/work", Title: "No occupancy yet"})
 	insertMessage(t, db, "old", "session", "assistant", 1,
-		`{"model":{"id":"model"},"tokens":{"input":129000,"cache":{"read":0,"write":0}}}`)
+		`{"time":{"completed":1},"model":{"id":"model"},"tokens":{"input":129000,"cache":{"read":0,"write":0}}}`)
 	insertMessage(t, db, "current", "session", "assistant", 2,
-		`{"model":{"id":"model"},"content":[]}`)
-	db.Close()
-
-	store := openStore(t, path)
-	defer store.Close()
-	if _, err := store.ReadOccupancy(context.Background(), "session"); !errors.Is(err, ErrNoOccupancy) {
-		t.Fatalf("ReadOccupancy() error = %v, want ErrNoOccupancy", err)
-	}
-}
-
-func TestReadOccupancyPreservesLegitimateZero(t *testing.T) {
-	t.Parallel()
-
-	path := newTestDatabase(t)
-	db := openFixtureDatabase(t, path)
-	insertSession(t, db, testSession{ID: "session", Directory: "/work", Title: "Zero"})
-	insertMessage(t, db, "zero", "session", "assistant", 1,
-		`{"model":{"id":"model"},"tokens":{"input":0,"cache":{"read":0,"write":0}}}`)
+		`{"time":{"created":2},"model":{"id":"model"},"content":[]}`)
 	db.Close()
 
 	store := openStore(t, path)
@@ -195,8 +178,31 @@ func TestReadOccupancyPreservesLegitimateZero(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadOccupancy() error = %v", err)
 	}
-	if got.Occupancy != 0 {
-		t.Fatalf("occupancy = %d, want legitimate zero", got.Occupancy)
+	if got.Occupancy != 129_000 {
+		t.Fatalf("occupancy = %d, want previous completed lower bound", got.Occupancy)
+	}
+}
+
+func TestReadOccupancySkipsFailedTurnZero(t *testing.T) {
+	t.Parallel()
+
+	path := newTestDatabase(t)
+	db := openFixtureDatabase(t, path)
+	insertSession(t, db, testSession{ID: "session", Directory: "/work", Title: "Failed turn"})
+	insertMessage(t, db, "previous", "session", "assistant", 1,
+		`{"time":{"completed":1},"model":{"id":"model"},"tokens":{"input":120000,"cache":{"read":9000,"write":0}}}`)
+	insertMessage(t, db, "failed", "session", "assistant", 2,
+		`{"time":{"completed":2},"model":{"id":"model"},"tokens":{"input":0,"cache":{"read":0,"write":0}}}`)
+	db.Close()
+
+	store := openStore(t, path)
+	defer store.Close()
+	got, err := store.ReadOccupancy(context.Background(), "session")
+	if err != nil {
+		t.Fatalf("ReadOccupancy() error = %v", err)
+	}
+	if got.Occupancy != 129_000 {
+		t.Fatalf("occupancy = %d, want previous completed usage", got.Occupancy)
 	}
 }
 
@@ -208,9 +214,9 @@ func TestReadOccupancyRejectsInvalidLatestPayload(t *testing.T) {
 		data string
 	}{
 		{name: "malformed JSON", data: `{`},
-		{name: "missing cache write", data: `{"tokens":{"input":1,"cache":{"read":2}}}`},
-		{name: "negative field", data: `{"tokens":{"input":-1,"cache":{"read":2,"write":3}}}`},
-		{name: "sum overflow", data: `{"tokens":{"input":9223372036854775807,"cache":{"read":1,"write":0}}}`},
+		{name: "missing cache write", data: `{"time":{"completed":1},"tokens":{"input":1,"cache":{"read":2}}}`},
+		{name: "negative field", data: `{"time":{"completed":1},"tokens":{"input":-1,"cache":{"read":2,"write":3}}}`},
+		{name: "sum overflow", data: `{"time":{"completed":1},"tokens":{"input":9223372036854775807,"cache":{"read":1,"write":0}}}`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

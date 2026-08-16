@@ -138,7 +138,7 @@ func TestRefreshFansOutAndClearsEventPaneAfterAgentExit(t *testing.T) {
 	}
 }
 
-func TestRefreshClearsUnimplementedAgentValueWhenProcessInfoFails(t *testing.T) {
+func TestRefreshPreservesAgentValueWhenProcessInfoFails(t *testing.T) {
 	t.Parallel()
 
 	processErr := errors.New("process info failed")
@@ -150,8 +150,8 @@ func TestRefreshClearsUnimplementedAgentValueWhenProcessInfoFails(t *testing.T) 
 	if !errors.Is(err, processErr) {
 		t.Fatalf("Refresh() error = %v, want %v", err, processErr)
 	}
-	if !slices.Equal(fake.clears, []string{"w1:p1"}) {
-		t.Fatalf("clears = %v, want superseded value cleared", fake.clears)
+	if len(fake.clears) != 0 {
+		t.Fatalf("clears = %v, want transient process failure to preserve value", fake.clears)
 	}
 }
 

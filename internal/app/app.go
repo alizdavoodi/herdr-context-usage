@@ -76,19 +76,16 @@ func Refresh(ctx context.Context, client Herdr, eventPaneID string, log io.Write
 	for _, agent := range agents {
 		processes, processErr := client.ProcessInfo(ctx, agent.PaneID)
 		kind := provider.FromAgent(agent.Agent, provider.ProcessList{Entries: processes, Available: processErr == nil})
+		if processErr != nil {
+			errs = append(errs, processErr)
+			continue
+		}
 		if !kind.Implemented() {
 			if hasOccupancyToken(agent.Tokens) {
 				if err := client.Clear(ctx, agent.PaneID); err != nil {
 					errs = append(errs, fmt.Errorf("clear superseded metadata for %s: %w", agent.PaneID, err))
 				}
 			}
-			if processErr != nil {
-				errs = append(errs, processErr)
-			}
-			continue
-		}
-		if processErr != nil {
-			errs = append(errs, processErr)
 			continue
 		}
 		var refreshErr error
