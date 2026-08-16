@@ -667,6 +667,36 @@ func TestRefreshOpenCodeClearsValueWhenNewestMessageIsCompactionSummary(t *testi
 	}
 }
 
+func TestRefreshKeepsOpenCodeV1OccupancyDuringInFlightTurn(t *testing.T) {
+	t.Parallel()
+
+	// herdr fires an event when an agent starts working, so this is the state a
+	// v1 pane is read in for the whole of every turn: a completed reading, the
+	// prompt that started the turn, and an assistant row with nothing in it yet.
+	dataDir := t.TempDir()
+	databasePath := filepath.Join(dataDir, "opencode.db")
+	createOpenCodeDatabase(t, databasePath, "ses_current", `{"role":"assistant","time":{"completed":1},"tokens":{"input":840,"cache":{"read":90000,"write":1641}}}`)
+	appendOpenCodeMessage(t, databasePath, "msg_prompt", "ses_current", 2, `{"role":"user","time":{"created":2},"summary":{"diffs":[]},"agent":"build"}`)
+	appendOpenCodeMessage(t, databasePath, "msg_in_flight", "ses_current", 3, `{"role":"assistant","mode":"Atlas (Plan Executor)","time":{"created":3}}`)
+	fake := &fakeHerdr{
+		agents: []herdr.Agent{{
+			Agent:        "opencode",
+			PaneID:       "w1:p1",
+			Tokens:       map[string]string{"ctx": "92k", "ctx_raw": "92481"},
+			AgentSession: &herdr.AgentSession{Kind: "id", Value: "ses_current"},
+		}},
+		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "opencode"}}},
+		reports:   make(map[string][2]string),
+	}
+
+	if err := Refresh(context.Background(), fake, "", nil, Config{OpenCodeDB: databasePath}); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+	if got := fake.reports["w1:p1"]; got != [2]string{"92k", "92481"} || len(fake.clears) != 0 {
+		t.Fatalf("report = %v, clears = %v; want the running turn to keep its lower bound", got, fake.clears)
+	}
+}
+
 func TestRefreshOpenCodeClearsWhenSessionCannotBeResolved(t *testing.T) {
 	t.Parallel()
 

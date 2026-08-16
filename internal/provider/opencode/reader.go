@@ -151,6 +151,18 @@ func occupancy(message assistantMessage) (int64, error) {
 	return occupancy, nil
 }
 
+// isCompactionSummary matches the assistant message that wrote a compaction
+// summary, and nothing else.
+//
+// A v1 compaction is `"summary": true` on an assistant message whose mode and
+// agent are both "compaction": 233 rows in the store examined, every one that
+// shape. A `summary` object is a different field with the same name — 4,910
+// rows, every one a user message carrying {"diffs": …} and occasionally a
+// title, which opencode attaches to ordinary prompts. Accepting any non-null
+// summary matched both, so the row a session sits behind for the whole of
+// every turn read as a compaction boundary: replayed against the 40 most
+// recently active sessions, that blanked 20 of them mid-turn, 19 of which had
+// never compacted.
 func isCompactionSummary(summary json.RawMessage) bool {
-	return len(summary) != 0 && !bytes.Equal(bytes.TrimSpace(summary), []byte("null"))
+	return bytes.Equal(bytes.TrimSpace(summary), []byte("true"))
 }

@@ -127,6 +127,31 @@ func TestReadOccupancyDoesNotWalkBackAcrossLatestCompactionSummary(t *testing.T)
 	}
 }
 
+func TestReadOccupancyCrossesAnOrdinaryPromptSummary(t *testing.T) {
+	t.Parallel()
+
+	// The same three messages, one turn earlier: the pre-compaction reading, the
+	// user's next prompt, and the assistant row that turn created before it has
+	// completed. A prompt is not a boundary — the previous reading is still a
+	// valid lower bound — and this is the state every v1 session is in for the
+	// whole of every turn.
+	databasePath := fixtureDatabase(t, func(database *sql.DB) {
+		exec(t, database, `INSERT INTO session (id) VALUES ('ses_running')`)
+		exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_ce86820f6001vq8ZqNZcLMdJpE', 'ses_running', 1773425664246, '{"role":"assistant","mode":"Atlas (Plan Executor)","time":{"created":1773425650000,"completed":1773425679285},"tokens":{"input":1,"cache":{"read":0,"write":168969}}}')`)
+		exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_ce8685bb6001qP8D2cbu3XY4bl', 'ses_running', 1773425679286, '{"role":"user","time":{"created":1773425679286},"summary":{"diffs":[]},"agent":"build"}')`)
+		exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_ce8685bc7001SiK5DcsX6T7Q34', 'ses_running', 1773425679303, '{"role":"assistant","mode":"Atlas (Plan Executor)","time":{"created":1773425679303}}')`)
+	})
+	store := openStore(t, databasePath)
+	defer store.Close()
+	got, err := store.ReadOccupancy(context.Background(), "ses_running")
+	if err != nil {
+		t.Fatalf("ReadOccupancy() error = %v, want the previous completed reading", err)
+	}
+	if got != 168_970 {
+		t.Fatalf("ReadOccupancy() = %d, want the lower bound 1 + 0 + 168969", got)
+	}
+}
+
 func TestReadOccupancyRejectsMissingV1SchemaAndSession(t *testing.T) {
 	t.Parallel()
 
