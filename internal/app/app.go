@@ -36,6 +36,7 @@ const (
 )
 
 type Measurement struct {
+	Type           string                 `json:"type"`
 	PaneID         string                 `json:"pane_id"`
 	Provider       provider.Kind          `json:"provider"`
 	ContextState   ContextState           `json:"context_state"`
@@ -45,6 +46,7 @@ type Measurement struct {
 }
 
 type MaintenanceDiagnostic struct {
+	Type      string `json:"type"`
 	Operation string `json:"operation"`
 	PaneID    string `json:"pane_id,omitempty"`
 	Error     string `json:"error"`
@@ -70,7 +72,7 @@ func Refresh(ctx context.Context, client Herdr, eventPaneID string, log io.Write
 	}
 	for _, agent := range agents {
 		processes, processErr := client.ProcessInfo(ctx, agent.PaneID)
-		kind := provider.FromAgent(agent.Agent, processes)
+		kind := provider.FromAgent(agent.Agent, provider.ProcessList{Entries: processes, Available: processErr == nil})
 		if !kind.Implemented() {
 			if hasOccupancyToken(agent.Tokens) {
 				if err := client.Clear(ctx, agent.PaneID); err != nil {
@@ -156,7 +158,7 @@ func refreshClaude(ctx context.Context, client Herdr, agent herdr.Agent, process
 	if err != nil {
 		measurement := Measurement{PaneID: agent.PaneID, Provider: provider.Claude, ContextState: ContextUnknown, Error: err.Error()}
 		measurementErr := writeMeasurement(log, measurement)
-		if report.SupersedesCurrentValue(err, claude.ErrNoSession) {
+		if report.SupersedesCurrentValue(err, claude.SemanticStates()) {
 			return errors.Join(measurementErr, client.Clear(ctx, agent.PaneID))
 		}
 		return measurementErr
@@ -170,17 +172,16 @@ func refreshClaude(ctx context.Context, client Herdr, agent herdr.Agent, process
 		}
 		measurement := Measurement{PaneID: agent.PaneID, Provider: provider.Claude, ContextState: state, ResolutionMode: &mode, Error: err.Error()}
 		measurementErr := writeMeasurement(log, measurement)
-		if report.SupersedesCurrentValue(err, claude.ErrNoOccupancy, claude.ErrJustCompacted) {
+		if report.SupersedesCurrentValue(err, claude.SemanticStates()) {
 			return errors.Join(measurementErr, client.Clear(ctx, agent.PaneID))
 		}
 		return measurementErr
 	}
 
 	measurement := Measurement{PaneID: agent.PaneID, Provider: provider.Claude, ContextState: ContextMeasured, Occupancy: &value, ResolutionMode: &mode}
-	if err := writeMeasurement(log, measurement); err != nil {
-		return err
-	}
-	return client.Report(ctx, agent.PaneID, occupancyformat.Occupancy(value), strconv.FormatInt(value, 10))
+	reportErr := client.Report(ctx, agent.PaneID, occupancyformat.Occupancy(value), strconv.FormatInt(value, 10))
+	measurementErr := writeMeasurement(log, measurement)
+	return errors.Join(measurementErr, reportErr)
 }
 
 func claudeProcessIDs(processes []provider.Process) []int {
@@ -188,6 +189,7 @@ func claudeProcessIDs(processes []provider.Process) []int {
 }
 
 func writeMeasurement(writer io.Writer, measurement Measurement) error {
+	measurement.Type = "measurement"
 	if err := json.NewEncoder(writer).Encode(measurement); err != nil {
 		return fmt.Errorf("record measurement: %w", err)
 	}
@@ -195,6 +197,7 @@ func writeMeasurement(writer io.Writer, measurement Measurement) error {
 }
 
 func writeMaintenanceDiagnostic(writer io.Writer, diagnostic MaintenanceDiagnostic) error {
+	diagnostic.Type = "maintenance"
 	if err := json.NewEncoder(writer).Encode(diagnostic); err != nil {
 		return fmt.Errorf("record maintenance diagnostic: %w", err)
 	}

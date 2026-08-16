@@ -27,7 +27,7 @@ func TestSupersedesCurrentValue(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := SupersedesCurrentValue(tt.err, errUnknown); got != tt.want {
+			if got := SupersedesCurrentValue(tt.err, []error{errUnknown}); got != tt.want {
 				t.Fatalf("SupersedesCurrentValue() = %v, want %v", got, tt.want)
 			}
 		})

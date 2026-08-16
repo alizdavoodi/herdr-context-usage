@@ -11,14 +11,16 @@ func TestFromAgent(t *testing.T) {
 	tests := []struct {
 		name      string
 		agent     string
-		processes []Process
+		processes ProcessList
 		want      Kind
 	}{
-		{name: "herdr claude wins over a child codex process", agent: "claude", processes: []Process{{Argv0: "codex"}, {Argv0: "claude"}}, want: Claude},
-		{name: "herdr codex is unambiguous", agent: "codex", processes: []Process{{Argv0: "claude"}, {Argv0: "codex"}}, want: Codex},
-		{name: "opencode2 wins regardless of process order", agent: "opencode", processes: []Process{{Argv0: "opencode"}, {Argv0: "opencode2"}}, want: OpenCode2},
-		{name: "opencode v1", agent: "opencode", processes: []Process{{Argv0: "opencode-helper"}, {Argv0: "opencode"}}, want: OpenCode},
-		{name: "unrecognised agent", agent: "unknown", processes: []Process{{Argv0: "claude"}}, want: None},
+		{name: "herdr claude wins over a child codex process", agent: "claude", processes: ProcessList{Available: true, Entries: []Process{{Argv0: "codex"}, {Argv0: "claude"}}}, want: Claude},
+		{name: "herdr codex is unambiguous", agent: "codex", processes: ProcessList{Available: true, Entries: []Process{{Argv0: "claude"}, {Argv0: "codex"}}}, want: Codex},
+		{name: "opencode2 wins regardless of process order", agent: "opencode", processes: ProcessList{Available: true, Entries: []Process{{Argv0: "opencode"}, {Argv0: ".OpenCode2"}}}, want: OpenCode2},
+		{name: "opencode v1", agent: "opencode", processes: ProcessList{Available: true, Entries: []Process{{Argv0: "opencode-helper"}, {Argv0: "opencode"}}}, want: OpenCode},
+		{name: "opencode v1 with observed empty process list", agent: "opencode", processes: ProcessList{Available: true, Entries: []Process{}}, want: OpenCode},
+		{name: "opencode version undeterminable without process list", agent: "opencode", processes: ProcessList{}, want: None},
+		{name: "unrecognised agent", agent: "unknown", processes: ProcessList{Available: true, Entries: []Process{{Argv0: "claude"}}}, want: None},
 	}
 
 	for _, tt := range tests {

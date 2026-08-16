@@ -21,7 +21,14 @@ type Process struct {
 	Argv  []string `json:"argv"`
 }
 
-func FromAgent(agent string, processes []Process) Kind {
+type ProcessList struct {
+	Entries []Process
+	// Available keeps a failed lookup distinct from an observed empty list;
+	// only the latter is evidence that an opencode pane is running v1.
+	Available bool
+}
+
+func FromAgent(agent string, processes ProcessList) Kind {
 	switch strings.ToLower(strings.TrimSpace(agent)) {
 	case "claude":
 		return Claude
@@ -30,7 +37,10 @@ func FromAgent(agent string, processes []Process) Kind {
 	case "opencode2":
 		return OpenCode2
 	case "opencode":
-		for _, process := range processes {
+		if !processes.Available {
+			return None
+		}
+		for _, process := range processes.Entries {
 			if processKind(process) == OpenCode2 {
 				return OpenCode2
 			}

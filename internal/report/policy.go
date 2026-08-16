@@ -8,7 +8,7 @@ import (
 // SupersedesCurrentValue identifies states that prove the displayed value no
 // longer belongs to the current session. Providers express unknown readings as
 // errors so every successful numeric reading, including zero, remains valid.
-func SupersedesCurrentValue(err error, semanticStates ...error) bool {
+func SupersedesCurrentValue(err error, semanticStates []error) bool {
 	if errors.Is(err, fs.ErrNotExist) {
 		return true
 	}

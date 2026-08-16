@@ -27,6 +27,14 @@ type fakeHerdr struct {
 	clearErrs    map[string]error
 }
 
+type errorWriter struct {
+	err error
+}
+
+func (w errorWriter) Write([]byte) (int, error) {
+	return 0, w.err
+}
+
 func (f *fakeHerdr) ListAgents(context.Context) ([]herdr.Agent, error) {
 	return f.agents, f.listErr
 }
@@ -135,7 +143,7 @@ func TestRefreshClearsUnimplementedAgentValueWhenProcessInfoFails(t *testing.T) 
 
 	processErr := errors.New("process info failed")
 	fake := &fakeHerdr{
-		agents:      []herdr.Agent{{Agent: "codex", PaneID: "w1:p1", Tokens: map[string]string{"ctx_raw": "92481"}}},
+		agents:      []herdr.Agent{{Agent: "opencode", PaneID: "w1:p1", Tokens: map[string]string{"ctx_raw": "92481"}}},
 		processErrs: map[string]error{"w1:p1": processErr},
 	}
 	err := Refresh(context.Background(), fake, "", nil, Config{})
@@ -163,7 +171,7 @@ func TestRefreshClearsValueWhenClaudeSessionCannotBeResolved(t *testing.T) {
 	if !slices.Equal(fake.clears, []string{"w1:p1"}) {
 		t.Fatalf("clears = %v, want unresolved session cleared", fake.clears)
 	}
-	if got := log.String(); !strings.Contains(got, `"context_state":"unknown"`) || !strings.Contains(got, `"occupancy":null`) {
+	if got := log.String(); !strings.Contains(got, `"type":"measurement"`) || !strings.Contains(got, `"context_state":"unknown"`) || !strings.Contains(got, `"occupancy":null`) {
 		t.Fatalf("diagnostic = %s, want unknown state with null occupancy", got)
 	}
 }
@@ -282,6 +290,30 @@ func TestRefreshPreservesValueOnTranscriptIOFailure(t *testing.T) {
 	}
 }
 
+func TestRefreshReportsOccupancyWhenMeasurementLoggingFails(t *testing.T) {
+	t.Parallel()
+
+	home := t.TempDir()
+	transcript := filepath.Join(home, "session.jsonl")
+	entry := `{"type":"assistant","message":{"usage":{"input_tokens":840,"cache_read_input_tokens":90000,"cache_creation_input_tokens":1641}}}` + "\n"
+	if err := os.WriteFile(transcript, []byte(entry), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeErr := errors.New("stdout failed")
+	fake := &fakeHerdr{
+		agents:    []herdr.Agent{{Agent: "claude", PaneID: "w1:p1", AgentSession: &herdr.AgentSession{Kind: "path", Value: transcript}}},
+		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "claude"}}},
+		reports:   make(map[string][2]string),
+	}
+	err := Refresh(context.Background(), fake, "", errorWriter{err: writeErr}, Config{ClaudeHome: home})
+	if !errors.Is(err, writeErr) {
+		t.Fatalf("Refresh() error = %v, want logging error %v", err, writeErr)
+	}
+	if got := fake.reports["w1:p1"]; got != [2]string{"92k", "92481"} {
+		t.Fatalf("report = %v, want occupancy despite logging failure", got)
+	}
+}
+
 func TestRefreshReportsPaneListFailureWithoutMaskingMeasurement(t *testing.T) {
 	t.Parallel()
 
@@ -301,7 +333,7 @@ func TestRefreshReportsPaneListFailureWithoutMaskingMeasurement(t *testing.T) {
 	if err := Refresh(context.Background(), fake, "", &log, Config{ClaudeHome: home}); err != nil {
 		t.Fatalf("Refresh() error = %v, want successful measurement", err)
 	}
-	if got := log.String(); !strings.Contains(got, `"operation":"list_panes"`) || !strings.Contains(got, `"error":"pane list failed"`) {
+	if got := log.String(); !strings.Contains(got, `"type":"maintenance"`) || !strings.Contains(got, `"type":"measurement"`) || !strings.Contains(got, `"operation":"list_panes"`) || !strings.Contains(got, `"error":"pane list failed"`) {
 		t.Fatalf("diagnostic = %s, want pane-list failure", got)
 	}
 	if got := fake.reports["w1:p1"]; got != [2]string{"92k", "92481"} {
@@ -328,6 +360,7 @@ func TestRefreshReportsEveryStaleMetadataClearFailure(t *testing.T) {
 	}
 	got := log.String()
 	for _, want := range []string{
+		`"type":"maintenance"`,
 		`"operation":"clear_stale_metadata"`,
 		`"pane_id":"w1:p1"`,
 		`"error":"first clear failed"`,
