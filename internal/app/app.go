@@ -12,6 +12,7 @@ import (
 	"github.com/alizdavoodi/herdr-context-usage/internal/herdr"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/claude"
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider/opencode2"
 	"github.com/alizdavoodi/herdr-context-usage/internal/report"
 )
 
@@ -24,7 +25,8 @@ type Herdr interface {
 }
 
 type Config struct {
-	ClaudeHome string
+	ClaudeHome  string
+	OpenCode2DB string
 }
 
 type ContextState string
@@ -36,13 +38,14 @@ const (
 )
 
 type Measurement struct {
-	Type           string                 `json:"type"`
-	PaneID         string                 `json:"pane_id"`
-	Provider       provider.Kind          `json:"provider"`
-	ContextState   ContextState           `json:"context_state"`
-	Occupancy      *int64                 `json:"occupancy"`
-	ResolutionMode *claude.ResolutionMode `json:"resolution_mode"`
-	Error          string                 `json:"error,omitempty"`
+	Type           string        `json:"type"`
+	PaneID         string        `json:"pane_id"`
+	Provider       provider.Kind `json:"provider"`
+	ContextState   ContextState  `json:"context_state"`
+	Occupancy      *int64        `json:"occupancy"`
+	ResolutionMode *string       `json:"resolution_mode"`
+	ModelID        string        `json:"model_id,omitempty"`
+	Error          string        `json:"error,omitempty"`
 }
 
 type MaintenanceDiagnostic struct {
@@ -88,8 +91,15 @@ func Refresh(ctx context.Context, client Herdr, eventPaneID string, log io.Write
 			errs = append(errs, processErr)
 			continue
 		}
-		if err := refreshClaude(ctx, client, agent, processes, log, config); err != nil {
-			errs = append(errs, err)
+		var refreshErr error
+		switch kind {
+		case provider.Claude:
+			refreshErr = refreshClaude(ctx, client, agent, processes, log, config)
+		case provider.OpenCode2:
+			refreshErr = refreshOpenCode2(ctx, client, agent, log, config)
+		}
+		if refreshErr != nil {
+			errs = append(errs, refreshErr)
 		}
 	}
 
@@ -163,7 +173,7 @@ func refreshClaude(ctx context.Context, client Herdr, agent herdr.Agent, process
 		}
 		return measurementErr
 	}
-	mode := resolved.Mode
+	mode := string(resolved.Mode)
 	value, err := claude.ReadOccupancy(resolved.Path)
 	if err != nil {
 		state := ContextUnknown
@@ -182,6 +192,45 @@ func refreshClaude(ctx context.Context, client Herdr, agent herdr.Agent, process
 	reportErr := client.Report(ctx, agent.PaneID, occupancyformat.Occupancy(value), strconv.FormatInt(value, 10))
 	measurementErr := writeMeasurement(log, measurement)
 	return errors.Join(measurementErr, reportErr)
+}
+
+func refreshOpenCode2(ctx context.Context, client Herdr, agent herdr.Agent, log io.Writer, config Config) error {
+	store, err := opencode2.Open(ctx, config.OpenCode2DB)
+	if err != nil {
+		return handleOpenCode2Unknown(ctx, client, agent.PaneID, log, err, nil)
+	}
+	defer store.Close()
+
+	resolved, err := store.Resolve(ctx, agent.ForegroundCWD, agent.TerminalTitle)
+	if err != nil {
+		return handleOpenCode2Unknown(ctx, client, agent.PaneID, log, err, nil)
+	}
+	mode := string(resolved.Mode)
+	reading, err := store.ReadOccupancy(ctx, resolved.ID)
+	if err != nil {
+		return handleOpenCode2Unknown(ctx, client, agent.PaneID, log, err, &mode)
+	}
+
+	value := reading.Occupancy
+	measurement := Measurement{
+		PaneID: agent.PaneID, Provider: provider.OpenCode2, ContextState: ContextMeasured,
+		Occupancy: &value, ResolutionMode: &mode, ModelID: reading.ModelID,
+	}
+	reportErr := client.Report(ctx, agent.PaneID, occupancyformat.Occupancy(value), strconv.FormatInt(value, 10))
+	measurementErr := writeMeasurement(log, measurement)
+	return errors.Join(measurementErr, reportErr)
+}
+
+func handleOpenCode2Unknown(ctx context.Context, client Herdr, paneID string, log io.Writer, err error, mode *string) error {
+	measurement := Measurement{
+		PaneID: paneID, Provider: provider.OpenCode2, ContextState: ContextUnknown,
+		ResolutionMode: mode, Error: err.Error(),
+	}
+	measurementErr := writeMeasurement(log, measurement)
+	if report.SupersedesCurrentValue(err, opencode2.SemanticStates()) {
+		return errors.Join(measurementErr, client.Clear(ctx, paneID))
+	}
+	return measurementErr
 }
 
 func claudeProcessIDs(processes []provider.Process) []int {
