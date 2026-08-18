@@ -1,6 +1,9 @@
 # Design: herdr context usage
 
-Status: agreed, not yet implemented. Terminology is defined in [CONTEXT.md](../CONTEXT.md).
+Status: agreed. Which providers have actually shipped is the coverage table in
+[README.md](../README.md#agent-kinds-and-provider-coverage) and nowhere else;
+this document records the design. Terminology is defined in
+[CONTEXT.md](../CONTEXT.md).
 
 ## Why this exists
 
@@ -24,7 +27,9 @@ outside herdr and be pushed in.
 shown in the agent sidebar and readable by other agents. The `pi` and `omp`
 agent kinds are specified separately in
 [design-pi-omp.md](design-pi-omp.md), which extends this document rather than
-replacing it; the sections below describe the four providers shipped first.
+replacing it. The sections below were written for the four providers shipped
+first and gain an entry for each of those two as its provider ships, which is
+why `pi` appears among them and `omp` does not yet.
 
 **Out**, and each of these is a deliberate no: provider rate-limit windows, plan
 quota, dollar cost, session spend, threshold notifications, update checking.
@@ -105,6 +110,7 @@ assumption.
 | `codex` | `~/.codex/sessions/YYYY/MM/DD/rollout-*-<session>.jsonl` | `last_token_usage.total_tokens`, falling back to `input_tokens` |
 | `opencode` | SQLite `~/.local/share/opencode/opencode.db`, `session` + `message` | `tokens.input + tokens.cache.read + tokens.cache.write` |
 | `opencode2` | SQLite `~/.local/share/opencode/opencode2.db`, `session_v2` + `session_message` | same as `opencode` |
+| `pi` | `~/.pi/agent/sessions/<wrapped-cwd>/<start-timestamp>_<session-id>.jsonl`, bounded reverse scan | the same three addends as `claude` under pi's own field names, which the [coverage table](../README.md#agent-kinds-and-provider-coverage) spells out |
 
 **Claude's three cache fields are disjoint segments of one prefix**, so they add.
 This also matches Claude Code's own internal `total_input_tokens`, which means
@@ -149,6 +155,16 @@ exactly like what you want and are cumulative accumulators that ignore
 compaction — measured rising across a compact. They are session spend wearing
 the right field names.
 
+**pi's compaction record carries a `usage` of its own** — the cost of generating
+the summary. A walk that stopped at the newest record holding a `usage` would
+therefore read the compaction record itself and report 1,383 tokens, entirely
+plausible for a freshly compacted agent session and so the kind of wrong number
+nobody questions. Detection keys on the record type, never on the presence of a
+`usage`. Measured against pi 0.84.2, which is not pinned. This shape is also one
+of the divergences [ADR-0006](adr/0006-two-providers-for-pi-and-omp.md) rests
+on: omp's compaction record carries no `usage`, so one reader serving both agents
+would be correct on omp and silently wrong here.
+
 ### Resolving which session a pane is on
 
 Getting this wrong produces a confident wrong number, which is worse than a blank
@@ -184,6 +200,21 @@ session id, yielding its occupancy. The whole opencode2 path is confirmed
 working, not merely plausible.
 3. **Blank** when neither resolves.
 
+`pi` stops at step 1, and its missing step 2 is deliberate rather than
+unfinished. It resolves from herdr's reported agent session and nothing else: a
+path used directly, an id matched against the transcript whose name ends with it
+under pi's home, and a match that is not unique treated as unresolved rather
+than chosen between. A working-directory fallback was considered and refused,
+because pi files an agent session under the directory it *started* in, so a pane
+that has since moved resolves to nothing or to an unrelated agent session, and
+because the transcript does not mark a sub-agent session, so a directory-scoped
+match would have nothing to exclude one with. Installing pi's herdr integration
+is therefore a precondition for the row filling in at all, not an improvement on
+a fallback that works without it. Observed against pi 0.84.2 and herdr 0.8.0;
+pi is not pinned. `omp` takes the same shape for a third reason of its own,
+recorded in [ADR-0004](adr/0004-provider-specific-session-correlation.md) ahead
+of its provider.
+
 Title correlation carries a limitation worth stating plainly, because it makes a
 row blank forever rather than briefly. Both opencode versions can switch their
 terminal title off: v1 honours `OPENCODE_DISABLE_TERMINAL_TITLE`, and both expose
@@ -199,7 +230,9 @@ recent session in its directory. Directory collision is severe — 14 sessions
 share one repository, 13 another. See
 [ADR-0004](adr/0004-provider-specific-session-correlation.md).
 
-Herdr's `agent` field is the primary provider signal for `claude` and `codex`.
+Herdr's `agent` field is the primary provider signal for `claude`, `codex` and
+`pi`, the last of which Herdr reports as its own agent kind rather than folding
+it into another, so its dispatch needs no process inspection either.
 `opencode2` panes additionally need distinguishing from `opencode` ones because
 Herdr folds the kind. For an `opencode` agent, compare every foreground
 process's `argv0` basename case-insensitively after stripping a leading dot,

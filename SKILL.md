@@ -86,6 +86,26 @@ used. A pane in that state reports no occupancy at all, for any session, until
 the title comes back. Do not read a blank `opencode` row as an idle or empty
 agent.
 
+A `pi` pane can be blank permanently for a different reason: its Herdr
+integration is not installed. `pi` is correlated to an agent session only
+through the agent session that integration reports, and it has no fallback of
+any kind, so a pane whose integration is missing offers nothing to resolve and
+stays blank for as long as that is true. Nothing in the row distinguishes this
+from a `pi` agent that has not yet taken a turn. Do not read a blank `pi` row as
+an idle or empty agent either, and do not conclude from a run of blank `pi` rows
+that the neighbours are quiet.
+
+A `pi` row also carries one known limit that is bounded rather than permanent.
+pi's integration reports its agent session at session start and at each turn
+boundary, but not when the agent session is switched inside the pane, so between
+such a switch and that pane's next turn boundary the row describes the agent
+session it was showing before. The value is current rather than stale — it is a
+real measurement of the wrong agent session — and the interval closes at the
+next turn boundary, which is the same event every reading here is anchored to.
+That session-switch behaviour was observed against pi 0.84.2 and Herdr 0.8.0,
+and pi is not pinned to a version. The permanent blank above follows from pi
+having no fallback at all rather than from any observation of its own.
+
 Tokens are only as fresh as the last event that wrote them. Occupancy changes
 at turn boundaries, and Herdr events fire at turn boundaries, so the normal
 staleness window is empty. A blank or absent token means unknown, never zero.

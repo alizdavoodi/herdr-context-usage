@@ -19,6 +19,32 @@ working-directory and agent-kind match in Claude's process registry is recorded
 as `process_registry`; the structural fallback that accepts the sole transcript
 under the encoded working directory remains `foreground_cwd`.
 
+`pi` and `omp`, the two agent kinds specified in
+[design-pi-omp.md](../design-pi-omp.md), sit at the other end of that range:
+they resolve from herdr's reported agent session **and nothing else**, with no
+fallback at all. A path is used directly; an id is matched against the
+transcript whose name ends with it under that provider's own home; a match that
+is not unique is treated as unresolved rather than chosen between.
+
+Three independent reasons put the fallback out of reach, two of them bearing on
+each agent. pi files an agent session under the directory it *started* in, so a
+pane that has since moved resolves to nothing or to an unrelated agent session —
+measured on this machine, where the directory for this repository exists but is
+empty while the real agent session sits elsewhere. Neither agent's transcript
+marks a sub-agent session, so a directory-scoped match would have nothing to
+exclude one with, and the main-thread guarantee this plugin makes would become a
+guess. And omp ships no screen-detection manifest at all, so without its
+integration installed an omp pane is not labelled an agent by herdr and never
+reaches this plugin to be resolved in the first place.
+
+Installing the herdr integration is therefore a **precondition** for both agent
+kinds, not an optional improvement on a fallback that works without it. The
+difference from the four providers above is that none of those needs anything
+installed in order to correlate at all: each works from what herdr already
+reports about a pane, and goes blank where that signal is absent or has been
+switched off. pi and omp correlate nothing until their integration is installed.
+Recorded against pi 0.84.2, omp 17.3.5 and herdr 0.8.0; neither agent is pinned.
+
 ## Consequences
 
 Every measurement records its resolution mode, so a wrong attribution is
@@ -48,6 +74,15 @@ The only complete fixes are a discriminator herdr does not expose or a native
 `agent_session`, which retires the fallback. The fallback remains worthwhile:
 without it these providers cannot report sessions when no integration supplies
 an agent session.
+
+A user who has not installed the herdr integration for pi or omp meets the
+integration precondition recorded above as a permanently blank row, with nothing
+anywhere to explain it — the same failure mode the opencode title causes
+produce, and the reason the precondition is written down for users and for agent
+consumers rather than left here. The blank is still the correct output, because
+with no reported agent session there is no signal left to be right about; it is
+simply indistinguishable from an agent that has not yet taken a turn, so the
+documentation has to carry a distinction the row cannot.
 
 Recency remains tempting because it is how `opencode2 --continue` picks a
 session. That answers "what would resume here", not "what is this pane showing".
