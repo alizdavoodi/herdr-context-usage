@@ -117,6 +117,7 @@ provider guesses by newest-file or newest-session recency.
 | Implemented | `codex` | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`; `total_tokens`, falling back to `input_tokens` | Herdr's reported `agent_session`, then the sole active TUI main thread under `foreground_cwd` |
 | Implemented | `opencode` (v1) | `~/.local/share/opencode/opencode.db`, `session` plus `message`; newest completed assistant `input + cache.read + cache.write` | Herdr's reported `agent_session`, then the pane directory plus its `OC \| <session title>` terminal title |
 | Implemented | `opencode2` | `~/.local/share/opencode/opencode2.db`, `session_v2` plus `session_message`; newest completed assistant `input + cache.read + cache.write` | Pane directory plus its `OC \| <session title>` terminal title; untitled sessions remain blank |
+| Implemented | `pi` | `~/.pi/agent/sessions/<wrapped-cwd>/<start-timestamp>_<session-id>.jsonl`; newest completed assistant `input + cacheRead + cacheWrite`; home overridable with `PI_CODING_AGENT_DIR` | Herdr's reported `agent_session` only — a path used directly, an id matched to the sole transcript whose name ends with it, non-unique treated as unresolved; no directory or recency fallback, so pi's Herdr integration is a precondition |
 
 The two opencode providers use separate stores, both opened read-only; the v1
 provider does not read legacy JSON message files or the v1 database's unrelated
@@ -151,6 +152,25 @@ design. The plugin recognises the case when the title is longer than a session
 title can be — session titles over 40 characters are shortened to 37 plus an
 ellipsis, and plugin titles are never shortened — and says so rather than
 reporting a session it could not find.
+
+### When a pi row measures the previous agent session
+
+**pi's Herdr integration does not report a session switch.** It reports the
+agent session on session start and at each turn boundary, so a pi pane whose
+agent session is switched inside the pane keeps reporting the previous one
+until the next turn boundary — and for that interval, this plugin measures
+the previous transcript instead of the one now showing in the pane.
+
+This is documented rather than defended. The common switch resumes another
+agent session in the same directory, which no directory comparison could tell
+apart from the one it replaced, so there is no signal the plugin could use
+instead. The interval also closes at the same turn boundary every measurement
+here is already anchored to, so it is bounded by an event the numbers already
+depend on, not an open-ended one.
+
+Worth reporting upstream all the same. The integration already reports at two
+other points in an agent session's life, so a switch is a third it could
+report; nothing here needs the plugin to change once it does.
 
 ## Query the tokens
 

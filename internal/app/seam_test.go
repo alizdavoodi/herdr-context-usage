@@ -3,6 +3,8 @@ package app
 import (
 	"errors"
 	"testing"
+
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 )
 
 // Every provider shares one classification, so the one mistake it cannot catch
@@ -48,6 +50,32 @@ func TestRegistryHasNoDuplicateKinds(t *testing.T) {
 			t.Errorf("two providers claim kind %q; only the first is reachable", kind)
 		}
 		seen[kind] = struct{}{}
+	}
+}
+
+// Registering a provider is necessary to make an agent kind live but not
+// sufficient: dispatch reaches the registry only through FromAgent, which parses
+// herdr's agent label into a Kind. A provider registered under a kind FromAgent
+// never returns is unreachable, and every other property test here still passes
+// — the registry is internally consistent, it is just never consulted. The row
+// then blanks permanently with no error anywhere to explain it.
+//
+// Deriving the label from the kind is what makes this hold for a provider nobody
+// has written yet. The opencode arm needs an available process list to choose
+// between its two versions, and returns the v1 kind when that list is empty,
+// which is what the empty ProcessList below asks for.
+func TestEveryRegisteredKindIsReachableFromItsAgentLabel(t *testing.T) {
+	t.Parallel()
+
+	for _, registered := range allProviders {
+		kind := registered.Kind()
+		t.Run(string(kind), func(t *testing.T) {
+			t.Parallel()
+			got := provider.FromAgent(string(kind), provider.ProcessList{Available: true})
+			if got != kind {
+				t.Fatalf("FromAgent(%q) = %q; the provider registered for %q is unreachable", string(kind), got, kind)
+			}
+		})
 	}
 }
 

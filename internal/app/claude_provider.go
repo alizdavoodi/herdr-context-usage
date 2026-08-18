@@ -42,9 +42,9 @@ func (claudeProvider) Resolve(_ context.Context, agent herdr.Agent, processes []
 	path := resolved.Path
 	return Resolved{
 		Mode: &mode,
-		Read: func(_ context.Context) (int64, string, error) {
+		Read: func(_ context.Context) (Reading, error) {
 			value, err := claude.ReadOccupancy(path)
-			return value, "", err
+			return Reading{Occupancy: value}, err
 		},
 	}, nil
 }

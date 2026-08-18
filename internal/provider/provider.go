@@ -13,6 +13,12 @@ const (
 	Codex     Kind = "codex"
 	OpenCode  Kind = "opencode"
 	OpenCode2 Kind = "opencode2"
+	// herdr's agent kinds are a closed enumeration compiled into its binary and
+	// a user cannot extend it, so this spelling is load-bearing: a misspelled
+	// constant matches no agent label and produces a permanently blank row with
+	// no error anywhere to explain it. "oh-my-pi" is not a value, and neither is
+	// any transposition of "omp".
+	Pi Kind = "pi"
 )
 
 type Process struct {
@@ -34,6 +40,10 @@ func FromAgent(agent string, processes ProcessList) Kind {
 		return Claude
 	case "codex":
 		return Codex
+	// herdr labels a pi pane on its own, unlike the opencode pair whose version
+	// only the foreground process reveals, so no process inspection belongs here.
+	case "pi":
+		return Pi
 	case "opencode2":
 		return OpenCode2
 	case "opencode":
@@ -77,5 +87,5 @@ func processKind(process Process) Kind {
 }
 
 func (k Kind) Implemented() bool {
-	return k == Claude || k == Codex || k == OpenCode || k == OpenCode2
+	return k == Claude || k == Codex || k == OpenCode || k == OpenCode2 || k == Pi
 }

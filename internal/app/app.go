@@ -25,6 +25,10 @@ type Config struct {
 	CodexHome   string
 	OpenCodeDB  string
 	OpenCode2DB string
+	// The pi home is per-provider rather than shared with omp even though both
+	// agents honour one override variable: a single field would point a pi pane
+	// at omp's store on any machine running both.
+	PiHome string
 }
 
 type ContextState string
@@ -43,7 +47,13 @@ type Measurement struct {
 	Occupancy      *int64        `json:"occupancy"`
 	ResolutionMode *string       `json:"resolution_mode"`
 	ModelID        string        `json:"model_id,omitempty"`
-	Error          string        `json:"error,omitempty"`
+	// The version is not a compatibility gate — pi and omp stamp the same one
+	// while carrying different field sets — so it is carried into the output
+	// instead: that is what makes a format change in a floating dependency
+	// visible rather than leaving it to surface only as a blank row. omitempty
+	// keeps the records of providers whose stores carry no version unchanged.
+	TranscriptVersion *int   `json:"transcript_version,omitempty"`
+	Error             string `json:"error,omitempty"`
 }
 
 type MaintenanceDiagnostic struct {
@@ -143,16 +153,16 @@ func hasOccupancyToken(tokens map[string]string) bool {
 }
 
 // handleUnknown is the one place a failed reading becomes a decision about the
-// pane, for every provider. Each provider brings its own states; only the
-// classification is shared.
-func handleUnknown(ctx context.Context, client Herdr, paneID string, log io.Writer, kind provider.Kind, states report.States, state ContextState, err error, mode *string) error {
-	measurement := Measurement{
-		PaneID: paneID, Provider: kind, ContextState: state,
-		ResolutionMode: mode, Error: err.Error(),
-	}
+// pane, for every provider. Each provider brings its own states and its own
+// half-built record; only the classification is shared. refreshOne fills the
+// record in because how much a failed reading observed before giving up varies
+// per provider, and threading each of those fields through here as a parameter
+// is how this signature grew unreadable once already.
+func handleUnknown(ctx context.Context, client Herdr, log io.Writer, states report.States, measurement Measurement, err error) error {
+	measurement.Error = err.Error()
 	measurementErr := writeMeasurement(log, measurement)
 	if report.Classify(err, states) == report.Superseded {
-		return errors.Join(measurementErr, client.Clear(ctx, paneID))
+		return errors.Join(measurementErr, client.Clear(ctx, measurement.PaneID))
 	}
 	// Stale-low and transient answers both leave the displayed value alone: one
 	// is a valid lower bound, the other is a failure to read, and neither is

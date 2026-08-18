@@ -38,9 +38,9 @@ func (codexProvider) Resolve(_ context.Context, agent herdr.Agent, _ []provider.
 	path := resolved.Path
 	return Resolved{
 		Mode: &mode,
-		Read: func(_ context.Context) (int64, string, error) {
+		Read: func(_ context.Context) (Reading, error) {
 			value, err := codex.ReadOccupancy(path)
-			return value, "", err
+			return Reading{Occupancy: value}, err
 		},
 	}, nil
 }

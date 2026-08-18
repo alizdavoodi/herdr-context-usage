@@ -55,9 +55,9 @@ func (opencodeProvider) Resolve(ctx context.Context, agent herdr.Agent, _ []prov
 		native = fallback
 	}
 	sessionID := native.ID
-	resolved.Read = func(ctx context.Context) (int64, string, error) {
+	resolved.Read = func(ctx context.Context) (Reading, error) {
 		value, err := store.ReadOccupancy(ctx, sessionID)
-		return value, "", err
+		return Reading{Occupancy: value}, err
 	}
 	return resolved, nil
 }

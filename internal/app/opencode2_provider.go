@@ -18,7 +18,7 @@ func (opencode2Provider) States() report.States { return opencode2.SemanticState
 func (opencode2Provider) JustCompacted() error { return opencode2.ErrJustCompacted }
 
 // Resolve opens the store and resolves the session from ForegroundCWD plus
-// the TUI's terminal title. ReadOccupancy returns a Reading carrying both an
+// the TUI's terminal title. The store's own reading carries both an
 // occupancy and a ModelID, so the Read closure forwards the ModelID to the
 // measurement record. Cleanup closes the store after reading.
 func (opencode2Provider) Resolve(ctx context.Context, agent herdr.Agent, _ []provider.Process, config Config) (Resolved, error) {
@@ -38,9 +38,9 @@ func (opencode2Provider) Resolve(ctx context.Context, agent herdr.Agent, _ []pro
 	return Resolved{
 		Mode:    &mode,
 		Cleanup: store.Close,
-		Read: func(ctx context.Context) (int64, string, error) {
+		Read: func(ctx context.Context) (Reading, error) {
 			reading, err := store.ReadOccupancy(ctx, sessionID)
-			return reading.Occupancy, reading.ModelID, err
+			return Reading{Occupancy: reading.Occupancy, ModelID: reading.ModelID}, err
 		},
 	}, nil
 }
