@@ -21,7 +21,10 @@ outside herdr and be pushed in.
 ## Scope
 
 **In.** Context occupancy for `claude`, `codex`, `opencode` (v1) and `opencode2`,
-shown in the agent sidebar and readable by other agents.
+shown in the agent sidebar and readable by other agents. The `pi` and `omp`
+agent kinds are specified separately in
+[design-pi-omp.md](design-pi-omp.md), which extends this document rather than
+replacing it; the sections below describe the four providers shipped first.
 
 **Out**, and each of these is a deliberate no: provider rate-limit windows, plan
 quota, dollar cost, session spend, threshold notifications, update checking.
