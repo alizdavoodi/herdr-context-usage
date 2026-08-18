@@ -24,7 +24,7 @@ func (claudeProvider) Resolve(_ context.Context, agent herdr.Agent, processes []
 	input := claude.SessionInput{
 		ClaudeHome:    config.ClaudeHome,
 		ForegroundCWD: agent.ForegroundCWD,
-		ProcessIDs:    claudeProcessIDs(processes),
+		ProcessIDs:    provider.ProcessIDs(processes, provider.Claude),
 	}
 	if agent.AgentSession != nil {
 		input.AgentSession = &claude.AgentSession{
@@ -47,8 +47,4 @@ func (claudeProvider) Resolve(_ context.Context, agent herdr.Agent, processes []
 			return Reading{Occupancy: value}, err
 		},
 	}, nil
-}
-
-func claudeProcessIDs(processes []provider.Process) []int {
-	return provider.ProcessIDs(processes, provider.Claude)
 }
