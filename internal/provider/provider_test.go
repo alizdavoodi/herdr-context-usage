@@ -68,3 +68,23 @@ func TestImplemented(t *testing.T) {
 		}
 	}
 }
+
+func TestNeedsProcessList(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		agent string
+		want  bool
+	}{
+		{agent: "opencode", want: true},
+		{agent: "claude", want: false},
+		{agent: "codex", want: false},
+		{agent: "opencode2", want: false},
+		{agent: "unknown", want: false},
+	}
+	for _, tt := range tests {
+		if got := NeedsProcessList(tt.agent); got != tt.want {
+			t.Errorf("NeedsProcessList(%q) = %v, want %v", tt.agent, got, tt.want)
+		}
+	}
+}

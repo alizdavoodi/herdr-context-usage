@@ -60,6 +60,13 @@ func FromAgent(agent string, processes ProcessList) Kind {
 	return None
 }
 
+// NeedsProcessList reports whether classifying an agent depends on its pane's
+// process list. Only opencode does: the one label hosts both v1 and v2, and
+// the process list is the only way to tell them apart.
+func NeedsProcessList(agent string) bool {
+	return strings.ToLower(strings.TrimSpace(agent)) == "opencode"
+}
+
 func ProcessIDs(processes []Process, kind Kind) []int {
 	ids := make([]int, 0, 1)
 	for _, process := range processes {

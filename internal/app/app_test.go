@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/herdr"
@@ -18,6 +19,8 @@ import (
 )
 
 type fakeHerdr struct {
+	mu sync.Mutex
+
 	agents       []herdr.Agent
 	listErr      error
 	panes        []herdr.Pane
@@ -81,17 +84,26 @@ func TestRefreshDoesNotFailSuccessfulMeasurementsWhenPaneListFails(t *testing.T)
 	}
 }
 
+// The methods below are called from parallel pane refreshes inside Refresh;
+// the mutex mirrors the production client, whose calls are independent
+// subprocess spawns.
 func (f *fakeHerdr) ProcessInfo(_ context.Context, paneID string) ([]provider.Process, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.processCalls = append(f.processCalls, paneID)
 	return f.processes[paneID], f.processErrs[paneID]
 }
 
 func (f *fakeHerdr) Report(_ context.Context, paneID, display, raw string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.reports[paneID] = [2]string{display, raw}
 	return nil
 }
 
 func (f *fakeHerdr) Clear(_ context.Context, paneID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.clears = append(f.clears, paneID)
 	return f.clearErrs[paneID]
 }
@@ -141,20 +153,91 @@ func TestRefreshFansOutAndClearsEventPaneAfterAgentExit(t *testing.T) {
 	}
 }
 
+// opencode is the one agent whose classification needs the process list, so a
+// transient process-info failure there waits a round: the value is preserved,
+// the run does not fail, and the failure lands as a diagnostic.
 func TestRefreshPreservesValueWhenProcessInfoFails(t *testing.T) {
 	t.Parallel()
 
-	processErr := errors.New("process info failed")
 	fake := &fakeHerdr{
 		agents:      []herdr.Agent{{Agent: "opencode", PaneID: "w1:p1", Tokens: map[string]string{"ctx_raw": "92481"}}},
-		processErrs: map[string]error{"w1:p1": processErr},
+		processErrs: map[string]error{"w1:p1": errors.New("process info failed")},
 	}
-	err := Refresh(context.Background(), fake, "", nil, Config{})
-	if !errors.Is(err, processErr) {
-		t.Fatalf("Refresh() error = %v, want %v", err, processErr)
+	var log bytes.Buffer
+	if err := Refresh(context.Background(), fake, "", &log, Config{}); err != nil {
+		t.Fatalf("Refresh() error = %v, want nil", err)
 	}
 	if len(fake.clears) != 0 {
 		t.Fatalf("clears = %v, want transient process failure to preserve the value", fake.clears)
+	}
+	if got := log.String(); !strings.Contains(got, `"operation":"process_info"`) {
+		t.Fatalf("log = %s, want process-info maintenance diagnostic", got)
+	}
+}
+
+// An unrecognised agent name is already unmeasurable, so a transient
+// process-info failure must not stop its stale occupancy metadata from being
+// cleared.
+func TestRefreshClearsUnknownAgentWhenProcessInfoFails(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeHerdr{
+		agents:      []herdr.Agent{{Agent: "shell", PaneID: "w1:p1", Tokens: map[string]string{"ctx_raw": "92481"}}},
+		processErrs: map[string]error{"w1:p1": errors.New("process info failed")},
+	}
+	var log bytes.Buffer
+	if err := Refresh(context.Background(), fake, "", &log, Config{}); err != nil {
+		t.Fatalf("Refresh() error = %v, want nil", err)
+	}
+	if !slices.Equal(fake.clears, []string{"w1:p1"}) {
+		t.Fatalf("clears = %v, want stale metadata cleared", fake.clears)
+	}
+}
+
+// A round cut short by its deadline must not report success just because the
+// panes that did measure came back clean.
+func TestRefreshReportsDeadlineCancelation(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	fake := &fakeHerdr{
+		agents: []herdr.Agent{{Agent: "shell", PaneID: "w1:p1"}},
+	}
+	if err := Refresh(ctx, fake, "", nil, Config{}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Refresh() error = %v, want context canceled", err)
+	}
+}
+
+// A claude pane resolves through the reported session first and process IDs
+// only as a fallback tier, so a transient process-info failure must degrade
+// the read instead of dropping the pane for the round.
+func TestRefreshMeasuresClaudeWhenProcessInfoFails(t *testing.T) {
+	t.Parallel()
+
+	home := t.TempDir()
+	transcript := filepath.Join(home, "session.jsonl")
+	entry := `{"type":"assistant","message":{"usage":{"input_tokens":840,"cache_read_input_tokens":90000,"cache_creation_input_tokens":1641}}}` + "\n"
+	if err := os.WriteFile(transcript, []byte(entry), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var log bytes.Buffer
+	fake := &fakeHerdr{
+		agents:      []herdr.Agent{{Agent: "claude", PaneID: "w1:p1", AgentSession: &herdr.AgentSession{Kind: "path", Value: transcript}}},
+		processErrs: map[string]error{"w1:p1": errors.New("process info failed")},
+		reports:     make(map[string][2]string),
+	}
+	if err := Refresh(context.Background(), fake, "", &log, Config{ClaudeHome: home}); err != nil {
+		t.Fatalf("Refresh() error = %v, want degraded measurement to succeed", err)
+	}
+	if got := fake.reports["w1:p1"]; got != [2]string{"92k", "92481"} {
+		t.Fatalf("report = %v, want measurement despite process-info failure", got)
+	}
+	if len(fake.clears) != 0 {
+		t.Fatalf("clears = %v, want none", fake.clears)
+	}
+	if got := log.String(); !strings.Contains(got, `"operation":"process_info"`) {
+		t.Fatalf("log = %s, want process-info maintenance diagnostic", got)
 	}
 }
 
