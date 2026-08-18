@@ -194,3 +194,4 @@ The implementation follows the agreed design in
 - [ADR-0003: a dedicated plugin](docs/adr/0003-dedicated-plugin-not-upstream-contribution.md)
 - [ADR-0004: provider-specific session correlation](docs/adr/0004-provider-specific-session-correlation.md)
 - [ADR-0005: no plugin CLI](docs/adr/0005-no-plugin-cli.md)
+- [ADR-0006: two providers for pi and omp](docs/adr/0006-two-providers-for-pi-and-omp.md)
