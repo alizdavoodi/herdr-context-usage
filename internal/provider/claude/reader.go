@@ -4,9 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
-	"os"
+
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider/transcript"
 )
 
 // This remains bounded while retaining several consecutive records at the
@@ -30,31 +29,14 @@ type transcriptEntry struct {
 }
 
 func ReadOccupancy(path string) (int64, error) {
-	file, err := os.Open(path)
+	// Claude's transcript stamps no schema version, so the head of the scan goes
+	// unread here. The bounded tail is the whole of what this reader needs.
+	scan, err := transcript.Read("claude", path, maxScanBytes)
 	if err != nil {
-		return 0, fmt.Errorf("open claude transcript: %w", err)
-	}
-	defer file.Close()
-
-	info, err := file.Stat()
-	if err != nil {
-		return 0, fmt.Errorf("stat claude transcript: %w", err)
-	}
-	start := max(info.Size()-maxScanBytes, 0)
-	if _, err := file.Seek(start, io.SeekStart); err != nil {
-		return 0, fmt.Errorf("seek claude transcript: %w", err)
+		return 0, err
 	}
 
-	data, err := io.ReadAll(io.LimitReader(file, maxScanBytes))
-	if err != nil {
-		return 0, fmt.Errorf("read claude transcript tail: %w", err)
-	}
-	lines := bytes.Split(data, []byte{'\n'})
-	if start > 0 && len(lines) > 0 {
-		// The first bytes may be the tail of a large JSONL record.
-		lines = lines[1:]
-	}
-
+	lines := scan.Tail
 	for i := len(lines) - 1; i >= 0; i-- {
 		line := bytes.TrimSpace(lines[i])
 		if len(line) == 0 {

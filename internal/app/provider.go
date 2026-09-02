@@ -22,6 +22,11 @@ type Reading struct {
 	Occupancy         int64
 	ModelID           string
 	TranscriptVersion *int
+	// OracleDisagreement is a reader's own cross-check against a figure its
+	// store computes independently, empty when the two agree or when the store
+	// carries no such figure. It rides on a successful reading only: a read that
+	// produced no occupancy had nothing to cross-check.
+	OracleDisagreement string
 }
 
 // Resolved carries one provider's session resolution: a closure that reads a
@@ -55,6 +60,7 @@ var allProviders = []Provider{
 	opencodeProvider{},
 	opencode2Provider{},
 	piProvider{},
+	ompProvider{},
 }
 
 func providerFor(kind provider.Kind) Provider {
@@ -106,6 +112,7 @@ func refreshOne(ctx context.Context, client Herdr, agent herdr.Agent, processes 
 	measurement.ContextState = ContextMeasured
 	measurement.Occupancy = &reading.Occupancy
 	measurement.ModelID = reading.ModelID
+	measurement.OracleDisagreement = reading.OracleDisagreement
 	reportErr := client.Report(ctx, agent.PaneID, occupancyformat.Occupancy(reading.Occupancy), strconv.FormatInt(reading.Occupancy, 10))
 	measurementErr := writeMeasurement(log, measurement)
 	return errors.Join(measurementErr, reportErr)

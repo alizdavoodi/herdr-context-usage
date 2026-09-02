@@ -27,10 +27,12 @@ type Config struct {
 	CodexHome   string
 	OpenCodeDB  string
 	OpenCode2DB string
-	// The pi home is per-provider rather than shared with omp even though both
+	// The pi and omp homes are per-provider rather than shared even though both
 	// agents honour one override variable: a single field would point a pi pane
-	// at omp's store on any machine running both.
-	PiHome string
+	// at omp's store on any machine running both, and the two stores have the
+	// same layout below the home, so the mistake would be silent.
+	PiHome  string
+	OmpHome string
 }
 
 type ContextState string
@@ -54,8 +56,15 @@ type Measurement struct {
 	// instead: that is what makes a format change in a floating dependency
 	// visible rather than leaving it to surface only as a blank row. omitempty
 	// keeps the records of providers whose stores carry no version unchanged.
-	TranscriptVersion *int   `json:"transcript_version,omitempty"`
-	Error             string `json:"error,omitempty"`
+	TranscriptVersion *int `json:"transcript_version,omitempty"`
+	// OracleDisagreement is set when a provider's store carries an independent
+	// figure for what this plugin computed and the two stopped agreeing. Only
+	// omp has one; it agreed on every turn measured, so a value here is news
+	// about the agent's format rather than about this pane. It never withholds a
+	// number — the row is still reported — which is the difference between an
+	// oracle and a source.
+	OracleDisagreement string `json:"oracle_disagreement,omitempty"`
+	Error              string `json:"error,omitempty"`
 }
 
 type MaintenanceDiagnostic struct {

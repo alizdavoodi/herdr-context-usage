@@ -19,6 +19,11 @@ const (
 	// no error anywhere to explain it. "oh-my-pi" is not a value, and neither is
 	// any transposition of "omp".
 	Pi Kind = "pi"
+	// herdr labels omp separately from pi even though omp is built on pi, so
+	// the two are distinct kinds here as well. The same spelling warning
+	// applies, and more sharply: "oh-my-pi" is what the project calls itself
+	// in prose, and it is not the label.
+	Omp Kind = "omp"
 )
 
 type Process struct {
@@ -40,10 +45,13 @@ func FromAgent(agent string, processes ProcessList) Kind {
 		return Claude
 	case "codex":
 		return Codex
-	// herdr labels a pi pane on its own, unlike the opencode pair whose version
-	// only the foreground process reveals, so no process inspection belongs here.
+	// herdr labels pi and omp panes on their own, unlike the opencode pair whose
+	// version only the foreground process reveals, so no process inspection
+	// belongs here.
 	case "pi":
 		return Pi
+	case "omp":
+		return Omp
 	case "opencode2":
 		return OpenCode2
 	case "opencode":
@@ -94,5 +102,5 @@ func processKind(process Process) Kind {
 }
 
 func (k Kind) Implemented() bool {
-	return k == Claude || k == Codex || k == OpenCode || k == OpenCode2 || k == Pi
+	return k == Claude || k == Codex || k == OpenCode || k == OpenCode2 || k == Pi || k == Omp
 }

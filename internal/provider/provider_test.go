@@ -27,6 +27,9 @@ func TestFromAgent(t *testing.T) {
 		// the pi arm returns before it reads the list at all, so a case supplying
 		// one exercises the same arm with an argument nothing looks at.
 		{name: "pi needs no process list", agent: "pi", processes: ProcessList{}, want: Pi},
+		// omp is its own label rather than a variant of pi's, so a pane running
+		// it must not resolve to the pi kind and read pi's store.
+		{name: "omp needs no process list", agent: "omp", processes: ProcessList{}, want: Omp},
 		{name: "unrecognised agent", agent: "unknown", processes: ProcessList{Available: true, Entries: []Process{{Argv0: "claude"}}}, want: None},
 	}
 
@@ -57,7 +60,7 @@ func TestImplemented(t *testing.T) {
 	// from the provider registry without a cycle. internal/app/seam_test.go
 	// closes that gap from the other side, asserting every registered provider's
 	// kind reports Implemented.
-	for _, kind := range []Kind{Claude, Codex, OpenCode, OpenCode2, Pi} {
+	for _, kind := range []Kind{Claude, Codex, OpenCode, OpenCode2, Pi, Omp} {
 		if !kind.Implemented() {
 			t.Fatalf("%q provider should be implemented", kind)
 		}

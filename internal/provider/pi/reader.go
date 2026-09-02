@@ -1,13 +1,12 @@
 package pi
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
-	"os"
+
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider/piompshared"
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider/transcript"
 )
 
 // pi writes whole tool results into the transcript — the largest single record
@@ -16,11 +15,6 @@ import (
 // underneath. 8 MiB leaves room for roughly eighty of them while keeping the
 // scan independent of how long the agent session has run.
 const maxScanBytes int64 = 8 << 20
-
-// The session record is the transcript's first line and measured 195 bytes, 196
-// counting its newline. This bound exists only so that a first line this reader
-// cannot understand still cannot be read unboundedly.
-const maxHeaderBytes int64 = 64 << 10
 
 var (
 	ErrNoOccupancy   = errors.New("pi transcript has no current context occupancy")
@@ -67,32 +61,16 @@ type transcriptEntry struct {
 }
 
 func ReadOccupancy(path string) (Reading, error) {
-	file, err := os.Open(path)
+	scan, err := transcript.Read("pi", path, maxScanBytes)
+	// The version rides on the failure path too. A tail read that fails after
+	// the head was read still knows the format it was reading, and that is the
+	// case where knowing it matters most: a blank row caused by a schema change
+	// is otherwise indistinguishable from any other unreadable transcript.
+	version := readVersion(scan.Head)
 	if err != nil {
-		return Reading{}, fmt.Errorf("open pi transcript: %w", err)
+		return Reading{Version: version}, err
 	}
-	defer file.Close()
-
-	info, err := file.Stat()
-	if err != nil {
-		return Reading{}, fmt.Errorf("stat pi transcript: %w", err)
-	}
-
-	version := readVersion(file)
-	start := max(info.Size()-maxScanBytes, 0)
-	if _, err := file.Seek(start, io.SeekStart); err != nil {
-		return Reading{Version: version}, fmt.Errorf("seek pi transcript: %w", err)
-	}
-	data, err := io.ReadAll(io.LimitReader(file, maxScanBytes))
-	if err != nil {
-		return Reading{Version: version}, fmt.Errorf("read pi transcript tail: %w", err)
-	}
-	lines := bytes.Split(data, []byte{'\n'})
-	if start > 0 && len(lines) > 0 {
-		// The first bytes may be the tail of a record the scan opened inside.
-		lines = lines[1:]
-	}
-	return newestOccupancy(lines, version)
+	return newestOccupancy(scan.Tail, version)
 }
 
 // newestOccupancy walks back from the end of the transcript to the newest
@@ -127,32 +105,16 @@ func newestOccupancy(lines [][]byte, version *int) (Reading, error) {
 			// window. user and toolResult records carry no usage at all.
 			continue
 		}
-		if occupancy, ok := occupancyOf(entry); ok {
+		// Which three counts these are is pi's business — the shapes around them
+		// diverge from omp's even where the field names do not — while the sum
+		// itself is the only thing ADR-0006 found measured identical on both
+		// agents, so it is the only thing that lives in a shared package.
+		usage := entry.Message.Usage
+		if occupancy, ok := piompshared.Occupancy(usage.Input, usage.CacheRead, usage.CacheWrite); ok {
 			return Reading{Occupancy: occupancy, Version: version}, nil
 		}
 	}
 	return Reading{Version: version}, ErrNoOccupancy
-}
-
-// occupancyOf sums the three counts describing the window the turn was sent
-// with, and reports whether the row yields a number at all.
-//
-// The three are addends rather than subsets, and that is measured: pi's own
-// per-turn total equals this sum plus the turn's output on all 35 usage rows of
-// the two real transcripts, which leaves no room for a subset relation.
-func occupancyOf(entry transcriptEntry) (int64, bool) {
-	usage := entry.Message.Usage
-	if usage.Input < 0 || usage.CacheRead < 0 || usage.CacheWrite < 0 {
-		return 0, false
-	}
-	occupancy := usage.Input + usage.CacheRead + usage.CacheWrite
-	if occupancy == 0 {
-		// An all-zero usage row is a failed turn rather than an empty window, so
-		// the walk continues to the previous reading; internal/provider/claude/reader.go
-		// carries the evidence for that and for why unknown stays null, not zero.
-		return 0, false
-	}
-	return occupancy, true
 }
 
 // readVersion reads the schema version off the transcript's session record.
@@ -166,15 +128,20 @@ func occupancyOf(entry transcriptEntry) (int64, bool) {
 //
 // An absent, unparseable or non-session first line therefore leaves the version
 // nil and the walk proceeds. A read failure is not reported from here either:
-// the tail read meets the same failure and wraps it, where it classifies as
-// transient and preserves the displayed value.
-func readVersion(r io.Reader) *int {
-	line, err := bufio.NewReader(io.LimitReader(r, maxHeaderBytes)).ReadBytes('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
+// the head read shares its open with the tail read, which meets the same failure
+// and wraps it, where it classifies as transient and preserves the displayed
+// value.
+//
+// Only the first line is considered, and that is pi-specific rather than
+// incidental: pi writes the session record first, where omp writes a fixed-width
+// title record ahead of it. Scanning further here would accept a shape pi does
+// not produce.
+func readVersion(head [][]byte) *int {
+	if len(head) == 0 {
 		return nil
 	}
 	var record sessionRecord
-	if json.Unmarshal(bytes.TrimSpace(line), &record) != nil || record.Type != "session" {
+	if json.Unmarshal(bytes.TrimSpace(head[0]), &record) != nil || record.Type != "session" {
 		return nil
 	}
 	return record.Version
