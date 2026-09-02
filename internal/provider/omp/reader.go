@@ -94,6 +94,14 @@ type sessionRecord struct {
 // on 4, where 50,213 sat over a prompt size of 48,928. No subset relation holds
 // in either direction, so it can be neither added nor subtracted.
 //
+// There is no reasoningTokens field, which is omp's name for the field pi calls
+// reasoning: 557 on the newest turn of the compacted transcript, against that
+// turn's output of 931. omp writes it on exactly three turns across the five
+// transcripts, all of them deepseek-v4-flash rather than the ollama-cloud turns
+// around them — 169 against an output of 296, 619 against 798, and 557 against
+// 931 — so it is a subset of the output on every row that carries it, which is
+// the same disqualification pi records against its own spelling.
+//
 // contextSnapshot.promptTokens is decoded, and it is the one field here that is
 // read without being reported. It is an oracle, never the source: see
 // oracleDisagreement.

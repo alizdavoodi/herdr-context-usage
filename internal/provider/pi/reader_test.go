@@ -282,6 +282,19 @@ func TestReadOccupancy(t *testing.T) {
 			records: []string{versionedNonSessionRecord, turnA39},
 			want:    27_905,
 		},
+		{
+			// A stand-in for a shape pi does not write: both real transcripts
+			// put the session record at line 1, and this puts A line 2 there
+			// with the session record behind it. That is omp's header shape — a
+			// record ahead of the session record — replayed into a pi
+			// transcript, and it is the state that pins the search to the first
+			// line rather than to the first session record it can find. A
+			// reader that walked the head the way omp's has to would report
+			// version 3 here, for a transcript pi never produced.
+			name:    "a session record behind the first line is not read",
+			records: []string{modelChangeA2, sessionV3, turnA39},
+			want:    27_905,
+		},
 	}
 
 	for _, tt := range tests {

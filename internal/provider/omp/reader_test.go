@@ -361,10 +361,9 @@ func TestReadOccupancy(t *testing.T) {
 			wantVersion: intPtr(3),
 		},
 		{
-			name:    "an unparseable header line does not hide the session record",
-			records: []string{malformedLine, sessionC2, turnC250},
-			want:    132_098,
-
+			name:        "an unparseable header line does not hide the session record",
+			records:     []string{malformedLine, sessionC2, turnC250},
+			want:        132_098,
 			wantVersion: intPtr(3),
 		},
 	}
@@ -414,6 +413,68 @@ func TestReadOccupancyNeverWalksPastTheCompactionRecord(t *testing.T) {
 	}
 	if !errors.Is(err, ErrJustCompacted) {
 		t.Fatalf("ReadOccupancy() error = %v, want %v", err, ErrJustCompacted)
+	}
+}
+
+// maxHeaderRecords bounds the session-record search, and this is the only case
+// that reaches it: a session record sitting past the bound is not read, so a
+// transcript this reader cannot find one in costs a bounded scan rather than a
+// walk of the whole 64 KiB head.
+//
+// Both halves are asserted because the second proves nothing alone — a session
+// record that was never found also reports no version — so the same record one
+// position inside the bound has to come back as 3.
+//
+// A stand-in in both directions, with no precedent in the real store. All five
+// transcripts carry a session record and all five put it at line 2, and the most
+// header records seen ahead of a first message is 7: transcript D's title
+// record, its session record, then three model_change and two
+// thinking_level_change records. The filler is D's real model_change record
+// repeated, standing in for a store that grew a longer header or stopped writing
+// a session record where this reader looks for it.
+func TestReadOccupancyStopsSearchingForTheSessionRecord(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		leading     int
+		wantVersion *int
+	}{
+		{
+			name:        "a session record inside the bound is read",
+			leading:     maxHeaderRecords - 1,
+			wantVersion: intPtr(3),
+		},
+		{
+			name:    "a session record past the bound is not",
+			leading: maxHeaderRecords,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			records := make([]string, 0, tt.leading+2)
+			for range tt.leading {
+				records = append(records, modelChangeC3)
+			}
+			records = append(records, sessionC2, turnC250)
+
+			got, err := ReadOccupancy(writeTranscript(t, records...))
+			if err != nil {
+				t.Fatalf("ReadOccupancy() error = %v", err)
+			}
+			// The occupancy is unaffected either way: the bound applies to the
+			// head search alone, and the walk that finds this number runs over
+			// the tail.
+			if got.Occupancy != 132_098 {
+				t.Fatalf("ReadOccupancy() = %d, want 132098 whatever the header search found", got.Occupancy)
+			}
+			if !sameVersion(got.Version, tt.wantVersion) {
+				t.Fatalf("ReadOccupancy() version = %s, want %s", formatVersion(got.Version), formatVersion(tt.wantVersion))
+			}
+		})
 	}
 }
 
