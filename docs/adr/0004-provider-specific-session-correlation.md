@@ -75,13 +75,19 @@ The only complete fixes are a discriminator herdr does not expose or a native
 without it these providers cannot report sessions when no integration supplies
 an agent session.
 
-A user who has not installed the herdr integration for pi or omp meets the
-integration precondition recorded above as a permanently blank row, with nothing
-anywhere to explain it — the same failure mode the opencode title causes
-produce, and the reason the precondition is written down for users and for agent
-consumers rather than left here. The blank is still the correct output, because
-with no reported agent session there is no signal left to be right about; it is
-simply indistinguishable from an agent that has not yet taken a turn, so the
+A user who has not installed the herdr integration meets the precondition
+recorded above, and the two agent kinds hand it to them differently. herdr
+already labels a pi pane a pi agent, so that pane has a row and the row is
+permanently blank, with nothing anywhere to explain it — the same failure mode
+the opencode title causes produce. An omp pane is not labelled an agent at all
+until its integration is installed, so there is no row to be blank: the pane is
+absent from the agent list entirely. pi's symptom is a row that never fills in
+and omp's is an agent that never appears; both are silent about the cause, and
+each sends a user looking somewhere different, which is why the precondition is
+written down for users and for agent consumers rather than left here. Where
+there is a blank row it remains the correct output, because with no reported
+agent session there is no signal left to be right about; it is simply
+indistinguishable from an agent that has not yet taken a turn, so the
 documentation has to carry a distinction the row cannot.
 
 Recency remains tempting because it is how `opencode2 --continue` picks a
