@@ -128,7 +128,7 @@ dispatch also checks the foreground process name to choose the right provider.
 
 Neither opencode version reports a session id to Herdr, so both correlate a
 pane to a session through the terminal title its TUI sets: `OC | <session
-title>`. That title is the only signal available, which makes three things
+title>`. That title is the only signal available, which makes four things
 worth knowing before concluding the plugin is broken.
 
 **`OPENCODE_DISABLE_TERMINAL_TITLE` turns correlation off entirely.** opencode
@@ -145,6 +145,20 @@ variable, so its titles survive it.
 `Disable terminal title` command in their palette, remembered across restarts.
 Nothing in the environment records that it was used, so a blank opencode row
 with no explanation in the plugin's output is worth checking there.
+
+**`opencode2 mini` leaves the pane with no opencode title.** The `mini`
+subcommand starts what opencode2 calls its minimal interactive interface, and
+it does not set the terminal title the way the ordinary TUI does, so the title
+the pane reports is the one the shell wrote for the command it is running.
+Measured against opencode2 `0.0.0-next-17444`: the pane's title read
+`…/github.com/alizdavoodi/herdr-context-usage` before the command and the raw
+`opencode2 mini` while it ran, never an `OC | ` title, and its row stayed blank
+while a pane on the same opencode2 build running the ordinary TUI reported its
+occupancy normally. Herdr does still label the pane an `opencode` agent, so
+this is not a pane the plugin never sees — it is one whose only correlation
+signal was never written. Nothing in the pane's state announces that, so like
+the palette toggle above it is invisible in the plugin's output today, and the
+row stays blank permanently rather than until the agent's next turn.
 
 **Plugin routes look like sessions.** A plugin route sets `OC | <plugin>` using
 the same format, and it names no session, so a pane sitting on one is blank by
