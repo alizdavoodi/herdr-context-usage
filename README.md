@@ -117,6 +117,8 @@ provider guesses by newest-file or newest-session recency.
 | Implemented | `codex` | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`; `total_tokens`, falling back to `input_tokens` | Herdr's reported `agent_session`, then the sole active TUI main thread under `foreground_cwd` |
 | Implemented | `opencode` (v1) | `~/.local/share/opencode/opencode.db`, `session` plus `message`; newest completed assistant `input + cache.read + cache.write` | Herdr's reported `agent_session`, then the pane directory plus its `OC \| <session title>` terminal title |
 | Implemented | `opencode2` | `~/.local/share/opencode/opencode2.db`, `session_v2` plus `session_message`; newest completed assistant `input + cache.read + cache.write` | Pane directory plus its `OC \| <session title>` terminal title; untitled sessions remain blank |
+| Implemented | `pi` | `~/.pi/agent/sessions/<wrapped-cwd>/<start-timestamp>_<session-id>.jsonl`; newest completed assistant `input + cacheRead + cacheWrite`; home overridable with `PI_CODING_AGENT_DIR` | Herdr's reported `agent_session` only — a path used directly, an id matched to the sole transcript whose name ends with it, non-unique treated as unresolved; no directory or recency fallback, so pi's Herdr integration is a precondition |
+| Implemented | `omp` | `~/.omp/agent/sessions/<stripped-cwd>/<start-timestamp>_<session-id>.jsonl`; newest completed assistant `input + cacheRead + cacheWrite`, cross-checked against the turn's own `contextSnapshot.promptTokens`; home overridable with `PI_CODING_AGENT_DIR`, independently of pi's | Herdr's reported `agent_session` only — a path used directly, an id matched to the sole transcript whose name ends with it, non-unique treated as unresolved; no directory or recency fallback, so omp's Herdr integration is a precondition for the row filling in. Herdr labels the pane an `omp` agent from its own process either way, so a missing integration shows as a blank row rather than an absent one |
 
 The two opencode providers use separate stores, both opened read-only; the v1
 provider does not read legacy JSON message files or the v1 database's unrelated
@@ -127,7 +129,7 @@ dispatch also checks the foreground process name to choose the right provider.
 
 Neither opencode version reports a session id to Herdr, so both correlate a
 pane to a session through the terminal title its TUI sets: `OC | <session
-title>`. That title is the only signal available, which makes three things
+title>`. That title is the only signal available, which makes four things
 worth knowing before concluding the plugin is broken.
 
 **`OPENCODE_DISABLE_TERMINAL_TITLE` turns correlation off entirely.** opencode
@@ -145,12 +147,48 @@ variable, so its titles survive it.
 Nothing in the environment records that it was used, so a blank opencode row
 with no explanation in the plugin's output is worth checking there.
 
+**`opencode2 mini` leaves the pane with no opencode title.** The `mini`
+subcommand starts what opencode2 calls its minimal interactive interface, and
+it does not set the terminal title the way the ordinary TUI does, so the title
+the pane reports is the one the shell wrote for the command it is running.
+Measured against opencode2 `0.0.0-next-17444`: the pane's title read
+`…/github.com/alizdavoodi/herdr-context-usage` before the command and the raw
+`opencode2 mini` while it ran, never an `OC | ` title, and its row stayed blank
+while a pane on the same opencode2 build running the ordinary TUI reported its
+occupancy normally. Herdr does still label the pane an `opencode` agent, so
+this is not a pane the plugin never sees — it is one whose only correlation
+signal was never written. Unlike the palette toggle above, the plugin can say
+so: the pane's process list names the `mini` subcommand, and the measurement
+record reports that as the reason instead of a bare missing title. The row still
+stays blank permanently rather than until the agent's next turn, because there
+is no session title to correlate either way — this names the cause, it does not
+recover a number.
+
 **Plugin routes look like sessions.** A plugin route sets `OC | <plugin>` using
 the same format, and it names no session, so a pane sitting on one is blank by
 design. The plugin recognises the case when the title is longer than a session
 title can be — session titles over 40 characters are shortened to 37 plus an
 ellipsis, and plugin titles are never shortened — and says so rather than
 reporting a session it could not find.
+
+### When a pi row measures the previous agent session
+
+**pi's Herdr integration does not report a session switch.** It reports the
+agent session on session start and at each turn boundary, so a pi pane whose
+agent session is switched inside the pane keeps reporting the previous one
+until the next turn boundary — and for that interval, this plugin measures
+the previous transcript instead of the one now showing in the pane.
+
+This is documented rather than defended. The common switch resumes another
+agent session in the same directory, which no directory comparison could tell
+apart from the one it replaced, so there is no signal the plugin could use
+instead. The interval also closes at the same turn boundary every measurement
+here is already anchored to, so it is bounded by an event the numbers already
+depend on, not an open-ended one.
+
+Worth reporting upstream all the same. The integration already reports at two
+other points in an agent session's life, so a switch is a third it could
+report; nothing here needs the plugin to change once it does.
 
 ## Query the tokens
 
@@ -194,3 +232,4 @@ The implementation follows the agreed design in
 - [ADR-0003: a dedicated plugin](docs/adr/0003-dedicated-plugin-not-upstream-contribution.md)
 - [ADR-0004: provider-specific session correlation](docs/adr/0004-provider-specific-session-correlation.md)
 - [ADR-0005: no plugin CLI](docs/adr/0005-no-plugin-cli.md)
+- [ADR-0006: two providers for pi and omp](docs/adr/0006-two-providers-for-pi-and-omp.md)

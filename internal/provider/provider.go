@@ -13,6 +13,17 @@ const (
 	Codex     Kind = "codex"
 	OpenCode  Kind = "opencode"
 	OpenCode2 Kind = "opencode2"
+	// herdr's agent kinds are a closed enumeration compiled into its binary and
+	// a user cannot extend it, so this spelling is load-bearing: a misspelled
+	// constant matches no agent label and produces a permanently blank row with
+	// no error anywhere to explain it. "oh-my-pi" is not a value, and neither is
+	// any transposition of "omp".
+	Pi Kind = "pi"
+	// herdr labels omp separately from pi even though omp is built on pi, so
+	// the two are distinct kinds here as well. The same spelling warning
+	// applies, and more sharply: "oh-my-pi" is what the project calls itself
+	// in prose, and it is not the label.
+	Omp Kind = "omp"
 )
 
 type Process struct {
@@ -34,6 +45,13 @@ func FromAgent(agent string, processes ProcessList) Kind {
 		return Claude
 	case "codex":
 		return Codex
+	// herdr labels pi and omp panes on their own, unlike the opencode pair whose
+	// version only the foreground process reveals, so no process inspection
+	// belongs here.
+	case "pi":
+		return Pi
+	case "omp":
+		return Omp
 	case "opencode2":
 		return OpenCode2
 	case "opencode":
@@ -50,6 +68,13 @@ func FromAgent(agent string, processes ProcessList) Kind {
 	return None
 }
 
+// NeedsProcessList reports whether classifying an agent depends on its pane's
+// process list. Only opencode does: the one label hosts both v1 and v2, and
+// the process list is the only way to tell them apart.
+func NeedsProcessList(agent string) bool {
+	return strings.ToLower(strings.TrimSpace(agent)) == "opencode"
+}
+
 func ProcessIDs(processes []Process, kind Kind) []int {
 	ids := make([]int, 0, 1)
 	for _, process := range processes {
@@ -59,6 +84,11 @@ func ProcessIDs(processes []Process, kind Kind) []int {
 	}
 	return ids
 }
+
+// Kind reports which agent a single process is, by the same basename rule
+// dispatch uses to choose a provider for the pane. Exported so a provider can
+// find its own entry in a pane's process list without restating that rule.
+func (p Process) Kind() Kind { return processKind(p) }
 
 func processKind(process Process) Kind {
 	name := strings.ToLower(strings.TrimPrefix(filepath.Base(process.Argv0), "."))
@@ -77,5 +107,5 @@ func processKind(process Process) Kind {
 }
 
 func (k Kind) Implemented() bool {
-	return k == Claude || k == Codex || k == OpenCode || k == OpenCode2
+	return k == Claude || k == Codex || k == OpenCode || k == OpenCode2 || k == Pi || k == Omp
 }

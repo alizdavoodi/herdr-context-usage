@@ -20,6 +20,16 @@ func TestFromAgent(t *testing.T) {
 		{name: "opencode v1", agent: "opencode", processes: ProcessList{Available: true, Entries: []Process{{Argv0: "opencode-helper"}, {Argv0: "opencode"}}}, want: OpenCode},
 		{name: "opencode v1 with observed empty process list", agent: "opencode", processes: ProcessList{Available: true, Entries: []Process{}}, want: OpenCode},
 		{name: "opencode version undeterminable without process list", agent: "opencode", processes: ProcessList{}, want: None},
+		// The opencode pair needs the process list to tell its two versions
+		// apart, and returns None without one. pi must not inherit that: herdr
+		// labels it on its own, so a pane whose processes could not be read is
+		// still measurable. This is the only pi case because it is the strongest:
+		// the pi arm returns before it reads the list at all, so a case supplying
+		// one exercises the same arm with an argument nothing looks at.
+		{name: "pi needs no process list", agent: "pi", processes: ProcessList{}, want: Pi},
+		// omp is its own label rather than a variant of pi's, so a pane running
+		// it must not resolve to the pi kind and read pi's store.
+		{name: "omp needs no process list", agent: "omp", processes: ProcessList{}, want: Omp},
 		{name: "unrecognised agent", agent: "unknown", processes: ProcessList{Available: true, Entries: []Process{{Argv0: "claude"}}}, want: None},
 	}
 
@@ -45,7 +55,12 @@ func TestProcessIDsUsesExactBasenames(t *testing.T) {
 func TestImplemented(t *testing.T) {
 	t.Parallel()
 
-	for _, kind := range []Kind{Claude, Codex, OpenCode, OpenCode2} {
+	// This list is hand-written because Go cannot enumerate a string-typed
+	// constant set, and the app package cannot be imported here to derive it
+	// from the provider registry without a cycle. internal/app/seam_test.go
+	// closes that gap from the other side, asserting every registered provider's
+	// kind reports Implemented.
+	for _, kind := range []Kind{Claude, Codex, OpenCode, OpenCode2, Pi, Omp} {
 		if !kind.Implemented() {
 			t.Fatalf("%q provider should be implemented", kind)
 		}
@@ -53,6 +68,26 @@ func TestImplemented(t *testing.T) {
 	for _, kind := range []Kind{None} {
 		if kind.Implemented() {
 			t.Fatalf("%q provider should not be implemented", kind)
+		}
+	}
+}
+
+func TestNeedsProcessList(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		agent string
+		want  bool
+	}{
+		{agent: "opencode", want: true},
+		{agent: "claude", want: false},
+		{agent: "codex", want: false},
+		{agent: "opencode2", want: false},
+		{agent: "unknown", want: false},
+	}
+	for _, tt := range tests {
+		if got := NeedsProcessList(tt.agent); got != tt.want {
+			t.Errorf("NeedsProcessList(%q) = %v, want %v", tt.agent, got, tt.want)
 		}
 	}
 }

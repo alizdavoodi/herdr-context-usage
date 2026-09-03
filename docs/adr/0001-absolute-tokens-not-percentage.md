@@ -22,3 +22,19 @@ mitigation.
 herdr's sidebar styling is static per slot and cannot vary by value, so a
 severity colour was never available anyway. Adding a percentage later means
 adding the table and its maintenance, not rewriting the extractors.
+
+omp is a second agent that reports its own window limit, and revisiting this was
+considered on that basis. Its log records `contextWindow`, `thresholdTokens` and
+`resolvedContextTokens` on every turn, which answers the lookup-table objection
+completely: the number is the agent's own, not a table of ours to rot. It was
+declined on three grounds. The source is `level: "debug"` output in a per-PID
+log file, which nobody has promised to keep stable, unlike codex's
+`model_context_window` in the session record. Only codex and omp expose a window
+at all, so a percentage would appear on those rows and an absolute count on
+every other, and inconsistency between adjacent rows is worse than either
+choice applied uniformly. And this ADR governs the display contract rather than
+data availability, so more data does not overturn it. That window figure is
+used instead as a verification oracle, checking a provider's arithmetic against
+the agent's own accounting. The condition for revisiting is a majority of
+providers reporting a window limit through an interface that forms part of their
+contract.

@@ -19,6 +19,45 @@ working-directory and agent-kind match in Claude's process registry is recorded
 as `process_registry`; the structural fallback that accepts the sole transcript
 under the encoded working directory remains `foreground_cwd`.
 
+`pi` and `omp`, the two agent kinds specified in
+[design-pi-omp.md](../design-pi-omp.md), sit at the other end of that range:
+they resolve from herdr's reported agent session **and nothing else**, with no
+fallback at all. A path is used directly; an id is matched against the
+transcript whose name ends with it under that provider's own home; a match that
+is not unique is treated as unresolved rather than chosen between.
+
+Two reasons put the fallback out of reach, and both bear on each agent. Both
+agents file an agent session under the directory the agent *started* in, so a
+pane that has since moved resolves to nothing or to an unrelated agent session
+— measured on pi on this machine, where the directory for this repository
+exists but is empty while the real agent session sits elsewhere; omp files by
+the same rule, though the moved-pane case was measured only on pi. And neither
+agent's transcript marks a sub-agent session, so a directory-scoped match would
+have nothing to exclude one with, and the main-thread guarantee this plugin
+makes would become a guess.
+
+A third reason stood here and is **withdrawn**: that omp ships no
+screen-detection manifest, so without its integration an omp pane is never
+labelled an agent by herdr and never reaches this plugin at all. Observed on
+herdr 0.8.0 with omp 18.1.4, that is not what happens. herdr labelled a pane
+running omp from the process name — its server log recording `agent changed …
+agent=Some(Omp) process=omp` — while `herdr integration status` reported omp's
+integration as not installed, and the pane reached this plugin and resolved to
+nothing, exactly as a pi pane in the same state does. Whether omp ships a
+screen manifest was never the load-bearing part; what was claimed and is false
+is the consequence drawn from it. The decision survives on the two reasons
+above, each of which is independently sufficient.
+
+Installing the herdr integration is therefore a **precondition** for both agent
+kinds, not an optional improvement on a fallback that works without it. The
+difference from the four providers above is that none of those needs anything
+installed in order to correlate at all: each works from what herdr already
+reports about a pane, and goes blank where that signal is absent or has been
+switched off. pi and omp correlate nothing until their integration is
+installed. What the integration supplies is the reported agent session, not the
+pane's standing as an agent. Recorded against pi 0.84.2, omp 17.3.5 and herdr
+0.8.0, and the withdrawal against omp 18.1.4; neither agent is pinned.
+
 ## Consequences
 
 Every measurement records its resolution mode, so a wrong attribution is
@@ -48,6 +87,19 @@ The only complete fixes are a discriminator herdr does not expose or a native
 `agent_session`, which retires the fallback. The fallback remains worthwhile:
 without it these providers cannot report sessions when no integration supplies
 an agent session.
+
+A user who has not installed the herdr integration for pi or omp meets the
+precondition recorded above as a permanently blank row, with nothing anywhere
+to explain it — the same failure mode the opencode title causes produce, and
+the reason the precondition is written down for users and for agent consumers
+rather than left here. The symptom is the same on both agent kinds: herdr
+labels the pane, the pane reaches this plugin, and no agent session is reported
+for it. An earlier revision of this section split the two, giving omp a pane
+that never appears at all; that followed from the withdrawn reason above and
+was wrong. Where there is a blank row it remains the correct output, because
+with no reported agent session there is no signal left to be right about; it is
+simply indistinguishable from an agent that has not yet taken a turn, so the
+documentation has to carry a distinction the row cannot.
 
 Recency remains tempting because it is how `opencode2 --continue` picks a
 session. That answers "what would resume here", not "what is this pane showing".

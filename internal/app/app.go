@@ -6,16 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strconv"
+	"sync"
 
-	occupancyformat "github.com/alizdavoodi/herdr-context-usage/internal/format"
 	"github.com/alizdavoodi/herdr-context-usage/internal/herdr"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
-	"github.com/alizdavoodi/herdr-context-usage/internal/provider/claude"
-	"github.com/alizdavoodi/herdr-context-usage/internal/provider/codex"
-	"github.com/alizdavoodi/herdr-context-usage/internal/provider/opencode"
-	"github.com/alizdavoodi/herdr-context-usage/internal/provider/opencode2"
 	"github.com/alizdavoodi/herdr-context-usage/internal/report"
+	"golang.org/x/sync/errgroup"
 )
 
 type Herdr interface {
@@ -31,6 +27,12 @@ type Config struct {
 	CodexHome   string
 	OpenCodeDB  string
 	OpenCode2DB string
+	// The pi and omp homes are per-provider rather than shared even though both
+	// agents honour one override variable: a single field would point a pi pane
+	// at omp's store on any machine running both, and the two stores have the
+	// same layout below the home, so the mistake would be silent.
+	PiHome  string
+	OmpHome string
 }
 
 type ContextState string
@@ -49,7 +51,20 @@ type Measurement struct {
 	Occupancy      *int64        `json:"occupancy"`
 	ResolutionMode *string       `json:"resolution_mode"`
 	ModelID        string        `json:"model_id,omitempty"`
-	Error          string        `json:"error,omitempty"`
+	// The version is not a compatibility gate — pi and omp stamp the same one
+	// while carrying different field sets — so it is carried into the output
+	// instead: that is what makes a format change in a floating dependency
+	// visible rather than leaving it to surface only as a blank row. omitempty
+	// keeps the records of providers whose stores carry no version unchanged.
+	TranscriptVersion *int `json:"transcript_version,omitempty"`
+	// OracleDisagreement is set when a provider's store carries an independent
+	// figure for what this plugin computed and the two stopped agreeing. Only
+	// omp has one; it agreed on every turn measured, so a value here is news
+	// about the agent's format rather than about this pane. It never withholds a
+	// number — the row is still reported — which is the difference between an
+	// oracle and a source.
+	OracleDisagreement string `json:"oracle_disagreement,omitempty"`
+	Error              string `json:"error,omitempty"`
 }
 
 type MaintenanceDiagnostic struct {
@@ -59,6 +74,13 @@ type MaintenanceDiagnostic struct {
 	Error     string `json:"error"`
 }
 
+// refreshConcurrency bounds simultaneous pane refreshes. Each pane costs two
+// or three herdr subprocess spawns, so a serial sweep stays inside main's 20s
+// refreshTimeout only while the pane count is small. A small bound removes the
+// N×spawn-latency term from the round without letting parallel spawns swamp
+// the machine.
+const refreshConcurrency = 4
+
 func Refresh(ctx context.Context, client Herdr, eventPaneID string, log io.Writer, config Config) error {
 	agents, err := client.ListAgents(ctx)
 	if err != nil {
@@ -67,45 +89,77 @@ func Refresh(ctx context.Context, client Herdr, eventPaneID string, log io.Write
 	if log == nil {
 		log = io.Discard
 	}
+	// Measurement and diagnostic lines are emitted from parallel pane
+	// refreshes; the lock keeps each JSON record whole on the shared writer.
+	log = &lockedWriter{w: log}
 
 	live := make(map[string]struct{}, len(agents))
 	for _, agent := range agents {
 		live[agent.PaneID] = struct{}{}
 	}
 
+	var errMu sync.Mutex
 	var errs []error
-	if err := sweepStaleMetadata(ctx, client, eventPaneID, live, log); err != nil {
+	appendErr := func(err error) {
+		errMu.Lock()
+		defer errMu.Unlock()
 		errs = append(errs, err)
 	}
+	if err := sweepStaleMetadata(ctx, client, eventPaneID, live, log); err != nil {
+		appendErr(err)
+	}
+
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(refreshConcurrency)
 	for _, agent := range agents {
-		processes, processErr := client.ProcessInfo(ctx, agent.PaneID)
-		kind := provider.FromAgent(agent.Agent, provider.ProcessList{Entries: processes, Available: processErr == nil})
-		if processErr != nil {
-			errs = append(errs, processErr)
-			continue
-		}
-		if !kind.Implemented() {
-			if hasOccupancyToken(agent.Tokens) {
-				if err := client.Clear(ctx, agent.PaneID); err != nil {
-					errs = append(errs, fmt.Errorf("clear superseded metadata for %s: %w", agent.PaneID, err))
+		g.Go(func() error {
+			processes, processErr := client.ProcessInfo(gctx, agent.PaneID)
+			kind := provider.FromAgent(agent.Agent, provider.ProcessList{Entries: processes, Available: processErr == nil})
+			if processErr != nil {
+				// The process list matters in two ways: opencode classification
+				// cannot happen without it, and every provider that uses
+				// process IDs as a resolution tier degrades to its other
+				// tiers. Either way the failure is round-local, so it becomes
+				// a diagnostic rather than an error that kills the run.
+				if err := writeMaintenanceDiagnostic(log, MaintenanceDiagnostic{Operation: "process_info", PaneID: agent.PaneID, Error: processErr.Error()}); err != nil {
+					appendErr(err)
+				}
+				// opencode hosts both v1 and v2 under one label and the
+				// process list is the only way to tell them apart. Guessing
+				// would either report nonsense or blank a live value, so the
+				// pane waits a round instead — with its value preserved.
+				if provider.NeedsProcessList(agent.Agent) {
+					return nil
 				}
 			}
-			continue
-		}
-		var refreshErr error
-		switch kind {
-		case provider.Claude:
-			refreshErr = refreshClaude(ctx, client, agent, processes, log, config)
-		case provider.Codex:
-			refreshErr = refreshCodex(ctx, client, agent, log, config)
-		case provider.OpenCode:
-			refreshErr = refreshOpenCode(ctx, client, agent, log, config)
-		case provider.OpenCode2:
-			refreshErr = refreshOpenCode2(ctx, client, agent, log, config)
-		}
-		if refreshErr != nil {
-			errs = append(errs, refreshErr)
-		}
+			// The registry is the single authority on which kinds can be measured.
+			// Gating on it rather than on a parallel predicate means a kind nobody
+			// registered blanks its row instead of silently keeping a previous
+			// session's value, which is the safe direction for an unreadable pane.
+			p := providerFor(kind)
+			if p == nil {
+				if hasOccupancyToken(agent.Tokens) {
+					if err := client.Clear(gctx, agent.PaneID); err != nil {
+						appendErr(fmt.Errorf("clear superseded metadata for %s: %w", agent.PaneID, err))
+					}
+				}
+				return nil
+			}
+			if err := refreshOne(gctx, client, agent, processes, log, config, p); err != nil {
+				appendErr(err)
+			}
+			return nil
+		})
+	}
+	// Every closure collects its own errors and returns nil, so Wait itself is
+	// nil even when the round's deadline kills stragglers mid-flight. Reading
+	// the parent context directly keeps a deadline-cut round from reporting
+	// success.
+	if err := g.Wait(); err != nil {
+		errs = append(errs, err)
+	}
+	if err := ctx.Err(); err != nil {
+		errs = append(errs, err)
 	}
 
 	return errors.Join(errs...)
@@ -154,91 +208,17 @@ func hasOccupancyToken(tokens map[string]string) bool {
 	return hasDisplay || hasRaw
 }
 
-func refreshClaude(ctx context.Context, client Herdr, agent herdr.Agent, processes []provider.Process, log io.Writer, config Config) error {
-	input := claude.SessionInput{
-		ClaudeHome:    config.ClaudeHome,
-		ForegroundCWD: agent.ForegroundCWD,
-		ProcessIDs:    claudeProcessIDs(processes),
-	}
-	if agent.AgentSession != nil {
-		input.AgentSession = &claude.AgentSession{
-			Source: agent.AgentSession.Source,
-			Agent:  agent.AgentSession.Agent,
-			Kind:   agent.AgentSession.Kind,
-			Value:  agent.AgentSession.Value,
-		}
-	}
-
-	resolved, err := claude.Resolve(input)
-	if err != nil {
-		return handleUnknown(ctx, client, agent.PaneID, log, provider.Claude, claude.SemanticStates(), ContextUnknown, err, nil)
-	}
-	mode := string(resolved.Mode)
-	value, err := claude.ReadOccupancy(resolved.Path)
-	if err != nil {
-		state := contextState(err, claude.ErrJustCompacted)
-		return handleUnknown(ctx, client, agent.PaneID, log, provider.Claude, claude.SemanticStates(), state, err, &mode)
-	}
-
-	measurement := Measurement{PaneID: agent.PaneID, Provider: provider.Claude, ContextState: ContextMeasured, Occupancy: &value, ResolutionMode: &mode}
-	reportErr := client.Report(ctx, agent.PaneID, occupancyformat.Occupancy(value), strconv.FormatInt(value, 10))
-	measurementErr := writeMeasurement(log, measurement)
-	return errors.Join(measurementErr, reportErr)
-}
-
-func refreshOpenCode(ctx context.Context, client Herdr, agent herdr.Agent, log io.Writer, config Config) error {
-	input := opencode.SessionInput{}
-	if agent.AgentSession != nil {
-		input.AgentSession = &opencode.AgentSession{
-			Source: agent.AgentSession.Source,
-			Agent:  agent.AgentSession.Agent,
-			Kind:   agent.AgentSession.Kind,
-			Value:  agent.AgentSession.Value,
-		}
-	}
-
-	resolved, nativeErr := opencode.Resolve(input)
-	var mode *string
-	if nativeErr == nil {
-		resolvedMode := string(resolved.Mode)
-		mode = &resolvedMode
-	}
-	store, err := opencode.Open(ctx, config.OpenCodeDB)
-	if err != nil {
-		return handleUnknown(ctx, client, agent.PaneID, log, provider.OpenCode, opencode.SemanticStates(), ContextUnknown, err, mode)
-	}
-	defer store.Close()
-	if nativeErr != nil {
-		resolved, err = store.ResolveTerminalTitle(ctx, agent.ForegroundCWD, agent.TerminalTitle)
-		if err != nil {
-			return handleUnknown(ctx, client, agent.PaneID, log, provider.OpenCode, opencode.SemanticStates(), ContextUnknown, err, nil)
-		}
-		resolvedMode := string(resolved.Mode)
-		mode = &resolvedMode
-	}
-	value, err := store.ReadOccupancy(ctx, resolved.ID)
-	if err != nil {
-		state := contextState(err, opencode.ErrJustCompacted)
-		return handleUnknown(ctx, client, agent.PaneID, log, provider.OpenCode, opencode.SemanticStates(), state, err, mode)
-	}
-
-	measurement := Measurement{PaneID: agent.PaneID, Provider: provider.OpenCode, ContextState: ContextMeasured, Occupancy: &value, ResolutionMode: mode}
-	reportErr := client.Report(ctx, agent.PaneID, occupancyformat.Occupancy(value), strconv.FormatInt(value, 10))
-	measurementErr := writeMeasurement(log, measurement)
-	return errors.Join(measurementErr, reportErr)
-}
-
 // handleUnknown is the one place a failed reading becomes a decision about the
-// pane, for every provider. Each provider brings its own states; only the
-// classification is shared.
-func handleUnknown(ctx context.Context, client Herdr, paneID string, log io.Writer, kind provider.Kind, states report.States, state ContextState, err error, mode *string) error {
-	measurement := Measurement{
-		PaneID: paneID, Provider: kind, ContextState: state,
-		ResolutionMode: mode, Error: err.Error(),
-	}
+// pane, for every provider. Each provider brings its own states and its own
+// half-built record; only the classification is shared. refreshOne fills the
+// record in because how much a failed reading observed before giving up varies
+// per provider, and threading each of those fields through here as a parameter
+// is how this signature grew unreadable once already.
+func handleUnknown(ctx context.Context, client Herdr, log io.Writer, states report.States, measurement Measurement, err error) error {
+	measurement.Error = err.Error()
 	measurementErr := writeMeasurement(log, measurement)
 	if report.Classify(err, states) == report.Superseded {
-		return errors.Join(measurementErr, client.Clear(ctx, paneID))
+		return errors.Join(measurementErr, client.Clear(ctx, measurement.PaneID))
 	}
 	// Stale-low and transient answers both leave the displayed value alone: one
 	// is a valid lower bound, the other is a failure to read, and neither is
@@ -256,73 +236,25 @@ func contextState(err, justCompacted error) ContextState {
 	return ContextUnknown
 }
 
-func refreshOpenCode2(ctx context.Context, client Herdr, agent herdr.Agent, log io.Writer, config Config) error {
-	store, err := opencode2.Open(ctx, config.OpenCode2DB)
-	if err != nil {
-		return handleUnknown(ctx, client, agent.PaneID, log, provider.OpenCode2, opencode2.SemanticStates(), ContextUnknown, err, nil)
-	}
-	defer store.Close()
-
-	resolved, err := store.Resolve(ctx, agent.ForegroundCWD, agent.TerminalTitle)
-	if err != nil {
-		return handleUnknown(ctx, client, agent.PaneID, log, provider.OpenCode2, opencode2.SemanticStates(), ContextUnknown, err, nil)
-	}
-	mode := string(resolved.Mode)
-	reading, err := store.ReadOccupancy(ctx, resolved.ID)
-	if err != nil {
-		state := contextState(err, opencode2.ErrJustCompacted)
-		return handleUnknown(ctx, client, agent.PaneID, log, provider.OpenCode2, opencode2.SemanticStates(), state, err, &mode)
-	}
-
-	value := reading.Occupancy
-	measurement := Measurement{
-		PaneID: agent.PaneID, Provider: provider.OpenCode2, ContextState: ContextMeasured,
-		Occupancy: &value, ResolutionMode: &mode, ModelID: reading.ModelID,
-	}
-	reportErr := client.Report(ctx, agent.PaneID, occupancyformat.Occupancy(value), strconv.FormatInt(value, 10))
-	measurementErr := writeMeasurement(log, measurement)
-	return errors.Join(measurementErr, reportErr)
-}
-
-func refreshCodex(ctx context.Context, client Herdr, agent herdr.Agent, log io.Writer, config Config) error {
-	input := codex.SessionInput{CodexHome: config.CodexHome, ForegroundCWD: agent.ForegroundCWD}
-	if agent.AgentSession != nil {
-		input.AgentSession = &codex.AgentSession{
-			Source: agent.AgentSession.Source,
-			Agent:  agent.AgentSession.Agent,
-			Kind:   agent.AgentSession.Kind,
-			Value:  agent.AgentSession.Value,
-		}
-	}
-
-	resolved, err := codex.Resolve(input)
-	if err != nil {
-		return handleUnknown(ctx, client, agent.PaneID, log, provider.Codex, codex.SemanticStates(), ContextUnknown, err, nil)
-	}
-
-	mode := string(resolved.Mode)
-	value, err := codex.ReadOccupancy(resolved.Path)
-	if err != nil {
-		state := contextState(err, codex.ErrJustCompacted)
-		return handleUnknown(ctx, client, agent.PaneID, log, provider.Codex, codex.SemanticStates(), state, err, &mode)
-	}
-
-	measurement := Measurement{PaneID: agent.PaneID, Provider: provider.Codex, ContextState: ContextMeasured, Occupancy: &value, ResolutionMode: &mode}
-	reportErr := client.Report(ctx, agent.PaneID, occupancyformat.Occupancy(value), strconv.FormatInt(value, 10))
-	measurementErr := writeMeasurement(log, measurement)
-	return errors.Join(measurementErr, reportErr)
-}
-
-func claudeProcessIDs(processes []provider.Process) []int {
-	return provider.ProcessIDs(processes, provider.Claude)
-}
-
 func writeMeasurement(writer io.Writer, measurement Measurement) error {
 	measurement.Type = "measurement"
 	if err := json.NewEncoder(writer).Encode(measurement); err != nil {
 		return fmt.Errorf("record measurement: %w", err)
 	}
 	return nil
+}
+
+// lockedWriter serializes writes so parallel pane refreshes cannot interleave
+// JSON records; the encoder emits one Write per record.
+type lockedWriter struct {
+	mu sync.Mutex
+	w  io.Writer
+}
+
+func (l *lockedWriter) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.w.Write(p)
 }
 
 func writeMaintenanceDiagnostic(writer io.Writer, diagnostic MaintenanceDiagnostic) error {

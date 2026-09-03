@@ -26,6 +26,10 @@ func TestSemanticStatesClassifyEveryAnswer(t *testing.T) {
 		{name: "untitled session", err: opencodeshared.ErrUntitled, want: report.Superseded},
 		{name: "pane reports no opencode title", err: opencodeshared.ErrTitleUnavailable, want: report.Superseded},
 		{name: "terminal title disabled in this environment", err: opencodeshared.ErrTitleDisabled, want: report.Superseded},
+		// Neither this nor the line above appears in SemanticStates. Both wrap the
+		// unavailable-title answer that does, and both are listed so that a reader
+		// adding a third attributed reason sees it has to keep that wrapping.
+		{name: "mini interface", err: ErrMiniInterface, want: report.Superseded},
 		{name: "plugin route title", err: opencodeshared.ErrPluginTitle, want: report.Superseded},
 		{name: "title matches no single session", err: opencodeshared.ErrNoTitleMatch, want: report.Superseded},
 		{
