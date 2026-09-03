@@ -157,9 +157,12 @@ Measured against opencode2 `0.0.0-next-17444`: the pane's title read
 while a pane on the same opencode2 build running the ordinary TUI reported its
 occupancy normally. Herdr does still label the pane an `opencode` agent, so
 this is not a pane the plugin never sees — it is one whose only correlation
-signal was never written. Nothing in the pane's state announces that, so like
-the palette toggle above it is invisible in the plugin's output today, and the
-row stays blank permanently rather than until the agent's next turn.
+signal was never written. Unlike the palette toggle above, the plugin can say
+so: the pane's process list names the `mini` subcommand, and the measurement
+record reports that as the reason instead of a bare missing title. The row still
+stays blank permanently rather than until the agent's next turn, because there
+is no session title to correlate either way — this names the cause, it does not
+recover a number.
 
 **Plugin routes look like sessions.** A plugin route sets `OC | <plugin>` using
 the same format, and it names no session, so a pane sitting on one is blank by

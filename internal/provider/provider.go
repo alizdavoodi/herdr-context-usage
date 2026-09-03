@@ -85,6 +85,11 @@ func ProcessIDs(processes []Process, kind Kind) []int {
 	return ids
 }
 
+// Kind reports which agent a single process is, by the same basename rule
+// dispatch uses to choose a provider for the pane. Exported so a provider can
+// find its own entry in a pane's process list without restating that rule.
+func (p Process) Kind() Kind { return processKind(p) }
+
 func processKind(process Process) Kind {
 	name := strings.ToLower(strings.TrimPrefix(filepath.Base(process.Argv0), "."))
 	switch name {

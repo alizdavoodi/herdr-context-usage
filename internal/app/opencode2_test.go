@@ -312,3 +312,73 @@ func newAppOpenCode2Database(t *testing.T, sessions []appSession, messages []app
 	}
 	return path
 }
+
+// The fourth reason an opencode row never fills in, and the only one the plugin
+// can attribute from evidence it already holds. Measured against opencode2
+// 0.0.0-next-17444: a pane started as `opencode2 mini` reported terminal_title
+// "opencode2 mini", argv0 "opencode2" and argv [".../bin/opencode2", "mini"],
+// and herdr still labelled it an opencode agent, so it reaches this plugin. Its
+// row stayed blank while a pane on the same build running the ordinary TUI
+// reported normally.
+//
+// The row staying blank is correct and is not what this changes. What changes is
+// that the record says why.
+func TestRefreshExplainsAnOpenCode2MiniPane(t *testing.T) {
+	t.Parallel()
+
+	dbPath := newAppOpenCode2Database(t, []appSession{{ID: "target", Directory: "/work", Title: "Probe test response"}}, nil)
+	var log bytes.Buffer
+	fake := &fakeHerdr{
+		agents: []herdr.Agent{{
+			Agent: "opencode", PaneID: "w1:p1", ForegroundCWD: "/work",
+			TerminalTitle: "opencode2 mini", Tokens: map[string]string{"ctx_raw": "92481"},
+		}},
+		processes: map[string][]provider.Process{"w1:p1": {
+			{PID: 42, Argv0: "opencode2", Argv: []string{"/nix/store/x-opencode2/bin/opencode2", "mini"}},
+		}},
+		reports: make(map[string][2]string),
+	}
+	if err := Refresh(context.Background(), fake, "", &log, Config{OpenCode2DB: dbPath}); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+	if got := log.String(); !strings.Contains(got, "mini") {
+		t.Fatalf("diagnostic = %s, want the mini interface named", got)
+	}
+	// Still blank, and still not a number: this ticket changes the reason, not
+	// the outcome. There is no session title, so there is nothing to correlate.
+	if !slices.Equal(fake.clears, []string{"w1:p1"}) || len(fake.reports) != 0 {
+		t.Fatalf("clears = %v, reports = %v; want a mini pane blanked and never reported", fake.clears, fake.reports)
+	}
+}
+
+// A mini pane in a shell exporting the disable variable must be attributed to
+// mini. The process list is positive evidence about the agent; the variable is
+// only a hint about our own environment, and blaming it here would name a cause
+// the user could "fix" without the row ever filling in.
+func TestRefreshPrefersTheMiniReasonOverASuppressedTitle(t *testing.T) {
+	// Not parallel: the variable is process-wide.
+	t.Setenv("OPENCODE_DISABLE_TERMINAL_TITLE", "1")
+
+	dbPath := newAppOpenCode2Database(t, []appSession{{ID: "target", Directory: "/work", Title: "Probe test response"}}, nil)
+	var log bytes.Buffer
+	fake := &fakeHerdr{
+		agents: []herdr.Agent{{
+			Agent: "opencode", PaneID: "w1:p1", ForegroundCWD: "/work",
+			TerminalTitle: "opencode2 mini", Tokens: map[string]string{"ctx_raw": "92481"},
+		}},
+		processes: map[string][]provider.Process{"w1:p1": {
+			{PID: 42, Argv0: "opencode2", Argv: []string{"/nix/store/x-opencode2/bin/opencode2", "mini"}},
+		}},
+		reports: make(map[string][2]string),
+	}
+	if err := Refresh(context.Background(), fake, "", &log, Config{OpenCode2DB: dbPath}); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+	got := log.String()
+	if !strings.Contains(got, "mini") {
+		t.Fatalf("diagnostic = %s, want the mini interface named", got)
+	}
+	if strings.Contains(got, "OPENCODE_DISABLE_TERMINAL_TITLE") {
+		t.Fatalf("diagnostic = %s, want mini preferred over the environment variable", got)
+	}
+}
