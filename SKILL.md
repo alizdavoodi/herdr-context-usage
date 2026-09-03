@@ -106,15 +106,16 @@ That session-switch behaviour was observed against pi 0.84.2 and Herdr 0.8.0,
 and pi is not pinned to a version. The permanent blank above follows from pi
 having no fallback at all rather than from any observation of its own.
 
-An `omp` pane depends on its Herdr integration even more completely. It is
-correlated only through the agent session that integration reports, with no
-fallback, as `pi` is; but omp also ships no screen-detection manifest, so a
-pane whose integration is missing is never labelled an `omp` agent by Herdr in
-the first place. That produces no `omp` row at all rather than a blank one, so
-do not read an absence of `omp` rows as nobody running omp. A blank `omp` row
-means the integration is installed and the plugin has no occupancy it will
-stand behind; do not read one as an idle or empty agent. Recorded against omp
-17.3.5 and Herdr 0.8.0; omp is not pinned to a version.
+An `omp` pane can be blank permanently for the same reason a `pi` one can: its
+Herdr integration is not installed. `omp` is correlated only through the agent
+session that integration reports and has no fallback either, so a pane whose
+integration is missing offers nothing to resolve and stays blank for as long as
+that is true. The pane is still listed — Herdr labels it an `omp` agent from
+its own process, independently of the integration — so an `omp` row that is
+present and blank tells you nothing about whether the integration is there. Do
+not read a blank `omp` row as an idle or empty agent, and do not read one as
+proof that the integration is working. Observed against omp 18.1.4 and Herdr
+0.8.0; omp is not pinned to a version.
 
 Tokens are only as fresh as the last event that wrote them. Occupancy changes
 at turn boundaries, and Herdr events fire at turn boundaries, so the normal

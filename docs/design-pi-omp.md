@@ -184,18 +184,27 @@ transcript path and falling back to a session id. A path is used directly. An id
 is resolved by matching the transcript whose name ends with that id, under the
 provider's home, and a match that is not unique is treated as unresolved.
 
-There is no working-directory fallback, for three independent reasons. pi files
-an agent session under the directory it *started* in, so a pane that has since
-moved resolves to nothing or to an unrelated agent session — measured on this
-machine, where the directory for this repository exists but is empty while the
-real agent session sits elsewhere. Neither transcript marks a sub-agent session,
-so a directory-scoped match has nothing to exclude one with. And omp has no
-screen-detection manifest at all, so without its integration installed an omp
-pane is not labelled an agent by herdr and never reaches this plugin.
+There is no working-directory fallback, for two reasons that bear on both
+agents. Both file an agent session under the directory the agent *started* in,
+so a pane that has since moved resolves to nothing or to an unrelated agent
+session — measured only on pi, on this machine, where the directory for this
+repository exists but is empty while the real agent session sits elsewhere. And
+neither transcript marks a sub-agent session, so a directory-scoped match has
+nothing to exclude one with.
 
-Installing the herdr integration is therefore a documented precondition for both
-agent kinds, recorded in the coverage table's correlation column the way the
-existing providers already name herdr's reported agent session first.
+A third reason was recorded here and is withdrawn: that omp has no
+screen-detection manifest, so an omp pane without its integration is never
+labelled an agent by herdr and never reaches this plugin. Observed on herdr
+0.8.0 with omp 18.1.4, herdr labels such a pane from the process name and it
+does reach this plugin, which resolves it to nothing like any other pane with
+no reported agent session.
+[ADR-0004](adr/0004-provider-specific-session-correlation.md) records the
+withdrawal and why the decision stands without it.
+
+Installing the herdr integration is therefore a documented precondition for
+both agent kinds, recorded in the coverage table's correlation column the way
+the existing providers already name herdr's reported agent session first. What
+it supplies is the reported agent session, not the pane's standing as an agent.
 
 ### Main thread
 
@@ -320,10 +329,11 @@ toggle. It was found by accident while running an agent in a pane during this
 work.
 
 **Versions these measurements were taken against**: pi 0.84.2, omp 17.3.5,
-herdr 0.8.0. Neither agent is pinned — both are run from a flake reference that
-resolves to whatever is current — so the transcript formats float. This is the
-reason the observed schema version is carried into the measurement record, and
-the reason the two providers stay separate.
+herdr 0.8.0, and omp 18.1.4 for the withdrawal recorded under "Resolving which
+agent session a pane is on". Neither agent is pinned — both are run from a
+flake reference that resolves to whatever is current — so the transcript
+formats float. This is the reason the observed schema version is carried into
+the measurement record, and the reason the two providers stay separate.
 
 **Documentation to update when the providers ship**: the coverage table gains a
 row per agent kind naming the store, the arithmetic and the correlation; the

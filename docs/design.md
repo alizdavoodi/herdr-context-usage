@@ -224,20 +224,23 @@ is therefore a precondition for the row filling in at all, not an improvement on
 a fallback that works without it. Observed against pi 0.84.2 and herdr 0.8.0;
 pi is not pinned.
 
-`omp` stops at step 1 as well, for those same two reasons and a third that is
-its alone: omp ships no screen-detection manifest, so herdr does not label an
-omp pane an agent at all until omp's integration is installed, and a pane herdr
-does not call an agent never reaches this plugin. pi's integration decides
-whether a pane herdr already calls an agent can be correlated; omp's decides
-whether there is an agent row to correlate. What it resolves *with* takes the
-same shape — a path used directly, an id matched against the transcript whose
-name ends with it under omp's own home, a non-unique match treated as
-unresolved — but the divergence is beneath that home, not the home itself. The
-directory derivation is omp's own, pi wrapping the whole absolute path where
-omp strips the home prefix, and the configured home is a separate field because
-one shared field would point an omp pane at pi's store on any machine running
-both. One exported `PI_CODING_AGENT_DIR` still redirects both agents; that
-override is the one thing they genuinely share, and
+`omp` stops at step 1 as well, and for the same reasons rather than for one of
+its own. An earlier revision claimed a third that was omp's alone — no
+screen-detection manifest, so no agent label without the integration — and
+[ADR-0004](adr/0004-provider-specific-session-correlation.md) records why that
+was withdrawn: herdr 0.8.0 with omp 18.1.4 labels an omp pane from the process
+name, so the pane reaches this plugin with or without the integration and
+simply resolves to nothing without it. Both integrations therefore decide the
+same thing, which is whether a pane herdr already calls an agent can be
+correlated at all. What it resolves *with* takes the same shape — a path used
+directly, an id matched against the transcript whose name ends with it under
+omp's own home, a non-unique match treated as unresolved — but the divergence
+is beneath that home, not the home itself. The directory derivation is omp's
+own, pi wrapping the whole absolute path where omp strips the home prefix, and
+the configured home is a separate field because one shared field would point an
+omp pane at pi's store on any machine running both. One exported
+`PI_CODING_AGENT_DIR` still redirects both agents; that override is the one
+thing they genuinely share, and
 [ADR-0006](adr/0006-two-providers-for-pi-and-omp.md) records the divergences
 that survive it. Observed against omp 17.3.5 and herdr 0.8.0; omp is not
 pinned.
@@ -257,18 +260,18 @@ recent session in its directory. Directory collision is severe — 14 sessions
 share one repository, 13 another. See
 [ADR-0004](adr/0004-provider-specific-session-correlation.md).
 
-Herdr's `agent` field is the primary provider signal for `claude`, `codex`, `pi`
-and `omp`, the last two of which Herdr reports as their own agent kinds rather
-than folding them into another, so their dispatch needs no process inspection
-either — though an `omp` pane carries that field only once its integration is
-installed, for the reason recorded above.
-`opencode2` panes additionally need distinguishing from `opencode` ones because
-Herdr folds the kind. For an `opencode` agent, compare every foreground
-process's `argv0` basename case-insensitively after stripping a leading dot,
-and choose `opencode2` if any such process is present; process-list order is not
-meaningful. An unavailable process list leaves the provider undetermined rather
-than defaulting to `opencode`; a successfully observed empty list selects
-`opencode`.
+Herdr's `agent` field is the primary provider signal for `claude`, `codex`,
+`pi` and `omp`, the last two of which Herdr reports as their own agent kinds
+rather than folding them into another, so their dispatch needs no process
+inspection either. Herdr derives the `omp` label from the pane's own process,
+which is why it is present whether or not omp's integration is; observed on
+herdr 0.8.0 with omp 18.1.4. `opencode2` panes additionally need distinguishing
+from `opencode` ones because Herdr folds the kind. For an `opencode` agent,
+compare every foreground process's `argv0` basename case-insensitively after
+stripping a leading dot, and choose `opencode2` if any such process is present;
+process-list order is not meaningful. An unavailable process list leaves the
+provider undetermined rather than defaulting to `opencode`; a successfully
+observed empty list selects `opencode`.
 
 ### Reporting
 
