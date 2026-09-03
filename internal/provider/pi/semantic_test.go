@@ -1,6 +1,7 @@
 package pi
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"syscall"
@@ -39,5 +40,35 @@ func TestSemanticStatesClassifyEveryAnswer(t *testing.T) {
 				t.Fatalf("Classify(%v) = %v, want %v", tt.err, got, tt.want)
 			}
 		})
+	}
+}
+
+// An unresolvable agent home is a permanent fact about the host, not a
+// momentary failure: with no $HOME and no configured home there is nowhere to
+// look, and every later refresh reads the same way. Left undeclared it would
+// fall to Classify's transient default and freeze the displayed occupancy for
+// the life of the pane, which presents a superseded number as current.
+//
+// This drives Resolve rather than a constructed error so the classification is
+// pinned to the shape the provider actually produces. It sets the environment
+// and therefore cannot run in parallel, and unsetting HOME defeats
+// os.UserHomeDir only on unix — on Windows it reads USERPROFILE, so this trigger
+// would need a second clause there. Only the id branch reaches a home;
+// TestResolveAPathWithoutAResolvableHome pins the path branch staying healthy.
+func TestAnUnresolvableHomeSupersedesTheDisplayedValue(t *testing.T) {
+	t.Setenv("PI_CODING_AGENT_DIR", "")
+	t.Setenv("HOME", "")
+
+	_, err := Resolve(SessionInput{AgentSession: &AgentSession{Kind: "id", Value: "01a014de"}})
+	if !errors.Is(err, ErrNoHome) {
+		t.Fatalf("Resolve(id) error = %v, want it to wrap ErrNoHome", err)
+	}
+	// A reader diagnosing a blank row has to tell "there is no home to look in"
+	// apart from "the agent session did not resolve"; they have different fixes.
+	if errors.Is(err, ErrNoSession) {
+		t.Fatalf("Resolve(id) error = %v, want it distinguishable from an unresolved agent session", err)
+	}
+	if got := report.Classify(err, SemanticStates()); got != report.Superseded {
+		t.Fatalf("Classify(%v) = %v, want %v", err, got, report.Superseded)
 	}
 }

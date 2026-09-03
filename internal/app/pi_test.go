@@ -117,6 +117,17 @@ func TestRefreshReportsPiOccupancyFromAReportedPath(t *testing.T) {
 	if strings.Contains(log.String(), "30458") {
 		t.Fatalf("measurement = %s, want the per-turn total 30458 left unread", log.String())
 	}
+	// 1,394 is this turn's reasoning count, a subset of its output of 2,553, and
+	// 29,299 is that count wrongly added to the occupancy. Forbidding both is what
+	// omp's file already does for its nonMessageTokens — the field's own value and
+	// the contaminated sum — and the reasoning trap needs the pair for the same
+	// reason: reading the field reports 1,394, adding it reports 29,299, and
+	// neither number contains the other.
+	for _, forbidden := range []string{"1394", "29299"} {
+		if strings.Contains(log.String(), forbidden) {
+			t.Fatalf("measurement = %s, want the reasoning count %s left unread", log.String(), forbidden)
+		}
+	}
 }
 
 // An id is matched against transcript file names under this provider's home. The
@@ -368,5 +379,51 @@ func TestRefreshClearsPiRowWhenNoAssistantTurnHasCompleted(t *testing.T) {
 	// transcript are different faults.
 	if !strings.Contains(got, `"transcript_version":3`) {
 		t.Fatalf("measurement = %q, want the readable transcript's version recorded", got)
+	}
+}
+
+// The defect this closes: an agent home that cannot be resolved at all left the
+// pane displaying its last occupancy for as long as it lived. Pi classified
+// the failure nowhere, so Classify fell to its transient default and preserved
+// a number that was correct once and stays plausible forever — the exact shape
+// the three-way classification exists to prevent.
+//
+// Measured against pi 0.84.2 and herdr 0.8.0 by driving this same path with the
+// sentinel declared and wrapped but left out of SemanticStates, which is the
+// defect's exact shape. The record written was context_state "unknown",
+// occupancy null, resolution_mode null, error "pi agent home cannot be
+// resolved: $HOME is not defined" — and clears was empty, so the pane kept
+// 27,905 from its previous round.
+//
+// Sets the environment, so it cannot run in parallel. Unsetting HOME defeats
+// os.UserHomeDir only on unix; Windows reads USERPROFILE. A pane reporting a path
+// resolves without a home and must stay healthy; that is pinned in the provider
+// package, because only the id branch reaches a home at all.
+func TestRefreshClearsPiRowWhenTheAgentHomeCannotBeResolved(t *testing.T) {
+	t.Setenv("PI_CODING_AGENT_DIR", "")
+	t.Setenv("HOME", "")
+
+	var log bytes.Buffer
+	fake := &fakeHerdr{
+		agents: piAgent(&herdr.AgentSession{Kind: "id", Value: piSessionID},
+			map[string]string{"ctx": "28k", "ctx_raw": "27905"}),
+		reports: make(map[string][2]string),
+	}
+
+	if err := Refresh(context.Background(), fake, "", &log, Config{}); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+	if !slices.Equal(fake.clears, []string{"w1:p1"}) || len(fake.reports) != 0 {
+		t.Fatalf("clears = %v, reports = %v; want an unresolvable home to blank the row", fake.clears, fake.reports)
+	}
+	// Unknown is null, never zero: a reported 0 would read as an empty window.
+	if strings.Contains(log.String(), `"occupancy":0`) {
+		t.Fatalf("measurement reported zero occupancy; want null: %s", log.String())
+	}
+	// The two blanking reasons have different fixes — install the integration
+	// against export a home — so the record has to tell them apart.
+	if got := log.String(); !strings.Contains(got, "pi agent home cannot be resolved") ||
+		strings.Contains(got, "pi agent session cannot be resolved") {
+		t.Fatalf("measurement = %s, want the home named distinguishably from an unresolved agent session", got)
 	}
 }

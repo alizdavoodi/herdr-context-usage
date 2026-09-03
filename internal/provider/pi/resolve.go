@@ -17,6 +17,21 @@ const ResolutionAgentSession ResolutionMode = "agent_session"
 
 var ErrNoSession = errors.New("pi agent session cannot be resolved")
 
+// ErrNoHome is declared here rather than in piompshared, and the choice is the
+// one this sentinel turns on. That package's cap is written in terms of
+// measurement — a second exported name there has to be measured identical on
+// both agents — and an unset $HOME produces nothing to measure on either: it is
+// a fact about the host, not about either agent's store, and no agent release
+// can change it. So it cannot earn its way in under the stated rule and would
+// have to be admitted by exception, which is what erodes a cap whose only
+// enforcement is that it has never been crossed. Two one-line declarations cost
+// less than that precedent.
+var ErrNoHome = errors.New("pi agent home cannot be resolved")
+
+// Source and Agent are unread here, and deliberately left that way rather than
+// deleted: all five providers declare them and none reads either, so they are one
+// repo-wide dead pattern rather than this provider's own. Removing them from this
+// pair alone would split a shape the five currently share.
 type AgentSession struct {
 	Source string `json:"source"`
 	Agent  string `json:"agent"`
@@ -116,7 +131,11 @@ func resolveHome(explicit string) (string, error) {
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("find home directory: %w", err)
+		// Both are wrapped: ErrNoHome is what SemanticStates classifies on, and the
+		// operating system's own text is the maintenance diagnostic. Classifying on
+		// that text instead would bind this provider to a message that reads
+		// "$HOME is not defined" on unix and something else elsewhere.
+		return "", fmt.Errorf("%w: %w", ErrNoHome, err)
 	}
 	return filepath.Join(home, ".pi", "agent"), nil
 }
