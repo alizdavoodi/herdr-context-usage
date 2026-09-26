@@ -94,6 +94,33 @@ func TestResolveReportedSessionID(t *testing.T) {
 	}
 }
 
+// A reported id names a transcript under the pane's own project directory, so
+// an id carrying a path separator would build a path somewhere else. The bait
+// is another project's real transcript, which such an id reaches once joined.
+func TestResolveRefusesAnIDThatLeavesThePaneDirectory(t *testing.T) {
+	t.Parallel()
+
+	home := t.TempDir()
+	bait := filepath.Join(home, "projects", "-work-other", "session-1.jsonl")
+	if err := os.MkdirAll(filepath.Dir(bait), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bait, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, session := range []provider.AgentSession{
+		{Kind: "id", Value: "../-work-other/session-1"},
+		{Value: "../-work-other/session-1"},
+		{Kind: "id", Value: `..\-work-other\session-1`},
+	} {
+		got, err := Resolve(SessionInput{ClaudeHome: home, ForegroundCWD: "/work/acme", AgentSession: &session})
+		if err != ErrNoSession {
+			t.Fatalf("Resolve(%#v) = %#v, %v; want ErrNoSession", session, got, err)
+		}
+	}
+}
+
 func TestResolveFromForegroundCWDAndClaudeProcess(t *testing.T) {
 	t.Parallel()
 

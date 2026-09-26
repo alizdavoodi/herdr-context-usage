@@ -60,7 +60,7 @@ func Resolve(input SessionInput) (ResolvedSession, error) {
 		// blanks the row rather than falling back: a working-directory match
 		// could only disagree with it.
 		id, ok := input.AgentSession.ID()
-		if !ok || input.ForegroundCWD == "" {
+		if !ok || !isSessionID(id) || input.ForegroundCWD == "" {
 			return ResolvedSession{}, ErrNoSession
 		}
 		return ResolvedSession{Path: transcriptPath(home, input.ForegroundCWD, id), Mode: ResolutionAgentSession}, nil
@@ -103,6 +103,16 @@ func readProcessSession(home string, pid int) (processSession, error) {
 		return processSession{}, err
 	}
 	return session, nil
+}
+
+// isSessionID rejects anything that cannot be a claude session id before it is
+// joined into a path. A real one is a UUID; a value carrying a path separator
+// would build a path outside the pane's own project directory and could name
+// another project's transcript, which is a wrong number rather than a blank.
+// Unlike codex's rollouts or pi's transcripts, nothing here is matched against
+// the store, so this is the only thing standing between the id and the path.
+func isSessionID(id string) bool {
+	return !strings.ContainsAny(id, `/\`)
 }
 
 func transcriptPath(home, cwd, sessionID string) string {
