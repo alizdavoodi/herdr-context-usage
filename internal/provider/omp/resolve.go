@@ -26,12 +26,6 @@ var ErrNoSession = errors.New("omp agent session cannot be resolved")
 // session, so a directory-scoped match has nothing to exclude one with; and
 // recency is banned outright by ADR-0004, which measured it picking the wrong
 // session on the only live sample available.
-//
-// omp adds a fourth that pi does not have. omp ships no screen-detection
-// manifest at all, so a pane running it is not labelled an agent by herdr until
-// its integration is installed, and until then the pane never reaches this
-// plugin to be resolved by any means. Installing the integration is a
-// precondition rather than an improvement on a fallback that works without it.
 type SessionInput struct {
 	OmpHome      string
 	AgentSession *provider.AgentSession

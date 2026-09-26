@@ -216,9 +216,11 @@ func TestResolveWithoutAReportedAgentSession(t *testing.T) {
 	// herdr's reported agent session is the whole of the input, so nothing
 	// reported means nothing to measure. There is no working-directory fallback
 	// to reach for: omp files an agent session under a directory derived from the
-	// one it started in, the transcript does not mark a sub-agent session,
-	// recency is banned, and an omp pane is not even labelled an agent by herdr
-	// until omp's integration is installed.
+	// one it started in, the transcript does not mark a sub-agent session, and
+	// recency is banned. herdr labels an omp pane an agent from its process with
+	// or without omp's integration; what the integration supplies is the reported
+	// agent session correlation needs, so without it the pane reaches this plugin
+	// and resolves to nothing.
 	home := t.TempDir()
 	writeStore(t, home, map[string][]string{repoSessionDir: {repoTranscript}})
 
