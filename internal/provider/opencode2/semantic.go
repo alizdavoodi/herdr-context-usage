@@ -1,6 +1,7 @@
 package opencode2
 
 import (
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/opencodeshared"
 	"github.com/alizdavoodi/herdr-context-usage/internal/report"
 )
@@ -15,7 +16,7 @@ import (
 func SemanticStates() report.States {
 	return report.States{
 		Superseded: []error{
-			ErrNoSession, ErrNoOccupancy, ErrStoreNotReady, ErrJustCompacted,
+			ErrNoSession, provider.ErrNoHome, ErrNoOccupancy, ErrStoreNotReady, ErrJustCompacted,
 			// A pane whose title cannot name a session is a pane we must blank,
 			// whichever of the four reasons applies. The reasons are separate so the
 			// blank is diagnosable; the classification is the same for all of them.
