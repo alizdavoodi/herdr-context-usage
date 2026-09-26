@@ -7,13 +7,15 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 )
 
 func TestResolvePrefersReportedAgentSession(t *testing.T) {
 	t.Parallel()
 
 	reported := filepath.Join(t.TempDir(), "reported.jsonl")
-	got, err := Resolve(SessionInput{AgentSession: &AgentSession{Kind: "path", Value: reported}, ForegroundCWD: "/ignored"})
+	got, err := Resolve(SessionInput{AgentSession: &provider.AgentSession{Kind: "path", Value: reported}, ForegroundCWD: "/ignored"})
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
 	}
@@ -27,7 +29,7 @@ func TestResolveReportedSessionID(t *testing.T) {
 
 	home := t.TempDir()
 	path := writeRollout(t, home, "session-1", "/work/old", nil, "cli")
-	got, err := Resolve(SessionInput{CodexHome: home, AgentSession: &AgentSession{Kind: "id", Value: "session-1"}})
+	got, err := Resolve(SessionInput{CodexHome: home, AgentSession: &provider.AgentSession{Kind: "id", Value: "session-1"}})
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
 	}

@@ -3,12 +3,14 @@ package opencode
 import (
 	"errors"
 	"testing"
+
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 )
 
 func TestResolveAcceptsOnlyNativeSessionID(t *testing.T) {
 	t.Parallel()
 
-	resolved, err := Resolve(SessionInput{AgentSession: &AgentSession{Kind: "id", Value: "ses_current"}})
+	resolved, err := Resolve(SessionInput{AgentSession: &provider.AgentSession{Kind: "id", Value: "ses_current"}})
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
 	}
@@ -22,8 +24,8 @@ func TestResolveDoesNotGuessFromDirectoryOrPath(t *testing.T) {
 
 	for _, input := range []SessionInput{
 		{},
-		{AgentSession: &AgentSession{Kind: "path", Value: "/work/project"}},
-		{AgentSession: &AgentSession{Kind: "id"}},
+		{AgentSession: &provider.AgentSession{Kind: "path", Value: "/work/project"}},
+		{AgentSession: &provider.AgentSession{Kind: "id"}},
 	} {
 		if _, err := Resolve(input); !errors.Is(err, ErrNoSession) {
 			t.Fatalf("Resolve(%#v) error = %v, want ErrNoSession", input, err)

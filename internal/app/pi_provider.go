@@ -26,15 +26,7 @@ func (piProvider) JustCompacted() error { return pi.ErrJustCompacted }
 // stage in by analogy with claude would trade a blank row for a wrong number.
 // Reading is file-backed, so Cleanup is nil.
 func (piProvider) Resolve(_ context.Context, agent herdr.Agent, _ []provider.Process, config Config) (Resolved, error) {
-	input := pi.SessionInput{PiHome: config.PiHome}
-	if agent.AgentSession != nil {
-		input.AgentSession = &pi.AgentSession{
-			Source: agent.AgentSession.Source,
-			Agent:  agent.AgentSession.Agent,
-			Kind:   agent.AgentSession.Kind,
-			Value:  agent.AgentSession.Value,
-		}
-	}
+	input := pi.SessionInput{PiHome: config.PiHome, AgentSession: agent.AgentSession}
 	resolved, err := pi.Resolve(input)
 	if err != nil {
 		return Resolved{}, err

@@ -60,7 +60,7 @@ func TestSemanticStatesClassifyEveryAnswer(t *testing.T) {
 func TestAnUnresolvableHomeSupersedesTheDisplayedValue(t *testing.T) {
 	t.Setenv("HOME", "")
 
-	_, err := Resolve(SessionInput{AgentSession: &AgentSession{Kind: "id", Value: "01a01485"}})
+	_, err := Resolve(SessionInput{AgentSession: &provider.AgentSession{Kind: "id", Value: "01a01485"}})
 	if !errors.Is(err, provider.ErrNoHome) {
 		t.Fatalf("Resolve(id) error = %v, want it to wrap ErrNoHome", err)
 	}

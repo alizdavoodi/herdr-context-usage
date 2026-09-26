@@ -23,16 +23,9 @@ func (claudeProvider) JustCompacted() error { return claude.ErrJustCompacted }
 func (claudeProvider) Resolve(_ context.Context, agent herdr.Agent, processes []provider.Process, config Config) (Resolved, error) {
 	input := claude.SessionInput{
 		ClaudeHome:    config.ClaudeHome,
+		AgentSession:  agent.AgentSession,
 		ForegroundCWD: agent.ForegroundCWD,
 		ProcessIDs:    provider.ProcessIDs(processes, provider.Claude),
-	}
-	if agent.AgentSession != nil {
-		input.AgentSession = &claude.AgentSession{
-			Source: agent.AgentSession.Source,
-			Agent:  agent.AgentSession.Agent,
-			Kind:   agent.AgentSession.Kind,
-			Value:  agent.AgentSession.Value,
-		}
 	}
 	resolved, err := claude.Resolve(input)
 	if err != nil {

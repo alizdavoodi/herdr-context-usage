@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/herdr"
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 )
 
 // Provenance for every fixture in this file. All of it derives from the two real
@@ -71,7 +72,7 @@ func writePiTranscript(t *testing.T, home, sessionDir, name string, records ...s
 	return path
 }
 
-func piAgent(session *herdr.AgentSession, tokens map[string]string) []herdr.Agent {
+func piAgent(session *provider.AgentSession, tokens map[string]string) []herdr.Agent {
 	return []herdr.Agent{{
 		Agent: "pi", PaneID: "w1:p1",
 		// ForegroundCWD is deliberately set and deliberately useless: this
@@ -93,7 +94,7 @@ func TestRefreshReportsPiOccupancyFromAReportedPath(t *testing.T) {
 		piSessionRecord, piUserRecord, piFirstTurn, piToolResult, piNewestTurn)
 	var log bytes.Buffer
 	fake := &fakeHerdr{
-		agents:  piAgent(&herdr.AgentSession{Kind: "path", Value: path}, nil),
+		agents:  piAgent(&provider.AgentSession{Kind: "path", Value: path}, nil),
 		reports: make(map[string][2]string),
 	}
 
@@ -141,7 +142,7 @@ func TestRefreshResolvesPiSessionFromAReportedID(t *testing.T) {
 		piSessionRecord, piUserRecord, piNewestTurn)
 	var log bytes.Buffer
 	fake := &fakeHerdr{
-		agents:  piAgent(&herdr.AgentSession{Kind: "id", Value: piSessionID}, nil),
+		agents:  piAgent(&provider.AgentSession{Kind: "id", Value: piSessionID}, nil),
 		reports: make(map[string][2]string),
 	}
 
@@ -189,7 +190,7 @@ func TestRefreshClearsPiRowWhenAnIDDoesNotResolveUniquely(t *testing.T) {
 			test.setUp(t, home)
 			var log bytes.Buffer
 			fake := &fakeHerdr{
-				agents: piAgent(&herdr.AgentSession{Kind: "id", Value: piSessionID},
+				agents: piAgent(&provider.AgentSession{Kind: "id", Value: piSessionID},
 					map[string]string{"ctx": "28k", "ctx_raw": "27905"}),
 				reports: make(map[string][2]string),
 			}
@@ -242,7 +243,7 @@ func TestRefreshClearsPiOccupancyAtTheCompactionBoundary(t *testing.T) {
 		piSessionRecord, piUserRecord, piNewestTurn, piCompaction)
 	var log bytes.Buffer
 	fake := &fakeHerdr{
-		agents: piAgent(&herdr.AgentSession{Kind: "path", Value: path},
+		agents: piAgent(&provider.AgentSession{Kind: "path", Value: path},
 			map[string]string{"ctx": "28k", "ctx_raw": "27905"}),
 		reports: make(map[string][2]string),
 	}
@@ -301,7 +302,7 @@ func TestRefreshReportsPiOccupancyOnTheTurnAfterACompaction(t *testing.T) {
 		piSessionRecord, piUserRecord, piNewestTurn, piCompaction, piUserRecord, piPostCompaction)
 	var log bytes.Buffer
 	fake := &fakeHerdr{
-		agents:  piAgent(&herdr.AgentSession{Kind: "path", Value: path}, nil),
+		agents:  piAgent(&provider.AgentSession{Kind: "path", Value: path}, nil),
 		reports: make(map[string][2]string),
 	}
 
@@ -335,7 +336,7 @@ func TestRefreshPreservesPiValueOnATransientReadFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	fake := &fakeHerdr{
-		agents: piAgent(&herdr.AgentSession{Kind: "path", Value: unreadable},
+		agents: piAgent(&provider.AgentSession{Kind: "path", Value: unreadable},
 			map[string]string{"ctx": "28k", "ctx_raw": "27905"}),
 		reports: make(map[string][2]string),
 	}
@@ -358,7 +359,7 @@ func TestRefreshClearsPiRowWhenNoAssistantTurnHasCompleted(t *testing.T) {
 		piSessionRecord, piUserRecord)
 	var log bytes.Buffer
 	fake := &fakeHerdr{
-		agents: piAgent(&herdr.AgentSession{Kind: "path", Value: path},
+		agents: piAgent(&provider.AgentSession{Kind: "path", Value: path},
 			map[string]string{"ctx_raw": "27905"}),
 		reports: make(map[string][2]string),
 	}
@@ -405,7 +406,7 @@ func TestRefreshClearsPiRowWhenTheAgentHomeCannotBeResolved(t *testing.T) {
 
 	var log bytes.Buffer
 	fake := &fakeHerdr{
-		agents: piAgent(&herdr.AgentSession{Kind: "id", Value: piSessionID},
+		agents: piAgent(&provider.AgentSession{Kind: "id", Value: piSessionID},
 			map[string]string{"ctx": "28k", "ctx_raw": "27905"}),
 		reports: make(map[string][2]string),
 	}

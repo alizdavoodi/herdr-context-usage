@@ -18,17 +18,6 @@ const ResolutionAgentSession ResolutionMode = "agent_session"
 
 var ErrNoSession = errors.New("omp agent session cannot be resolved")
 
-// Source and Agent are unread here, and deliberately left that way rather than
-// deleted: all five providers declare them and none reads either, so they are one
-// repo-wide dead pattern rather than this provider's own. Removing them from this
-// pair alone would split a shape the five currently share.
-type AgentSession struct {
-	Source string `json:"source"`
-	Agent  string `json:"agent"`
-	Kind   string `json:"kind"`
-	Value  string `json:"value"`
-}
-
 // SessionInput carries no working directory and no process list, and must not
 // grow either. There is no working-directory fallback for three reasons, any one
 // of which is sufficient: omp files an agent session under a directory derived
@@ -45,7 +34,7 @@ type AgentSession struct {
 // precondition rather than an improvement on a fallback that works without it.
 type SessionInput struct {
 	OmpHome      string
-	AgentSession *AgentSession
+	AgentSession *provider.AgentSession
 }
 
 type ResolvedSession struct {
@@ -106,7 +95,7 @@ func Resolve(input SessionInput) (ResolvedSession, error) {
 // integration labels what it reports, but an unlabelled one still has to be
 // safe, and an unlabelled relative value falls through to the id match, where an
 // absent or non-unique match resolves to nothing rather than to a guess.
-func reportsAPath(session AgentSession) bool {
+func reportsAPath(session provider.AgentSession) bool {
 	switch strings.ToLower(session.Kind) {
 	case "path":
 		return true

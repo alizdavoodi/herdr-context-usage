@@ -22,16 +22,9 @@ const (
 
 var ErrNoSession = errors.New("codex agent session cannot be resolved")
 
-type AgentSession struct {
-	Source string `json:"source"`
-	Agent  string `json:"agent"`
-	Kind   string `json:"kind"`
-	Value  string `json:"value"`
-}
-
 type SessionInput struct {
 	CodexHome     string
-	AgentSession  *AgentSession
+	AgentSession  *provider.AgentSession
 	ForegroundCWD string
 }
 
@@ -79,7 +72,7 @@ func Resolve(input SessionInput) (ResolvedSession, error) {
 	return ResolvedSession{Path: path, Mode: ResolutionForegroundCWD}, nil
 }
 
-func reportedPath(home string, session AgentSession) (string, error) {
+func reportedPath(home string, session provider.AgentSession) (string, error) {
 	switch strings.ToLower(session.Kind) {
 	case "path":
 		return session.Value, nil

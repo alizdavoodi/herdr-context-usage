@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/opencodeshared"
 )
 
@@ -19,15 +20,8 @@ const ResolutionTerminalTitle ResolutionMode = opencodeshared.ResolutionTerminal
 // opencodeshared where both providers share them.
 var ErrNoSession = errors.New("opencode agent session cannot be resolved")
 
-type AgentSession struct {
-	Source string `json:"source"`
-	Agent  string `json:"agent"`
-	Kind   string `json:"kind"`
-	Value  string `json:"value"`
-}
-
 type SessionInput struct {
-	AgentSession *AgentSession
+	AgentSession *provider.AgentSession
 }
 
 type ResolvedSession struct {

@@ -13,21 +13,14 @@ import (
 
 const SourceID = "herdr-context-usage"
 
-type AgentSession struct {
-	Source string `json:"source"`
-	Agent  string `json:"agent"`
-	Kind   string `json:"kind"`
-	Value  string `json:"value"`
-}
-
 type Agent struct {
-	Agent         string            `json:"agent"`
-	AgentStatus   string            `json:"agent_status"`
-	ForegroundCWD string            `json:"foreground_cwd"`
-	PaneID        string            `json:"pane_id"`
-	TerminalTitle string            `json:"terminal_title"`
-	Tokens        map[string]string `json:"tokens"`
-	AgentSession  *AgentSession     `json:"agent_session"`
+	Agent         string                 `json:"agent"`
+	AgentStatus   string                 `json:"agent_status"`
+	ForegroundCWD string                 `json:"foreground_cwd"`
+	PaneID        string                 `json:"pane_id"`
+	TerminalTitle string                 `json:"terminal_title"`
+	Tokens        map[string]string      `json:"tokens"`
+	AgentSession  *provider.AgentSession `json:"agent_session"`
 }
 
 type Pane struct {

@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 )
 
 func TestResolvePrefersReportedAgentSession(t *testing.T) {
@@ -11,7 +13,7 @@ func TestResolvePrefersReportedAgentSession(t *testing.T) {
 
 	reported := filepath.Join(t.TempDir(), "reported.jsonl")
 	got, err := Resolve(SessionInput{
-		AgentSession:  &AgentSession{Kind: "path", Value: reported},
+		AgentSession:  &provider.AgentSession{Kind: "path", Value: reported},
 		ForegroundCWD: "/ignored",
 	})
 	if err != nil {
@@ -30,7 +32,7 @@ func TestResolveReportedSessionID(t *testing.T) {
 	want := filepath.Join(home, "projects", "-work-acme", "session-1.jsonl")
 	got, err := Resolve(SessionInput{
 		ClaudeHome:    home,
-		AgentSession:  &AgentSession{Kind: "id", Value: "session-1"},
+		AgentSession:  &provider.AgentSession{Kind: "id", Value: "session-1"},
 		ForegroundCWD: cwd,
 	})
 	if err != nil {
@@ -115,8 +117,8 @@ func TestResolveRejectsIncompleteInputs(t *testing.T) {
 	home := t.TempDir()
 	tests := []SessionInput{
 		{ClaudeHome: home},
-		{ClaudeHome: home, AgentSession: &AgentSession{Kind: "id", Value: "session"}},
-		{ClaudeHome: home, ForegroundCWD: "/work", AgentSession: &AgentSession{Kind: "unknown", Value: "session"}},
+		{ClaudeHome: home, AgentSession: &provider.AgentSession{Kind: "id", Value: "session"}},
+		{ClaudeHome: home, ForegroundCWD: "/work", AgentSession: &provider.AgentSession{Kind: "unknown", Value: "session"}},
 	}
 	for _, input := range tests {
 		if _, err := Resolve(input); err != ErrNoSession {

@@ -59,7 +59,7 @@ func TestAnUnresolvableHomeSupersedesTheDisplayedValue(t *testing.T) {
 	t.Setenv("HOME", "")
 
 	_, err := Resolve(SessionInput{
-		AgentSession:  &AgentSession{Kind: "id", Value: "session-1"},
+		AgentSession:  &provider.AgentSession{Kind: "id", Value: "session-1"},
 		ForegroundCWD: "/work",
 	})
 	if !errors.Is(err, provider.ErrNoHome) {

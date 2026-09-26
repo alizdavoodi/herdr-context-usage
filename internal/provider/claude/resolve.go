@@ -22,16 +22,9 @@ const (
 
 var ErrNoSession = errors.New("claude agent session cannot be resolved")
 
-type AgentSession struct {
-	Source string `json:"source"`
-	Agent  string `json:"agent"`
-	Kind   string `json:"kind"`
-	Value  string `json:"value"`
-}
-
 type SessionInput struct {
 	ClaudeHome    string
-	AgentSession  *AgentSession
+	AgentSession  *provider.AgentSession
 	ForegroundCWD string
 	ProcessIDs    []int
 }
@@ -89,7 +82,7 @@ func Resolve(input SessionInput) (ResolvedSession, error) {
 	return ResolvedSession{}, ErrNoSession
 }
 
-func reportedPath(home, cwd string, session AgentSession) (string, error) {
+func reportedPath(home, cwd string, session provider.AgentSession) (string, error) {
 	switch strings.ToLower(session.Kind) {
 	case "path":
 		return session.Value, nil
