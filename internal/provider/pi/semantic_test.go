@@ -7,6 +7,7 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 	"github.com/alizdavoodi/herdr-context-usage/internal/report"
 )
 
@@ -20,6 +21,7 @@ func TestSemanticStatesClassifyEveryAnswer(t *testing.T) {
 		want report.Class
 	}{
 		{name: "unresolvable agent session", err: ErrNoSession, want: report.Superseded},
+		{name: "unresolvable agent home", err: provider.ErrNoHome, want: report.Superseded},
 		{name: "no completed assistant turn", err: ErrNoOccupancy, want: report.Superseded},
 		{name: "just compacted", err: ErrJustCompacted, want: report.Superseded},
 		{
@@ -56,11 +58,10 @@ func TestSemanticStatesClassifyEveryAnswer(t *testing.T) {
 // would need a second clause there. Only the id branch reaches a home;
 // TestResolveAPathWithoutAResolvableHome pins the path branch staying healthy.
 func TestAnUnresolvableHomeSupersedesTheDisplayedValue(t *testing.T) {
-	t.Setenv("PI_CODING_AGENT_DIR", "")
 	t.Setenv("HOME", "")
 
-	_, err := Resolve(SessionInput{AgentSession: &AgentSession{Kind: "id", Value: "01a014de"}})
-	if !errors.Is(err, ErrNoHome) {
+	_, err := Resolve(SessionInput{AgentSession: &provider.AgentSession{Kind: "id", Value: "01a014de"}})
+	if !errors.Is(err, provider.ErrNoHome) {
 		t.Fatalf("Resolve(id) error = %v, want it to wrap ErrNoHome", err)
 	}
 	// A reader diagnosing a blank row has to tell "there is no home to look in"

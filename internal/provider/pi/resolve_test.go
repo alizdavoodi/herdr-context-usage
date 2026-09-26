@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 )
 
 // The two session directory names are the ones pi actually created on this
@@ -33,53 +35,31 @@ func TestResolveUsesAReportedPathDirectly(t *testing.T) {
 	// transcript that is not there is the reader's evidence that the agent
 	// session is gone, and confusing the two would blank the row for the wrong
 	// reason.
+	//
+	// What a label and a value mean is provider.AgentSession's one rule, tested
+	// there; this case pins only that a path it reports reaches the reader.
 	reported := filepath.Join(t.TempDir(), repoSessionDir, repoTranscript)
-	for _, kind := range []string{"path", "Path", "PATH"} {
-		got, err := Resolve(SessionInput{
-			PiHome:       t.TempDir(),
-			AgentSession: &AgentSession{Source: "herdr", Agent: "pi", Kind: kind, Value: reported},
-		})
-		if err != nil {
-			t.Fatalf("Resolve(kind=%q) error = %v", kind, err)
-		}
-		if got.Path != reported || got.Mode != ResolutionAgentSession {
-			t.Fatalf("Resolve(kind=%q) = %#v, want %q and agent_session mode", kind, got, reported)
-		}
+	got, err := Resolve(SessionInput{
+		PiHome:       t.TempDir(),
+		AgentSession: &provider.AgentSession{Kind: "path", Value: reported},
+	})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
 	}
-}
-
-// A relative value under kind "path" would be joined against whatever directory
-// herdr launched this plugin in, and a same-named file sitting there would be
-// read as the transcript. An explicit kind is not evidence of an absolute value,
-// so the label buys no trust the value itself does not carry.
-func TestResolveRejectsARelativeReportedPath(t *testing.T) {
-	t.Parallel()
-
-	for _, value := range []string{
-		repoTranscript,
-		filepath.Join("sessions", repoSessionDir, repoTranscript),
-		"./" + repoTranscript,
-		"../" + repoTranscript,
-	} {
-		if _, err := Resolve(SessionInput{
-			PiHome:       t.TempDir(),
-			AgentSession: &AgentSession{Kind: "path", Value: value},
-		}); !errors.Is(err, ErrNoSession) {
-			t.Fatalf("Resolve(path=%q) error = %v, want %v", value, err, ErrNoSession)
-		}
+	if got.Path != reported || got.Mode != ResolutionAgentSession {
+		t.Fatalf("Resolve() = %#v, want %q and agent_session mode", got, reported)
 	}
 }
 
 // A pane reporting an absolute path is fully resolvable without a home, so a
 // home that cannot be resolved at all must not sink it. Unsetting HOME with no
-// configured home and no override is the only way to make resolveHome fail, so
-// this case sets the environment and cannot run in parallel.
+// configured home is the only way to make the home lookup fail, so this case
+// sets the environment and cannot run in parallel.
 func TestResolveAPathWithoutAResolvableHome(t *testing.T) {
-	t.Setenv("PI_CODING_AGENT_DIR", "")
 	t.Setenv("HOME", "")
 
 	want := filepath.Join(t.TempDir(), "sessions", repoSessionDir, repoTranscript)
-	got, err := Resolve(SessionInput{AgentSession: &AgentSession{Kind: "path", Value: want}})
+	got, err := Resolve(SessionInput{AgentSession: &provider.AgentSession{Kind: "path", Value: want}})
 	if err != nil {
 		t.Fatalf("Resolve() error = %v, want the reported path used without a home", err)
 	}
@@ -102,7 +82,7 @@ func TestResolveMatchesAReportedIDToItsTranscript(t *testing.T) {
 
 	got, err := Resolve(SessionInput{
 		PiHome:       home,
-		AgentSession: &AgentSession{Kind: "id", Value: repoSessionID},
+		AgentSession: &provider.AgentSession{Kind: "id", Value: repoSessionID},
 	})
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
@@ -130,7 +110,7 @@ func TestResolveTreatsANonUniqueIDAsUnresolved(t *testing.T) {
 
 	if _, err := Resolve(SessionInput{
 		PiHome:       home,
-		AgentSession: &AgentSession{Kind: "id", Value: repoSessionID},
+		AgentSession: &provider.AgentSession{Kind: "id", Value: repoSessionID},
 	}); !errors.Is(err, ErrNoSession) {
 		t.Fatalf("Resolve() error = %v, want %v", err, ErrNoSession)
 	}
@@ -169,6 +149,9 @@ func TestResolveRejectsUnmatchableIDs(t *testing.T) {
 		{name: "character class", value: "01a014de-020a-70b2-bc8e-b6a70ed3e78[0-9]"},
 		{name: "escape", value: `01a014de\020a`},
 		{name: "path separator", value: "../" + repoSessionDir + "/" + repoTranscript},
+		// Labelled an id, even the absolute path of a real transcript is not
+		// read as one: the agent said it was an id.
+		{name: "an absolute path", value: filepath.Join(home, "sessions", repoSessionDir, repoTranscript)},
 	}
 
 	for _, tt := range tests {
@@ -176,7 +159,7 @@ func TestResolveRejectsUnmatchableIDs(t *testing.T) {
 			t.Parallel()
 			if _, err := Resolve(SessionInput{
 				PiHome:       home,
-				AgentSession: &AgentSession{Kind: "id", Value: tt.value},
+				AgentSession: &provider.AgentSession{Kind: "id", Value: tt.value},
 			}); !errors.Is(err, ErrNoSession) {
 				t.Fatalf("Resolve(%q) error = %v, want %v", tt.value, err, ErrNoSession)
 			}
@@ -199,8 +182,8 @@ func TestResolveWithoutAReportedAgentSession(t *testing.T) {
 		input SessionInput
 	}{
 		{name: "no agent session at all", input: SessionInput{PiHome: home}},
-		{name: "an agent session with no value", input: SessionInput{PiHome: home, AgentSession: &AgentSession{Kind: "id"}}},
-		{name: "a path kind with no value", input: SessionInput{PiHome: home, AgentSession: &AgentSession{Kind: "path"}}},
+		{name: "an agent session with no value", input: SessionInput{PiHome: home, AgentSession: &provider.AgentSession{Kind: "id"}}},
+		{name: "a path kind with no value", input: SessionInput{PiHome: home, AgentSession: &provider.AgentSession{Kind: "path"}}},
 	}
 
 	for _, tt := range tests {
@@ -213,73 +196,21 @@ func TestResolveWithoutAReportedAgentSession(t *testing.T) {
 	}
 }
 
-func TestResolveUnlabelledValues(t *testing.T) {
-	t.Parallel()
-
-	// pi's integration labels what it reports, but an unlabelled value still has
-	// to be safe: an absolute path is a path, and anything else is tried as an id
-	// where a non-unique or absent match resolves to nothing rather than a guess.
-	home := t.TempDir()
-	transcripts := writeStore(t, home, map[string][]string{repoSessionDir: {repoTranscript}})
-
-	absolute := filepath.Join(home, "sessions", repoSessionDir, repoTranscript)
-	got, err := Resolve(SessionInput{PiHome: home, AgentSession: &AgentSession{Value: absolute}})
-	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
-	}
-	if got.Path != absolute || got.Mode != ResolutionAgentSession {
-		t.Fatalf("Resolve() = %#v, want %q", got, absolute)
-	}
-
-	got, err = Resolve(SessionInput{PiHome: home, AgentSession: &AgentSession{Value: repoSessionID}})
-	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
-	}
-	if got.Path != transcripts[repoTranscript] {
-		t.Fatalf("Resolve() = %#v, want %q", got, transcripts[repoTranscript])
-	}
-}
-
-// PI_CODING_AGENT_DIR is shared with omp, so a user who exported it redirected
-// both agents at once and this provider has to look where they actually wrote.
-// The configured home still wins, because one shared variable cannot express two
-// stores. These cases set the environment and so cannot run in parallel.
-func TestResolveHomePrecedence(t *testing.T) {
-	configured := t.TempDir()
-	fromEnv := t.TempDir()
+// With no configured home, pi's store is looked for under ~/.pi/agent. Which
+// home wins when one is configured is pinned once, in the provider root; what
+// stays here is this provider's own default. Sets HOME, so it cannot run in
+// parallel.
+func TestResolveDefaultsToPisOwnHome(t *testing.T) {
 	fromDefault := t.TempDir()
-
-	wantConfigured := writeStore(t, configured, map[string][]string{repoSessionDir: {repoTranscript}})[repoTranscript]
-	wantEnv := writeStore(t, fromEnv, map[string][]string{repoSessionDir: {repoTranscript}})[repoTranscript]
-	wantDefault := writeStore(t, filepath.Join(fromDefault, ".pi", "agent"), map[string][]string{repoSessionDir: {repoTranscript}})[repoTranscript]
-
-	session := &AgentSession{Kind: "id", Value: repoSessionID}
-
-	t.Setenv("PI_CODING_AGENT_DIR", fromEnv)
-	got, err := Resolve(SessionInput{PiHome: configured, AgentSession: session})
-	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
-	}
-	if got.Path != wantConfigured {
-		t.Fatalf("Resolve() = %q, want the configured home %q", got.Path, wantConfigured)
-	}
-
-	got, err = Resolve(SessionInput{AgentSession: session})
-	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
-	}
-	if got.Path != wantEnv {
-		t.Fatalf("Resolve() = %q, want the PI_CODING_AGENT_DIR home %q", got.Path, wantEnv)
-	}
-
-	t.Setenv("PI_CODING_AGENT_DIR", "")
+	want := writeStore(t, filepath.Join(fromDefault, ".pi", "agent"), map[string][]string{repoSessionDir: {repoTranscript}})[repoTranscript]
 	t.Setenv("HOME", fromDefault)
-	got, err = Resolve(SessionInput{AgentSession: session})
+
+	got, err := Resolve(SessionInput{AgentSession: &provider.AgentSession{Kind: "id", Value: repoSessionID}})
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
 	}
-	if got.Path != wantDefault {
-		t.Fatalf("Resolve() = %q, want the default ~/.pi/agent home %q", got.Path, wantDefault)
+	if got.Path != want {
+		t.Fatalf("Resolve() = %q, want the default ~/.pi/agent home %q", got.Path, want)
 	}
 }
 

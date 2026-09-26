@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 )
 
 type recordedCall struct {
@@ -91,8 +93,15 @@ func TestListAgents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListAgents() error = %v", err)
 	}
-	if len(agents) != 1 || agents[0].PaneID != "w1:p1" || agents[0].AgentSession == nil || agents[0].AgentSession.Value != "/tmp/session.jsonl" {
+	if len(agents) != 1 || agents[0].PaneID != "w1:p1" {
 		t.Fatalf("ListAgents() = %#v", agents)
+	}
+	// The fixture carries herdr's source and agent fields as well, and they
+	// must be dropped rather than fail the decode: only the label and the value
+	// are read.
+	want := provider.AgentSession{Kind: "path", Value: "/tmp/session.jsonl"}
+	if got := agents[0].AgentSession; got == nil || *got != want {
+		t.Fatalf("agent session = %#v, want %#v", got, want)
 	}
 	if agents[0].Tokens["ctx_raw"] != "92481" {
 		t.Fatalf("tokens = %#v", agents[0].Tokens)

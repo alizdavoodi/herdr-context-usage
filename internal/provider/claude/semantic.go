@@ -3,6 +3,7 @@ package claude
 import (
 	"io/fs"
 
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 	"github.com/alizdavoodi/herdr-context-usage/internal/report"
 )
 
@@ -13,6 +14,7 @@ func SemanticStates() report.States {
 	return report.States{
 		Superseded: []error{
 			ErrNoSession,
+			provider.ErrNoHome,
 			ErrNoOccupancy,
 			ErrJustCompacted,
 			// Resolve hands back a transcript path rather than a file, so a missing

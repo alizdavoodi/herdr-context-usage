@@ -2,8 +2,8 @@ package opencode
 
 import (
 	"errors"
-	"strings"
 
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/opencodeshared"
 )
 
@@ -19,15 +19,8 @@ const ResolutionTerminalTitle ResolutionMode = opencodeshared.ResolutionTerminal
 // opencodeshared where both providers share them.
 var ErrNoSession = errors.New("opencode agent session cannot be resolved")
 
-type AgentSession struct {
-	Source string `json:"source"`
-	Agent  string `json:"agent"`
-	Kind   string `json:"kind"`
-	Value  string `json:"value"`
-}
-
 type SessionInput struct {
-	AgentSession *AgentSession
+	AgentSession *provider.AgentSession
 }
 
 type ResolvedSession struct {
@@ -35,9 +28,13 @@ type ResolvedSession struct {
 	Mode ResolutionMode
 }
 
+// Resolve consults only a reported id. opencode keeps its sessions in a
+// database rather than a file per session, so a reported path names nothing
+// this provider can read and is refused.
 func Resolve(input SessionInput) (ResolvedSession, error) {
-	if input.AgentSession == nil || input.AgentSession.Value == "" || strings.ToLower(input.AgentSession.Kind) != "id" {
+	id, ok := input.AgentSession.ID()
+	if !ok {
 		return ResolvedSession{}, ErrNoSession
 	}
-	return ResolvedSession{ID: input.AgentSession.Value, Mode: ResolutionAgentSession}, nil
+	return ResolvedSession{ID: id, Mode: ResolutionAgentSession}, nil
 }

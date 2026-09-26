@@ -57,8 +57,8 @@ type assistantPayload struct {
 	} `json:"tokens"`
 }
 
-func Open(ctx context.Context, explicitPath string) (*Store, error) {
-	path, err := opencodeshared.DataPath(explicitPath, "opencode2.db")
+func Open(ctx context.Context, explicitPath, dataHome string) (*Store, error) {
+	path, err := opencodeshared.DataPath(explicitPath, dataHome, "opencode2.db")
 	if err != nil {
 		return nil, err
 	}

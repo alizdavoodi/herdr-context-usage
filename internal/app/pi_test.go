@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/herdr"
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 )
 
 // Provenance for every fixture in this file. All of it derives from the two real
@@ -71,7 +72,7 @@ func writePiTranscript(t *testing.T, home, sessionDir, name string, records ...s
 	return path
 }
 
-func piAgent(session *herdr.AgentSession, tokens map[string]string) []herdr.Agent {
+func piAgent(session *provider.AgentSession, tokens map[string]string) []herdr.Agent {
 	return []herdr.Agent{{
 		Agent: "pi", PaneID: "w1:p1",
 		// ForegroundCWD is deliberately set and deliberately useless: this
@@ -93,7 +94,7 @@ func TestRefreshReportsPiOccupancyFromAReportedPath(t *testing.T) {
 		piSessionRecord, piUserRecord, piFirstTurn, piToolResult, piNewestTurn)
 	var log bytes.Buffer
 	fake := &fakeHerdr{
-		agents:  piAgent(&herdr.AgentSession{Kind: "path", Value: path}, nil),
+		agents:  piAgent(&provider.AgentSession{Kind: "path", Value: path}, nil),
 		reports: make(map[string][2]string),
 	}
 
@@ -141,7 +142,7 @@ func TestRefreshResolvesPiSessionFromAReportedID(t *testing.T) {
 		piSessionRecord, piUserRecord, piNewestTurn)
 	var log bytes.Buffer
 	fake := &fakeHerdr{
-		agents:  piAgent(&herdr.AgentSession{Kind: "id", Value: piSessionID}, nil),
+		agents:  piAgent(&provider.AgentSession{Kind: "id", Value: piSessionID}, nil),
 		reports: make(map[string][2]string),
 	}
 
@@ -189,7 +190,7 @@ func TestRefreshClearsPiRowWhenAnIDDoesNotResolveUniquely(t *testing.T) {
 			test.setUp(t, home)
 			var log bytes.Buffer
 			fake := &fakeHerdr{
-				agents: piAgent(&herdr.AgentSession{Kind: "id", Value: piSessionID},
+				agents: piAgent(&provider.AgentSession{Kind: "id", Value: piSessionID},
 					map[string]string{"ctx": "28k", "ctx_raw": "27905"}),
 				reports: make(map[string][2]string),
 			}
@@ -242,7 +243,7 @@ func TestRefreshClearsPiOccupancyAtTheCompactionBoundary(t *testing.T) {
 		piSessionRecord, piUserRecord, piNewestTurn, piCompaction)
 	var log bytes.Buffer
 	fake := &fakeHerdr{
-		agents: piAgent(&herdr.AgentSession{Kind: "path", Value: path},
+		agents: piAgent(&provider.AgentSession{Kind: "path", Value: path},
 			map[string]string{"ctx": "28k", "ctx_raw": "27905"}),
 		reports: make(map[string][2]string),
 	}
@@ -301,7 +302,7 @@ func TestRefreshReportsPiOccupancyOnTheTurnAfterACompaction(t *testing.T) {
 		piSessionRecord, piUserRecord, piNewestTurn, piCompaction, piUserRecord, piPostCompaction)
 	var log bytes.Buffer
 	fake := &fakeHerdr{
-		agents:  piAgent(&herdr.AgentSession{Kind: "path", Value: path}, nil),
+		agents:  piAgent(&provider.AgentSession{Kind: "path", Value: path}, nil),
 		reports: make(map[string][2]string),
 	}
 
@@ -335,7 +336,7 @@ func TestRefreshPreservesPiValueOnATransientReadFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	fake := &fakeHerdr{
-		agents: piAgent(&herdr.AgentSession{Kind: "path", Value: unreadable},
+		agents: piAgent(&provider.AgentSession{Kind: "path", Value: unreadable},
 			map[string]string{"ctx": "28k", "ctx_raw": "27905"}),
 		reports: make(map[string][2]string),
 	}
@@ -358,7 +359,7 @@ func TestRefreshClearsPiRowWhenNoAssistantTurnHasCompleted(t *testing.T) {
 		piSessionRecord, piUserRecord)
 	var log bytes.Buffer
 	fake := &fakeHerdr{
-		agents: piAgent(&herdr.AgentSession{Kind: "path", Value: path},
+		agents: piAgent(&provider.AgentSession{Kind: "path", Value: path},
 			map[string]string{"ctx_raw": "27905"}),
 		reports: make(map[string][2]string),
 	}
@@ -392,7 +393,8 @@ func TestRefreshClearsPiRowWhenNoAssistantTurnHasCompleted(t *testing.T) {
 // sentinel declared and wrapped but left out of SemanticStates, which is the
 // defect's exact shape. The record written was context_state "unknown",
 // occupancy null, resolution_mode null, error "pi agent home cannot be
-// resolved: $HOME is not defined" — and clears was empty, so the pane kept
+// resolved: $HOME is not defined" (that sentinel's text at the time, before
+// it moved to the provider root) — and clears was empty, so the pane kept
 // 27,905 from its previous round.
 //
 // Sets the environment, so it cannot run in parallel. Unsetting HOME defeats
@@ -400,12 +402,11 @@ func TestRefreshClearsPiRowWhenNoAssistantTurnHasCompleted(t *testing.T) {
 // resolves without a home and must stay healthy; that is pinned in the provider
 // package, because only the id branch reaches a home at all.
 func TestRefreshClearsPiRowWhenTheAgentHomeCannotBeResolved(t *testing.T) {
-	t.Setenv("PI_CODING_AGENT_DIR", "")
 	t.Setenv("HOME", "")
 
 	var log bytes.Buffer
 	fake := &fakeHerdr{
-		agents: piAgent(&herdr.AgentSession{Kind: "id", Value: piSessionID},
+		agents: piAgent(&provider.AgentSession{Kind: "id", Value: piSessionID},
 			map[string]string{"ctx": "28k", "ctx_raw": "27905"}),
 		reports: make(map[string][2]string),
 	}
@@ -421,9 +422,14 @@ func TestRefreshClearsPiRowWhenTheAgentHomeCannotBeResolved(t *testing.T) {
 		t.Fatalf("measurement reported zero occupancy; want null: %s", log.String())
 	}
 	// The two blanking reasons have different fixes — install the integration
-	// against export a home — so the record has to tell them apart.
-	if got := log.String(); !strings.Contains(got, "pi agent home cannot be resolved") ||
+	// against export a home — so the record has to tell them apart. The home
+	// answer is a fact about the host and carries no agent's name; the record's
+	// provider field is what names the agent.
+	if got := log.String(); !strings.Contains(got, "agent home cannot be resolved") ||
 		strings.Contains(got, "pi agent session cannot be resolved") {
 		t.Fatalf("measurement = %s, want the home named distinguishably from an unresolved agent session", got)
+	}
+	if got := log.String(); !strings.Contains(got, `"provider":"pi"`) {
+		t.Fatalf("measurement = %s, want the provider field to name the agent the home answer does not", got)
 	}
 }

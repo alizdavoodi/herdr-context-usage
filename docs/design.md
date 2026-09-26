@@ -185,6 +185,10 @@ produced it.
 1. **`agent_session`** — herdr's own integrations report a native session id and
    path per pane. Exact. Requires `herdr integration install <kind>`, which is
    additive hook scripts and does not disturb an existing Claude statusLine.
+   For every provider a reported path is used only when it is absolute: a
+   relative one would be read against whatever directory herdr launched this
+   plugin in, where a same-named file is not the pane's transcript, so it is
+   refused.
 2. **Provider-specific fallback** when no integration has reported:
    - `claude` — first require an exact PID, working-directory and agent-kind
      match in Claude's process registry (`process_registry`); if no registry

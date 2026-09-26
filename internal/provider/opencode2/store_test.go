@@ -369,7 +369,7 @@ func TestOpenMissingStoreIsSemantic(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "not-written.db")
-	if _, err := Open(context.Background(), path); !errors.Is(err, ErrStoreNotReady) {
+	if _, err := Open(context.Background(), path, ""); !errors.Is(err, ErrStoreNotReady) {
 		t.Fatalf("Open() error = %v, want ErrStoreNotReady", err)
 	}
 }
@@ -382,7 +382,7 @@ func TestOpenUninitialisedStoreIsSemantic(t *testing.T) {
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Open(context.Background(), path); !errors.Is(err, ErrStoreNotReady) {
+	if _, err := Open(context.Background(), path, ""); !errors.Is(err, ErrStoreNotReady) {
 		t.Fatalf("Open() error = %v, want ErrStoreNotReady", err)
 	}
 }
@@ -390,7 +390,7 @@ func TestOpenUninitialisedStoreIsSemantic(t *testing.T) {
 func TestOpenDirectoryIsTransient(t *testing.T) {
 	t.Parallel()
 
-	if _, err := Open(context.Background(), t.TempDir()); err == nil || errors.Is(err, ErrStoreNotReady) {
+	if _, err := Open(context.Background(), t.TempDir(), ""); err == nil || errors.Is(err, ErrStoreNotReady) {
 		t.Fatalf("Open() error = %v, want transient database failure", err)
 	}
 }
@@ -475,7 +475,7 @@ func insertMessage(t *testing.T, db *sql.DB, id, sessionID, messageType string, 
 
 func openStore(t *testing.T, path string) *Store {
 	t.Helper()
-	store, err := Open(context.Background(), path)
+	store, err := Open(context.Background(), path, "")
 	if err != nil {
 		t.Fatal(err)
 	}

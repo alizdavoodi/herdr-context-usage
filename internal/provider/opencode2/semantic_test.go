@@ -1,11 +1,14 @@
 package opencode2
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"syscall"
 	"testing"
 
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/opencodeshared"
 	"github.com/alizdavoodi/herdr-context-usage/internal/report"
 )
@@ -20,6 +23,7 @@ func TestSemanticStatesClassifyEveryAnswer(t *testing.T) {
 		want report.Class
 	}{
 		{name: "unresolvable session", err: ErrNoSession, want: report.Superseded},
+		{name: "unresolvable agent home", err: provider.ErrNoHome, want: report.Superseded},
 		{name: "session has produced no reading", err: ErrNoOccupancy, want: report.Superseded},
 		{name: "store not written yet", err: ErrStoreNotReady, want: report.Superseded},
 		{name: "just compacted", err: ErrJustCompacted, want: report.Superseded},
@@ -50,5 +54,32 @@ func TestSemanticStatesClassifyEveryAnswer(t *testing.T) {
 				t.Fatalf("Classify(%v) = %v, want %v", tt.err, got, tt.want)
 			}
 		})
+	}
+}
+
+// An unresolvable agent home is a permanent fact about the host, not a
+// momentary failure: with no $HOME and no configured home there is nowhere to
+// look, and every later refresh reads the same way. Left undeclared it fell to
+// Classify's transient default and froze the displayed occupancy for the life
+// of the pane, while pi and omp blanked theirs on the same host.
+//
+// This drives Open rather than a constructed error so the classification is
+// pinned to the shape the provider actually produces. It sets the environment
+// and therefore cannot run in parallel, and unsetting HOME defeats
+// os.UserHomeDir only on unix — on Windows it reads USERPROFILE.
+func TestAnUnresolvableHomeSupersedesTheDisplayedValue(t *testing.T) {
+	t.Setenv("HOME", "")
+
+	_, err := Open(context.Background(), "", "")
+	if !errors.Is(err, provider.ErrNoHome) {
+		t.Fatalf("Open() error = %v, want it to wrap ErrNoHome", err)
+	}
+	// With no home there is no store path to stat, so this is not the store
+	// being unwritten, and the two blank for different reasons.
+	if errors.Is(err, ErrStoreNotReady) {
+		t.Fatalf("Open() error = %v, want it distinguishable from a store not written yet", err)
+	}
+	if got := report.Classify(err, SemanticStates()); got != report.Superseded {
+		t.Fatalf("Classify(%v) = %v, want %v", err, got, report.Superseded)
 	}
 }

@@ -3,6 +3,7 @@ package omp
 import (
 	"io/fs"
 
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 	"github.com/alizdavoodi/herdr-context-usage/internal/report"
 )
 
@@ -13,11 +14,7 @@ func SemanticStates() report.States {
 	return report.States{
 		Superseded: []error{
 			ErrNoSession,
-			// An unresolvable agent home is permanent for the life of the process,
-			// not momentary: there is nowhere to look and every later refresh reads
-			// the same way, so the displayed occupancy is superseded rather than
-			// briefly unavailable. Only the id branch reaches a home at all.
-			ErrNoHome,
+			provider.ErrNoHome,
 			ErrNoOccupancy,
 			ErrJustCompacted,
 			// Resolve hands back a transcript path rather than a file, so a missing

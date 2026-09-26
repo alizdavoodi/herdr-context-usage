@@ -24,23 +24,14 @@ func (opencodeProvider) JustCompacted() error { return opencode.ErrJustCompacted
 // is opened before the fallback and closed after reading, so Cleanup is set
 // only once the store is open.
 func (opencodeProvider) Resolve(ctx context.Context, agent herdr.Agent, _ []provider.Process, config Config) (Resolved, error) {
-	input := opencode.SessionInput{}
-	if agent.AgentSession != nil {
-		input.AgentSession = &opencode.AgentSession{
-			Source: agent.AgentSession.Source,
-			Agent:  agent.AgentSession.Agent,
-			Kind:   agent.AgentSession.Kind,
-			Value:  agent.AgentSession.Value,
-		}
-	}
-
+	input := opencode.SessionInput{AgentSession: agent.AgentSession}
 	native, nativeErr := opencode.Resolve(input)
 	var mode *string
 	if nativeErr == nil {
 		resolvedMode := string(native.Mode)
 		mode = &resolvedMode
 	}
-	store, err := opencode.Open(ctx, config.OpenCodeDB)
+	store, err := opencode.Open(ctx, config.OpenCodeDB, config.OpenCodeDataHome)
 	if err != nil {
 		return Resolved{Mode: mode}, err
 	}

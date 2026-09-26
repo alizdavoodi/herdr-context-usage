@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/herdr"
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 )
 
 // Provenance for every fixture in this file. All of it derives from the five
@@ -79,7 +80,7 @@ func writeOmpTranscript(t *testing.T, home, sessionDir, name string, records ...
 	return path
 }
 
-func ompAgent(session *herdr.AgentSession, tokens map[string]string) []herdr.Agent {
+func ompAgent(session *provider.AgentSession, tokens map[string]string) []herdr.Agent {
 	return []herdr.Agent{{
 		Agent: "omp", PaneID: "w1:p1",
 		// ForegroundCWD is deliberately set and deliberately useless: this
@@ -107,7 +108,7 @@ func TestRefreshReportsOmpOccupancyFromAReportedPath(t *testing.T) {
 		ompTitleRecord, ompSessionRecord, ompUserRecord, ompNewestTurn)
 	var log bytes.Buffer
 	fake := &fakeHerdr{
-		agents:  ompAgent(&herdr.AgentSession{Kind: "path", Value: path}, nil),
+		agents:  ompAgent(&provider.AgentSession{Kind: "path", Value: path}, nil),
 		reports: make(map[string][2]string),
 	}
 
@@ -155,7 +156,7 @@ func TestRefreshResolvesOmpSessionFromAReportedID(t *testing.T) {
 		ompTitleRecord, ompSessionRecord, ompUserRecord, ompNewestTurn)
 	var log bytes.Buffer
 	fake := &fakeHerdr{
-		agents:  ompAgent(&herdr.AgentSession{Kind: "id", Value: ompSessionID}, nil),
+		agents:  ompAgent(&provider.AgentSession{Kind: "id", Value: ompSessionID}, nil),
 		reports: make(map[string][2]string),
 	}
 
@@ -203,7 +204,7 @@ func TestRefreshClearsOmpRowWhenAnIDDoesNotResolveUniquely(t *testing.T) {
 			test.setUp(t, home)
 			var log bytes.Buffer
 			fake := &fakeHerdr{
-				agents: ompAgent(&herdr.AgentSession{Kind: "id", Value: ompSessionID},
+				agents: ompAgent(&provider.AgentSession{Kind: "id", Value: ompSessionID},
 					map[string]string{"ctx": "132k", "ctx_raw": "132098"}),
 				reports: make(map[string][2]string),
 			}
@@ -261,7 +262,7 @@ func TestRefreshClearsOmpOccupancyAtTheCompactionBoundary(t *testing.T) {
 		ompTitleRecord, ompSessionRecord, ompUserRecord, ompNewestTurn, ompCustomRecord, ompCompaction)
 	var log bytes.Buffer
 	fake := &fakeHerdr{
-		agents: ompAgent(&herdr.AgentSession{Kind: "path", Value: path},
+		agents: ompAgent(&provider.AgentSession{Kind: "path", Value: path},
 			map[string]string{"ctx": "132k", "ctx_raw": "132098"}),
 		reports: make(map[string][2]string),
 	}
@@ -314,7 +315,7 @@ func TestRefreshReportsOmpOccupancyOnTheTurnAfterACompaction(t *testing.T) {
 		ompCompaction, ompUserRecord, ompPostCompaction)
 	var log bytes.Buffer
 	fake := &fakeHerdr{
-		agents:  ompAgent(&herdr.AgentSession{Kind: "path", Value: path}, nil),
+		agents:  ompAgent(&provider.AgentSession{Kind: "path", Value: path}, nil),
 		reports: make(map[string][2]string),
 	}
 
@@ -348,7 +349,7 @@ func TestRefreshPreservesOmpValueOnATransientReadFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	fake := &fakeHerdr{
-		agents: ompAgent(&herdr.AgentSession{Kind: "path", Value: unreadable},
+		agents: ompAgent(&provider.AgentSession{Kind: "path", Value: unreadable},
 			map[string]string{"ctx": "132k", "ctx_raw": "132098"}),
 		reports: make(map[string][2]string),
 	}
@@ -371,7 +372,7 @@ func TestRefreshClearsOmpRowWhenNoAssistantTurnHasCompleted(t *testing.T) {
 		ompTitleRecord, ompSessionRecord, ompUserRecord)
 	var log bytes.Buffer
 	fake := &fakeHerdr{
-		agents: ompAgent(&herdr.AgentSession{Kind: "path", Value: path},
+		agents: ompAgent(&provider.AgentSession{Kind: "path", Value: path},
 			map[string]string{"ctx_raw": "132098"}),
 		reports: make(map[string][2]string),
 	}
@@ -439,7 +440,7 @@ func TestRefreshRecordsOmpOracleDisagreementAndStillReportsTheSum(t *testing.T) 
 				ompTitleRecord, ompSessionRecord, ompUserRecord, tt.turn)
 			var log bytes.Buffer
 			fake := &fakeHerdr{
-				agents:  ompAgent(&herdr.AgentSession{Kind: "path", Value: path}, nil),
+				agents:  ompAgent(&provider.AgentSession{Kind: "path", Value: path}, nil),
 				reports: make(map[string][2]string),
 			}
 
@@ -493,8 +494,8 @@ func TestRefreshMeasuresPiAndOmpPanesAgainstTheirOwnStores(t *testing.T) {
 	var log bytes.Buffer
 	fake := &fakeHerdr{
 		agents: []herdr.Agent{
-			{Agent: "pi", PaneID: "w1:p1", AgentSession: &herdr.AgentSession{Kind: "path", Value: piPath}},
-			{Agent: "omp", PaneID: "w1:p2", AgentSession: &herdr.AgentSession{Kind: "path", Value: ompPath}},
+			{Agent: "pi", PaneID: "w1:p1", AgentSession: &provider.AgentSession{Kind: "path", Value: piPath}},
+			{Agent: "omp", PaneID: "w1:p2", AgentSession: &provider.AgentSession{Kind: "path", Value: ompPath}},
 		},
 		reports: make(map[string][2]string),
 	}
@@ -548,12 +549,11 @@ func oracleDisagreementIn(t *testing.T, log string) string {
 // resolves without a home and must stay healthy; that is pinned in the provider
 // package, because only the id branch reaches a home at all.
 func TestRefreshClearsOmpRowWhenTheAgentHomeCannotBeResolved(t *testing.T) {
-	t.Setenv("PI_CODING_AGENT_DIR", "")
 	t.Setenv("HOME", "")
 
 	var log bytes.Buffer
 	fake := &fakeHerdr{
-		agents: ompAgent(&herdr.AgentSession{Kind: "id", Value: ompSessionID},
+		agents: ompAgent(&provider.AgentSession{Kind: "id", Value: ompSessionID},
 			map[string]string{"ctx": "132k", "ctx_raw": "132098"}),
 		reports: make(map[string][2]string),
 	}
@@ -569,9 +569,14 @@ func TestRefreshClearsOmpRowWhenTheAgentHomeCannotBeResolved(t *testing.T) {
 		t.Fatalf("measurement reported zero occupancy; want null: %s", log.String())
 	}
 	// The two blanking reasons have different fixes — install the integration
-	// against export a home — so the record has to tell them apart.
-	if got := log.String(); !strings.Contains(got, "omp agent home cannot be resolved") ||
+	// against export a home — so the record has to tell them apart. The home
+	// answer is a fact about the host and carries no agent's name; the record's
+	// provider field is what names the agent.
+	if got := log.String(); !strings.Contains(got, "agent home cannot be resolved") ||
 		strings.Contains(got, "omp agent session cannot be resolved") {
 		t.Fatalf("measurement = %s, want the home named distinguishably from an unresolved agent session", got)
+	}
+	if got := log.String(); !strings.Contains(got, `"provider":"omp"`) {
+		t.Fatalf("measurement = %s, want the provider field to name the agent the home answer does not", got)
 	}
 }

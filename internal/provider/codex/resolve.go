@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 )
 
 type ResolutionMode string
@@ -20,16 +22,9 @@ const (
 
 var ErrNoSession = errors.New("codex agent session cannot be resolved")
 
-type AgentSession struct {
-	Source string `json:"source"`
-	Agent  string `json:"agent"`
-	Kind   string `json:"kind"`
-	Value  string `json:"value"`
-}
-
 type SessionInput struct {
 	CodexHome     string
-	AgentSession  *AgentSession
+	AgentSession  *provider.AgentSession
 	ForegroundCWD string
 }
 
@@ -48,12 +43,26 @@ type sessionMetadata struct {
 }
 
 func Resolve(input SessionInput) (ResolvedSession, error) {
-	home, err := resolveHome(input.CodexHome)
+	if path, ok := input.AgentSession.Path(); ok {
+		return ResolvedSession{Path: path, Mode: ResolutionAgentSession}, nil
+	}
+	// Everything below needs the store and a reported path does not, so the
+	// home is resolved only once the path branch has passed: looking it up
+	// early would let a failing home lookup leave a pane unmeasured for a
+	// directory it never needed.
+	home, err := provider.Home(input.CodexHome, ".codex")
 	if err != nil {
 		return ResolvedSession{}, err
 	}
 	if input.AgentSession != nil && input.AgentSession.Value != "" {
-		path, err := reportedPath(home, *input.AgentSession)
+		// herdr named a session for this pane, so one this provider cannot use
+		// blanks the row rather than falling back: a working-directory match
+		// could only disagree with it.
+		id, ok := input.AgentSession.ID()
+		if !ok {
+			return ResolvedSession{}, ErrNoSession
+		}
+		path, err := rolloutForID(home, id)
 		if err != nil {
 			return ResolvedSession{}, err
 		}
@@ -77,37 +86,18 @@ func Resolve(input SessionInput) (ResolvedSession, error) {
 	return ResolvedSession{Path: path, Mode: ResolutionForegroundCWD}, nil
 }
 
-func resolveHome(explicit string) (string, error) {
-	if explicit != "" {
-		return explicit, nil
-	}
-	if configured := os.Getenv("CODEX_HOME"); configured != "" {
-		return configured, nil
-	}
-	home, err := os.UserHomeDir()
+// rolloutForID finds the one rollout whose metadata carries id. A match that is
+// not unique is unresolved rather than chosen between, and a missing match is
+// never rescued by opening the id as a path.
+func rolloutForID(home, id string) (string, error) {
+	paths, err := rolloutPaths(home, id)
 	if err != nil {
-		return "", fmt.Errorf("find home directory: %w", err)
+		return "", err
 	}
-	return filepath.Join(home, ".codex"), nil
-}
-
-func reportedPath(home string, session AgentSession) (string, error) {
-	switch strings.ToLower(session.Kind) {
-	case "path":
-		return session.Value, nil
-	case "id":
-		paths, err := rolloutPaths(home, session.Value)
-		if err != nil {
-			return "", err
-		}
-		if len(paths) == 1 {
-			return paths[0], nil
-		}
+	if len(paths) != 1 {
+		return "", ErrNoSession
 	}
-	if filepath.IsAbs(session.Value) {
-		return session.Value, nil
-	}
-	return "", ErrNoSession
+	return paths[0], nil
 }
 
 func activeSessionIDs(home string) (map[string]struct{}, error) {

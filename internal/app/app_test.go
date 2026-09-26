@@ -68,7 +68,7 @@ func TestRefreshDoesNotFailSuccessfulMeasurementsWhenPaneListFails(t *testing.T)
 		t.Fatal(err)
 	}
 	fake := &fakeHerdr{
-		agents:      []herdr.Agent{{Agent: "claude", PaneID: "w1:p1", AgentSession: &herdr.AgentSession{Kind: "path", Value: transcript}}},
+		agents:      []herdr.Agent{{Agent: "claude", PaneID: "w1:p1", AgentSession: &provider.AgentSession{Kind: "path", Value: transcript}}},
 		paneListErr: errors.New("pane list failed"),
 		processes:   map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "claude"}}},
 		reports:     make(map[string][2]string),
@@ -119,7 +119,7 @@ func TestRefreshFansOutAndClearsEventPaneAfterAgentExit(t *testing.T) {
 
 	fake := &fakeHerdr{
 		agents: []herdr.Agent{
-			{Agent: "claude", PaneID: "w1:p1", ForegroundCWD: "/work", AgentSession: &herdr.AgentSession{Kind: "path", Value: transcript}},
+			{Agent: "claude", PaneID: "w1:p1", ForegroundCWD: "/work", AgentSession: &provider.AgentSession{Kind: "path", Value: transcript}},
 			{Agent: "codex", PaneID: "w1:p2", ForegroundCWD: "/work", Tokens: map[string]string{"ctx_raw": "70000"}},
 		},
 		processes: map[string][]provider.Process{
@@ -223,7 +223,7 @@ func TestRefreshMeasuresClaudeWhenProcessInfoFails(t *testing.T) {
 	}
 	var log bytes.Buffer
 	fake := &fakeHerdr{
-		agents:      []herdr.Agent{{Agent: "claude", PaneID: "w1:p1", AgentSession: &herdr.AgentSession{Kind: "path", Value: transcript}}},
+		agents:      []herdr.Agent{{Agent: "claude", PaneID: "w1:p1", AgentSession: &provider.AgentSession{Kind: "path", Value: transcript}}},
 		processErrs: map[string]error{"w1:p1": errors.New("process info failed")},
 		reports:     make(map[string][2]string),
 	}
@@ -278,7 +278,7 @@ func TestRefreshReportsCodexPostCompactionOccupancy(t *testing.T) {
 		agents: []herdr.Agent{{
 			Agent:        "codex",
 			PaneID:       "w1:p1",
-			AgentSession: &herdr.AgentSession{Kind: "path", Value: rollout},
+			AgentSession: &provider.AgentSession{Kind: "path", Value: rollout},
 		}},
 		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "codex"}}},
 		reports:   make(map[string][2]string),
@@ -313,7 +313,7 @@ func TestRefreshPreservesCodexValueAfterATurnThatRecordedNoUsage(t *testing.T) {
 			Agent:        "codex",
 			PaneID:       "w1:p1",
 			Tokens:       map[string]string{"ctx": "86k", "ctx_raw": "86542"},
-			AgentSession: &herdr.AgentSession{Kind: "path", Value: rollout},
+			AgentSession: &provider.AgentSession{Kind: "path", Value: rollout},
 		}},
 		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "codex"}}},
 		reports:   make(map[string][2]string),
@@ -336,7 +336,7 @@ func TestRefreshClearsValueWhenCodexRolloutIsNotWritten(t *testing.T) {
 			Agent:        "codex",
 			PaneID:       "w1:p1",
 			Tokens:       map[string]string{"ctx_raw": "92481"},
-			AgentSession: &herdr.AgentSession{Kind: "path", Value: missing},
+			AgentSession: &provider.AgentSession{Kind: "path", Value: missing},
 		}},
 		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "codex"}}},
 		reports:   make(map[string][2]string),
@@ -366,7 +366,7 @@ func TestRefreshClearsValueWhenTranscriptIsJustCompacted(t *testing.T) {
 			Agent:        "claude",
 			PaneID:       "w1:p1",
 			Tokens:       map[string]string{"ctx_raw": "92481"},
-			AgentSession: &herdr.AgentSession{Kind: "path", Value: transcript},
+			AgentSession: &provider.AgentSession{Kind: "path", Value: transcript},
 		}},
 		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "claude"}}},
 		reports:   make(map[string][2]string),
@@ -397,7 +397,7 @@ func TestRefreshTreatsSyntheticZeroUsageAsUnknown(t *testing.T) {
 			Agent:        "claude",
 			PaneID:       "w1:p1",
 			Tokens:       map[string]string{"ctx_raw": "92481"},
-			AgentSession: &herdr.AgentSession{Kind: "path", Value: transcript},
+			AgentSession: &provider.AgentSession{Kind: "path", Value: transcript},
 		}},
 		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "claude"}}},
 		reports:   make(map[string][2]string),
@@ -424,7 +424,7 @@ func TestRefreshClearsValueWhenResolvedTranscriptDoesNotExist(t *testing.T) {
 			Agent:        "claude",
 			PaneID:       "w1:p1",
 			Tokens:       map[string]string{"ctx_raw": "92481"},
-			AgentSession: &herdr.AgentSession{Kind: "path", Value: missing},
+			AgentSession: &provider.AgentSession{Kind: "path", Value: missing},
 		}},
 		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "claude"}}},
 		reports:   make(map[string][2]string),
@@ -450,7 +450,7 @@ func TestRefreshPreservesValueOnTranscriptIOFailure(t *testing.T) {
 			Agent:        "claude",
 			PaneID:       "w1:p1",
 			Tokens:       map[string]string{"ctx_raw": "92481"},
-			AgentSession: &herdr.AgentSession{Kind: "path", Value: home},
+			AgentSession: &provider.AgentSession{Kind: "path", Value: home},
 		}},
 		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "claude"}}},
 		reports:   make(map[string][2]string),
@@ -477,7 +477,7 @@ func TestRefreshReportsOccupancyWhenMeasurementLoggingFails(t *testing.T) {
 	}
 	writeErr := errors.New("stdout failed")
 	fake := &fakeHerdr{
-		agents:    []herdr.Agent{{Agent: "claude", PaneID: "w1:p1", AgentSession: &herdr.AgentSession{Kind: "path", Value: transcript}}},
+		agents:    []herdr.Agent{{Agent: "claude", PaneID: "w1:p1", AgentSession: &provider.AgentSession{Kind: "path", Value: transcript}}},
 		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "claude"}}},
 		reports:   make(map[string][2]string),
 	}
@@ -501,7 +501,7 @@ func TestRefreshReportsPaneListFailureWithoutMaskingMeasurement(t *testing.T) {
 	}
 	var log bytes.Buffer
 	fake := &fakeHerdr{
-		agents:      []herdr.Agent{{Agent: "claude", PaneID: "w1:p1", AgentSession: &herdr.AgentSession{Kind: "path", Value: transcript}}},
+		agents:      []herdr.Agent{{Agent: "claude", PaneID: "w1:p1", AgentSession: &provider.AgentSession{Kind: "path", Value: transcript}}},
 		paneListErr: errors.New("pane list failed"),
 		processes:   map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "claude"}}},
 		reports:     make(map[string][2]string),
@@ -583,7 +583,7 @@ func TestRefreshReportsOpenCodeV1Occupancy(t *testing.T) {
 		agents: []herdr.Agent{{
 			Agent:        "opencode",
 			PaneID:       "w1:p1",
-			AgentSession: &herdr.AgentSession{Kind: "id", Value: "ses_current"},
+			AgentSession: &provider.AgentSession{Kind: "id", Value: "ses_current"},
 		}},
 		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "opencode"}}},
 		reports:   make(map[string][2]string),
@@ -649,7 +649,7 @@ func TestRefreshOpenCodeClearsValueWhenStoreIsMissing(t *testing.T) {
 			Agent:        "opencode",
 			PaneID:       "w1:p1",
 			Tokens:       map[string]string{"ctx_raw": "92481"},
-			AgentSession: &herdr.AgentSession{Kind: "id", Value: "ses_current"},
+			AgentSession: &provider.AgentSession{Kind: "id", Value: "ses_current"},
 		}},
 		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "opencode"}}},
 		reports:   make(map[string][2]string),
@@ -676,7 +676,7 @@ func TestRefreshOpenCodeClearsValueForZeroOccupancy(t *testing.T) {
 			Agent:        "opencode",
 			PaneID:       "w1:p1",
 			Tokens:       map[string]string{"ctx_raw": "92481"},
-			AgentSession: &herdr.AgentSession{Kind: "id", Value: "ses_aborted"},
+			AgentSession: &provider.AgentSession{Kind: "id", Value: "ses_aborted"},
 		}},
 		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "opencode"}}},
 		reports:   make(map[string][2]string),
@@ -702,7 +702,7 @@ func TestRefreshOpenCodeUsesPreviousCompletedOccupancyAfterZeroTurn(t *testing.T
 			Agent:        "opencode",
 			PaneID:       "w1:p1",
 			Tokens:       map[string]string{"ctx_raw": "92481"},
-			AgentSession: &herdr.AgentSession{Kind: "id", Value: "ses_current"},
+			AgentSession: &provider.AgentSession{Kind: "id", Value: "ses_current"},
 		}},
 		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "opencode"}}},
 		reports:   make(map[string][2]string),
@@ -733,7 +733,7 @@ func TestRefreshOpenCodeClearsValueWhenNewestMessageIsCompactionSummary(t *testi
 			Agent:        "opencode",
 			PaneID:       "w1:p1",
 			Tokens:       map[string]string{"ctx_raw": "92481"},
-			AgentSession: &herdr.AgentSession{Kind: "id", Value: "ses_current"},
+			AgentSession: &provider.AgentSession{Kind: "id", Value: "ses_current"},
 		}},
 		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "opencode"}}},
 		reports:   make(map[string][2]string),
@@ -766,7 +766,7 @@ func TestRefreshKeepsOpenCodeV1OccupancyDuringInFlightTurn(t *testing.T) {
 			Agent:        "opencode",
 			PaneID:       "w1:p1",
 			Tokens:       map[string]string{"ctx": "92k", "ctx_raw": "92481"},
-			AgentSession: &herdr.AgentSession{Kind: "id", Value: "ses_current"},
+			AgentSession: &provider.AgentSession{Kind: "id", Value: "ses_current"},
 		}},
 		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "opencode"}}},
 		reports:   make(map[string][2]string),
@@ -813,7 +813,7 @@ func TestRefreshDoesNotClaimOpenCode2AsV1(t *testing.T) {
 			Agent:        "opencode",
 			PaneID:       "w1:p1",
 			Tokens:       map[string]string{"ctx_raw": "92481"},
-			AgentSession: &herdr.AgentSession{Kind: "id", Value: "ses_current"},
+			AgentSession: &provider.AgentSession{Kind: "id", Value: "ses_current"},
 		}},
 		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: ".OpenCode2"}}},
 		reports:   make(map[string][2]string),
@@ -848,7 +848,7 @@ func TestRefreshClearsValueWhenCodexRolloutIsJustCompacted(t *testing.T) {
 			Agent:        "codex",
 			PaneID:       "w1:p1",
 			Tokens:       map[string]string{"ctx_raw": "245715"},
-			AgentSession: &herdr.AgentSession{Kind: "path", Value: rollout},
+			AgentSession: &provider.AgentSession{Kind: "path", Value: rollout},
 		}},
 		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "codex"}}},
 		reports:   make(map[string][2]string),

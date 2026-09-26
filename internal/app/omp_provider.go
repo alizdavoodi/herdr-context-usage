@@ -26,15 +26,7 @@ func (ompProvider) JustCompacted() error { return omp.ErrJustCompacted }
 // either stage in by analogy with claude would trade a blank row for a wrong
 // number. Reading is file-backed, so Cleanup is nil.
 func (ompProvider) Resolve(_ context.Context, agent herdr.Agent, _ []provider.Process, config Config) (Resolved, error) {
-	input := omp.SessionInput{OmpHome: config.OmpHome}
-	if agent.AgentSession != nil {
-		input.AgentSession = &omp.AgentSession{
-			Source: agent.AgentSession.Source,
-			Agent:  agent.AgentSession.Agent,
-			Kind:   agent.AgentSession.Kind,
-			Value:  agent.AgentSession.Value,
-		}
-	}
+	input := omp.SessionInput{OmpHome: config.OmpHome, AgentSession: agent.AgentSession}
 	resolved, err := omp.Resolve(input)
 	if err != nil {
 		return Resolved{}, err
