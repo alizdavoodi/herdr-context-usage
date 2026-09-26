@@ -28,7 +28,7 @@ type transcriptEntry struct {
 	} `json:"message"`
 }
 
-func ReadOccupancy(path string) (int64, error) {
+func readOccupancy(path string) (int64, error) {
 	// Claude's transcript stamps no schema version, so the head of the scan goes
 	// unread here. The bounded tail is the whole of what this reader needs.
 	scan, err := transcript.Read("claude", path, maxScanBytes)

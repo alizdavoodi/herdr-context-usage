@@ -226,6 +226,12 @@ func TestRefreshClearsPiRowWhenNoAgentSessionIsReported(t *testing.T) {
 	if !slices.Equal(fake.clears, []string{"w1:p1"}) || len(fake.reports) != 0 {
 		t.Fatalf("clears = %v, reports = %v; want no reported session blanked", fake.clears, fake.reports)
 	}
+	// No stage resolved anything, so the record says null. A provider leaves its
+	// mode empty here and app alone turns that into null; an empty string would
+	// read as a mode that exists but has no name.
+	if got := log.String(); !strings.Contains(got, `"resolution_mode":null`) {
+		t.Fatalf("measurement = %s, want an unresolved pane's resolution mode recorded as null", got)
+	}
 }
 
 // The trap this whole provider exists to avoid. pi's compaction record carries
@@ -390,8 +396,8 @@ func TestRefreshClearsPiRowWhenNoAssistantTurnHasCompleted(t *testing.T) {
 // the three-way classification exists to prevent.
 //
 // Measured against pi 0.84.2 and herdr 0.8.0 by driving this same path with the
-// sentinel declared and wrapped but left out of SemanticStates, which is the
-// defect's exact shape. The record written was context_state "unknown",
+// sentinel declared and wrapped but left out of pi's declared states, which is
+// the defect's exact shape. The record written was context_state "unknown",
 // occupancy null, resolution_mode null, error "pi agent home cannot be
 // resolved: $HOME is not defined" (that sentinel's text at the time, before
 // it moved to the provider root) — and clears was empty, so the pane kept

@@ -277,11 +277,14 @@ malformed line, an absent file, a truncated final line, a turn carrying no usage
 counts, cache counts present and absent. The prior art is the existing claude
 reader tests.
 
-**No new seam is introduced.** The provider registry already provides
-substitutability, and the existing registry-derived property tests cover both
-new providers automatically: that each declares a superseded answer, that none
-declares one answer both superseded and merely behind, that each declares a
-just-compacted sentinel, and that no two providers claim one agent kind.
+**The two new providers add no seam of their own.** Substitutability comes
+from the provider registry: every provider is a value of the
+`provider.Provider` interface the provider root declares, and the registry
+builds one of each from the plugin's configuration. The registry-derived
+property tests therefore cover both new providers automatically: that each
+declares a superseded answer, that none declares one answer both superseded
+and merely behind, that each declares a just-compacted sentinel, and that no
+two providers claim one agent kind.
 
 ## Out of Scope
 

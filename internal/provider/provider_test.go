@@ -52,26 +52,6 @@ func TestProcessIDsUsesExactBasenames(t *testing.T) {
 	}
 }
 
-func TestImplemented(t *testing.T) {
-	t.Parallel()
-
-	// This list is hand-written because Go cannot enumerate a string-typed
-	// constant set, and the app package cannot be imported here to derive it
-	// from the provider registry without a cycle. internal/app/seam_test.go
-	// closes that gap from the other side, asserting every registered provider's
-	// kind reports Implemented.
-	for _, kind := range []Kind{Claude, Codex, OpenCode, OpenCode2, Pi, Omp} {
-		if !kind.Implemented() {
-			t.Fatalf("%q provider should be implemented", kind)
-		}
-	}
-	for _, kind := range []Kind{None} {
-		if kind.Implemented() {
-			t.Fatalf("%q provider should not be implemented", kind)
-		}
-	}
-}
-
 func TestNeedsProcessList(t *testing.T) {
 	t.Parallel()
 

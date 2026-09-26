@@ -57,14 +57,14 @@ func TestReadOccupancyReadsV1TablesFromReadOnlyDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	store := openStore(t, databasePath)
-	defer store.Close()
-	got, err := store.ReadOccupancy(context.Background(), "ses_current")
+	s := openStore(t, databasePath)
+	defer s.Close()
+	got, err := s.readOccupancy(context.Background(), "ses_current")
 	if err != nil {
-		t.Fatalf("ReadOccupancy() error = %v", err)
+		t.Fatalf("readOccupancy() error = %v", err)
 	}
 	if got != 42_360 {
-		t.Fatalf("ReadOccupancy() = %d, want the newest completed turn's 3 + 39016 + 3341", got)
+		t.Fatalf("readOccupancy() = %d, want the newest completed turn's 3 + 39016 + 3341", got)
 	}
 }
 
@@ -76,10 +76,10 @@ func TestReadOccupancyTreatsZeroAsSemantic(t *testing.T) {
 		exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_zero', 'ses_zero', 1, '{"role":"assistant","time":{"completed":1},"tokens":{"input":0,"cache":{"read":0,"write":0}}}')`)
 	})
 
-	store := openStore(t, databasePath)
-	defer store.Close()
-	if _, err := store.ReadOccupancy(context.Background(), "ses_zero"); !errors.Is(err, ErrNoOccupancy) {
-		t.Fatalf("ReadOccupancy() error = %v, want ErrNoOccupancy", err)
+	s := openStore(t, databasePath)
+	defer s.Close()
+	if _, err := s.readOccupancy(context.Background(), "ses_zero"); !errors.Is(err, ErrNoOccupancy) {
+		t.Fatalf("readOccupancy() error = %v, want ErrNoOccupancy", err)
 	}
 }
 
@@ -98,11 +98,11 @@ func TestReadOccupancyUsesPreviousCompletedReadingWhenLatestAssistantIsUnusable(
 			exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_pending', 'ses_pending', 2, ?)`, latest)
 		})
 
-		store := openStore(t, databasePath)
-		got, err := store.ReadOccupancy(context.Background(), "ses_pending")
-		store.Close()
+		s := openStore(t, databasePath)
+		got, err := s.readOccupancy(context.Background(), "ses_pending")
+		s.Close()
 		if err != nil || got != 92_481 {
-			t.Fatalf("ReadOccupancy() = %d, %v; want prior completed occupancy", got, err)
+			t.Fatalf("readOccupancy() = %d, %v; want prior completed occupancy", got, err)
 		}
 	}
 }
@@ -120,10 +120,10 @@ func TestReadOccupancyDoesNotWalkBackAcrossLatestCompactionSummary(t *testing.T)
 		exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_ce8685bb6001qP8D2cbu3XY4bl', 'ses_compacted', 1773425679286, '{"role":"user","time":{"created":1773425679286},"summary":{"diffs":[]},"agent":"build"}')`)
 		exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_ce8685bc7001SiK5DcsX6T7Q34', 'ses_compacted', 1773425679303, '{"role":"assistant","mode":"compaction","agent":"compaction","summary":true,"time":{"created":1773425679303,"completed":1773425736799},"tokens":{"input":2,"cache":{"read":0,"write":131757}}}')`)
 	})
-	store := openStore(t, databasePath)
-	defer store.Close()
-	if _, err := store.ReadOccupancy(context.Background(), "ses_compacted"); !errors.Is(err, ErrJustCompacted) {
-		t.Fatalf("ReadOccupancy() error = %v, want ErrJustCompacted", err)
+	s := openStore(t, databasePath)
+	defer s.Close()
+	if _, err := s.readOccupancy(context.Background(), "ses_compacted"); !errors.Is(err, ErrJustCompacted) {
+		t.Fatalf("readOccupancy() error = %v, want ErrJustCompacted", err)
 	}
 }
 
@@ -141,14 +141,14 @@ func TestReadOccupancyCrossesAnOrdinaryPromptSummary(t *testing.T) {
 		exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_ce8685bb6001qP8D2cbu3XY4bl', 'ses_running', 1773425679286, '{"role":"user","time":{"created":1773425679286},"summary":{"diffs":[]},"agent":"build"}')`)
 		exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_ce8685bc7001SiK5DcsX6T7Q34', 'ses_running', 1773425679303, '{"role":"assistant","mode":"Atlas (Plan Executor)","time":{"created":1773425679303}}')`)
 	})
-	store := openStore(t, databasePath)
-	defer store.Close()
-	got, err := store.ReadOccupancy(context.Background(), "ses_running")
+	s := openStore(t, databasePath)
+	defer s.Close()
+	got, err := s.readOccupancy(context.Background(), "ses_running")
 	if err != nil {
-		t.Fatalf("ReadOccupancy() error = %v, want the previous completed reading", err)
+		t.Fatalf("readOccupancy() error = %v, want the previous completed reading", err)
 	}
 	if got != 168_970 {
-		t.Fatalf("ReadOccupancy() = %d, want the lower bound 1 + 0 + 168969", got)
+		t.Fatalf("readOccupancy() = %d, want the lower bound 1 + 0 + 168969", got)
 	}
 }
 
@@ -165,8 +165,8 @@ func TestReadOccupancyRejectsMissingV1SchemaAndSession(t *testing.T) {
 		if err := database.Close(); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := Open(context.Background(), databasePath, ""); !errors.Is(err, ErrNoSchema) {
-			t.Fatalf("Open() error = %v, want ErrNoSchema", err)
+		if _, err := open(context.Background(), databasePath, ""); !errors.Is(err, ErrNoSchema) {
+			t.Fatalf("open() error = %v, want ErrNoSchema", err)
 		}
 	})
 
@@ -174,10 +174,10 @@ func TestReadOccupancyRejectsMissingV1SchemaAndSession(t *testing.T) {
 		databasePath := fixtureDatabase(t, func(database *sql.DB) {
 			exec(t, database, `INSERT INTO session (id) VALUES ('ses_other')`)
 		})
-		store := openStore(t, databasePath)
-		defer store.Close()
-		if _, err := store.ReadOccupancy(context.Background(), "ses_current"); !errors.Is(err, ErrNoSession) {
-			t.Fatalf("ReadOccupancy() error = %v, want ErrNoSession", err)
+		s := openStore(t, databasePath)
+		defer s.Close()
+		if _, err := s.readOccupancy(context.Background(), "ses_current"); !errors.Is(err, ErrNoSession) {
+			t.Fatalf("readOccupancy() error = %v, want ErrNoSession", err)
 		}
 	})
 }
@@ -191,15 +191,15 @@ func TestResolveTerminalTitleMatchesDirectoryWithoutRecency(t *testing.T) {
 		exec(t, database, `INSERT INTO session (id, directory, title) VALUES ('wrong-title', '/work/acme', 'Newer unrelated session')`)
 		exec(t, database, `INSERT INTO session (id, directory, title) VALUES ('wrong-directory', '/work/other', 'Probe test response')`)
 	})
-	store := openStore(t, databasePath)
-	defer store.Close()
+	s := openStore(t, databasePath)
+	defer s.Close()
 
-	resolved, err := store.ResolveTerminalTitle(context.Background(), "/work/acme", "OC | Probe test response")
+	id, err := s.resolveTerminalTitle(context.Background(), "/work/acme", "OC | Probe test response")
 	if err != nil {
-		t.Fatalf("ResolveTerminalTitle() error = %v", err)
+		t.Fatalf("resolveTerminalTitle() error = %v", err)
 	}
-	if resolved.ID != "target" || resolved.Mode != ResolutionTerminalTitle {
-		t.Fatalf("ResolveTerminalTitle() = %#v", resolved)
+	if id != "target" {
+		t.Fatalf("resolveTerminalTitle() = %q, want target", id)
 	}
 }
 
@@ -244,14 +244,14 @@ func TestResolveTerminalTitleToleratesTruncationAndRefusesGuesses(t *testing.T) 
 					tt.populate(t, database)
 				}
 			})
-			store := openStore(t, path)
-			defer store.Close()
-			resolved, err := store.ResolveTerminalTitle(context.Background(), tt.directory, tt.terminalTitle)
+			s := openStore(t, path)
+			defer s.Close()
+			id, err := s.resolveTerminalTitle(context.Background(), tt.directory, tt.terminalTitle)
 			if !errors.Is(err, tt.wantErr) {
-				t.Fatalf("ResolveTerminalTitle() error = %v, want %v", err, tt.wantErr)
+				t.Fatalf("resolveTerminalTitle() error = %v, want %v", err, tt.wantErr)
 			}
-			if tt.wantID != "" && resolved.ID != tt.wantID {
-				t.Fatalf("ResolveTerminalTitle() = %#v, want %q", resolved, tt.wantID)
+			if tt.wantID != "" && id != tt.wantID {
+				t.Fatalf("resolveTerminalTitle() = %q, want %q", id, tt.wantID)
 			}
 		})
 	}
@@ -260,8 +260,8 @@ func TestResolveTerminalTitleToleratesTruncationAndRefusesGuesses(t *testing.T) 
 func TestOpenMissingStoreIsSemantic(t *testing.T) {
 	t.Parallel()
 
-	if _, err := Open(context.Background(), filepath.Join(t.TempDir(), "opencode.db"), ""); !errors.Is(err, ErrStoreNotReady) {
-		t.Fatalf("Open() error = %v, want ErrStoreNotReady", err)
+	if _, err := open(context.Background(), filepath.Join(t.TempDir(), "opencode.db"), ""); !errors.Is(err, ErrStoreNotReady) {
+		t.Fatalf("open() error = %v, want ErrStoreNotReady", err)
 	}
 }
 
@@ -271,17 +271,17 @@ func TestOpenDirectoryIsTransient(t *testing.T) {
 	// Both opencode providers answer this the same way now: a directory where
 	// the database should be is not a store that has not been written yet, so it
 	// preserves the pane's value instead of blanking it.
-	if _, err := Open(context.Background(), t.TempDir(), ""); err == nil || errors.Is(err, ErrStoreNotReady) || errors.Is(err, ErrNoSchema) {
-		t.Fatalf("Open() error = %v, want a transient database failure", err)
+	if _, err := open(context.Background(), t.TempDir(), ""); err == nil || errors.Is(err, ErrStoreNotReady) || errors.Is(err, ErrNoSchema) {
+		t.Fatalf("open() error = %v, want a transient database failure", err)
 	}
 }
 
 func TestOpenRejectsWrites(t *testing.T) {
 	t.Parallel()
 
-	store := openStore(t, fixtureDatabase(t, func(*sql.DB) {}))
-	defer store.Close()
-	if _, err := store.database.ExecContext(context.Background(), `INSERT INTO session (id) VALUES ('write')`); err == nil {
+	s := openStore(t, fixtureDatabase(t, func(*sql.DB) {}))
+	defer s.Close()
+	if _, err := s.database.ExecContext(context.Background(), `INSERT INTO session (id) VALUES ('write')`); err == nil {
 		t.Fatal("read-only opencode store accepted a write")
 	}
 }
@@ -311,11 +311,11 @@ func exec(t *testing.T, database *sql.DB, query string, args ...any) {
 	}
 }
 
-func openStore(t *testing.T, path string) *Store {
+func openStore(t *testing.T, path string) *store {
 	t.Helper()
-	store, err := Open(context.Background(), path, "")
+	s, err := open(context.Background(), path, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	return store
+	return s
 }

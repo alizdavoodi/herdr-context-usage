@@ -13,24 +13,17 @@ import (
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 )
 
-type ResolutionMode string
-
-const (
-	ResolutionAgentSession  ResolutionMode = "agent_session"
-	ResolutionForegroundCWD ResolutionMode = "foreground_cwd"
-)
-
 var ErrNoSession = errors.New("codex agent session cannot be resolved")
 
-type SessionInput struct {
+type sessionInput struct {
 	CodexHome     string
 	AgentSession  *provider.AgentSession
 	ForegroundCWD string
 }
 
-type ResolvedSession struct {
+type resolvedSession struct {
 	Path string
-	Mode ResolutionMode
+	Mode provider.ResolutionMode
 }
 
 type sessionMetadata struct {
@@ -42,9 +35,9 @@ type sessionMetadata struct {
 	Source         json.RawMessage `json:"source"`
 }
 
-func Resolve(input SessionInput) (ResolvedSession, error) {
+func resolve(input sessionInput) (resolvedSession, error) {
 	if path, ok := input.AgentSession.Path(); ok {
-		return ResolvedSession{Path: path, Mode: ResolutionAgentSession}, nil
+		return resolvedSession{Path: path, Mode: provider.ResolutionAgentSession}, nil
 	}
 	// Everything below needs the store and a reported path does not, so the
 	// home is resolved only once the path branch has passed: looking it up
@@ -52,7 +45,7 @@ func Resolve(input SessionInput) (ResolvedSession, error) {
 	// directory it never needed.
 	home, err := provider.Home(input.CodexHome, ".codex")
 	if err != nil {
-		return ResolvedSession{}, err
+		return resolvedSession{}, err
 	}
 	if input.AgentSession != nil && input.AgentSession.Value != "" {
 		// herdr named a session for this pane, so one this provider cannot use
@@ -60,30 +53,30 @@ func Resolve(input SessionInput) (ResolvedSession, error) {
 		// could only disagree with it.
 		id, ok := input.AgentSession.ID()
 		if !ok {
-			return ResolvedSession{}, ErrNoSession
+			return resolvedSession{}, ErrNoSession
 		}
 		path, err := rolloutForID(home, id)
 		if err != nil {
-			return ResolvedSession{}, err
+			return resolvedSession{}, err
 		}
-		return ResolvedSession{Path: path, Mode: ResolutionAgentSession}, nil
+		return resolvedSession{Path: path, Mode: provider.ResolutionAgentSession}, nil
 	}
 	if input.ForegroundCWD == "" {
-		return ResolvedSession{}, ErrNoSession
+		return resolvedSession{}, ErrNoSession
 	}
 
 	active, err := activeSessionIDs(home)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return ResolvedSession{}, ErrNoSession
+			return resolvedSession{}, ErrNoSession
 		}
-		return ResolvedSession{}, err
+		return resolvedSession{}, err
 	}
 	path, err := rolloutForCWD(home, input.ForegroundCWD, active)
 	if err != nil {
-		return ResolvedSession{}, err
+		return resolvedSession{}, err
 	}
-	return ResolvedSession{Path: path, Mode: ResolutionForegroundCWD}, nil
+	return resolvedSession{Path: path, Mode: provider.ResolutionForegroundCWD}, nil
 }
 
 // rolloutForID finds the one rollout whose metadata carries id. A match that is

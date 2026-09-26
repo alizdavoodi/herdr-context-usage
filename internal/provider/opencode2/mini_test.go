@@ -47,8 +47,8 @@ func TestRunsMiniInterface(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := RunsMiniInterface(tt.argv); got != tt.want {
-				t.Fatalf("RunsMiniInterface(%q) = %t, want %t", tt.argv, got, tt.want)
+			if got := runsMiniInterface(tt.argv); got != tt.want {
+				t.Fatalf("runsMiniInterface(%q) = %t, want %t", tt.argv, got, tt.want)
 			}
 		})
 	}

@@ -99,12 +99,12 @@ func TestReadOccupancy(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := ReadOccupancy(filepath.Join("testdata", tt.fixture))
+			got, err := readOccupancy(filepath.Join("testdata", tt.fixture))
 			if !errors.Is(err, tt.wantErr) {
-				t.Fatalf("ReadOccupancy() error = %v, want %v", err, tt.wantErr)
+				t.Fatalf("readOccupancy() error = %v, want %v", err, tt.wantErr)
 			}
 			if got != tt.want {
-				t.Fatalf("ReadOccupancy() = %d, want %d", got, tt.want)
+				t.Fatalf("readOccupancy() = %d, want %d", got, tt.want)
 			}
 		})
 	}
@@ -126,12 +126,12 @@ func TestReadOccupancyAddsInputAndBothCacheFields(t *testing.T) {
 		claudeRule = input + cacheRead + cacheCreation // 149,479
 		codexRule  = input                             // 2, if the cache fields are read as a subset
 	)
-	got, err := ReadOccupancy(filepath.Join("testdata", "ordinary.jsonl"))
+	got, err := readOccupancy(filepath.Join("testdata", "ordinary.jsonl"))
 	if err != nil {
-		t.Fatalf("ReadOccupancy() error = %v", err)
+		t.Fatalf("readOccupancy() error = %v", err)
 	}
 	if got != claudeRule {
-		t.Fatalf("ReadOccupancy() = %d, want %d; %d would be codex's rule applied to claude's fields", got, claudeRule, codexRule)
+		t.Fatalf("readOccupancy() = %d, want %d; %d would be codex's rule applied to claude's fields", got, claudeRule, codexRule)
 	}
 }
 
@@ -148,19 +148,19 @@ func TestReadOccupancyKeepsUsageBeyondTwoLargeRecords(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := ReadOccupancy(path)
+	got, err := readOccupancy(path)
 	if err != nil {
-		t.Fatalf("ReadOccupancy() error = %v", err)
+		t.Fatalf("readOccupancy() error = %v", err)
 	}
 	if got != 129_000 {
-		t.Fatalf("ReadOccupancy() = %d, want 129000", got)
+		t.Fatalf("readOccupancy() = %d, want 129000", got)
 	}
 }
 
 func TestReadOccupancyMissingTranscript(t *testing.T) {
 	t.Parallel()
 
-	if _, err := ReadOccupancy(filepath.Join(t.TempDir(), "missing.jsonl")); err == nil {
-		t.Fatal("ReadOccupancy() error = nil")
+	if _, err := readOccupancy(filepath.Join(t.TempDir(), "missing.jsonl")); err == nil {
+		t.Fatal("readOccupancy() error = nil")
 	}
 }

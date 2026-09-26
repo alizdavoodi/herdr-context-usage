@@ -12,26 +12,18 @@ import (
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 )
 
-type ResolutionMode string
-
-const (
-	ResolutionAgentSession    ResolutionMode = "agent_session"
-	ResolutionProcessRegistry ResolutionMode = "process_registry"
-	ResolutionForegroundCWD   ResolutionMode = "foreground_cwd"
-)
-
 var ErrNoSession = errors.New("claude agent session cannot be resolved")
 
-type SessionInput struct {
+type sessionInput struct {
 	ClaudeHome    string
 	AgentSession  *provider.AgentSession
 	ForegroundCWD string
 	ProcessIDs    []int
 }
 
-type ResolvedSession struct {
+type resolvedSession struct {
 	Path string
-	Mode ResolutionMode
+	Mode provider.ResolutionMode
 }
 
 type processSession struct {
@@ -41,9 +33,9 @@ type processSession struct {
 	Kind      string `json:"kind"`
 }
 
-func Resolve(input SessionInput) (ResolvedSession, error) {
+func resolve(input sessionInput) (resolvedSession, error) {
 	if path, ok := input.AgentSession.Path(); ok {
-		return ResolvedSession{Path: path, Mode: ResolutionAgentSession}, nil
+		return resolvedSession{Path: path, Mode: provider.ResolutionAgentSession}, nil
 	}
 
 	// Everything below needs the store and a reported path does not, so the
@@ -52,7 +44,7 @@ func Resolve(input SessionInput) (ResolvedSession, error) {
 	// directory it never needed.
 	home, err := provider.Home(input.ClaudeHome, ".claude")
 	if err != nil {
-		return ResolvedSession{}, err
+		return resolvedSession{}, err
 	}
 
 	if input.AgentSession != nil && input.AgentSession.Value != "" {
@@ -61,13 +53,13 @@ func Resolve(input SessionInput) (ResolvedSession, error) {
 		// could only disagree with it.
 		id, ok := input.AgentSession.ID()
 		if !ok || !isSessionID(id) || input.ForegroundCWD == "" {
-			return ResolvedSession{}, ErrNoSession
+			return resolvedSession{}, ErrNoSession
 		}
-		return ResolvedSession{Path: transcriptPath(home, input.ForegroundCWD, id), Mode: ResolutionAgentSession}, nil
+		return resolvedSession{Path: transcriptPath(home, input.ForegroundCWD, id), Mode: provider.ResolutionAgentSession}, nil
 	}
 
 	if input.ForegroundCWD == "" {
-		return ResolvedSession{}, ErrNoSession
+		return resolvedSession{}, ErrNoSession
 	}
 	for _, pid := range input.ProcessIDs {
 		session, err := readProcessSession(home, pid)
@@ -75,9 +67,9 @@ func Resolve(input SessionInput) (ResolvedSession, error) {
 			continue
 		}
 		if session.PID == pid && session.CWD == input.ForegroundCWD && session.SessionID != "" && (session.Kind == "" || session.Kind == "interactive") {
-			return ResolvedSession{
+			return resolvedSession{
 				Path: transcriptPath(home, input.ForegroundCWD, session.SessionID),
-				Mode: ResolutionProcessRegistry,
+				Mode: provider.ResolutionProcessRegistry,
 			}, nil
 		}
 	}
@@ -85,12 +77,12 @@ func Resolve(input SessionInput) (ResolvedSession, error) {
 	projectDir := filepath.Join(home, "projects", encodeProjectPath(input.ForegroundCWD))
 	matches, err := filepath.Glob(filepath.Join(projectDir, "*.jsonl"))
 	if err != nil {
-		return ResolvedSession{}, fmt.Errorf("find claude transcripts: %w", err)
+		return resolvedSession{}, fmt.Errorf("find claude transcripts: %w", err)
 	}
 	if len(matches) == 1 {
-		return ResolvedSession{Path: matches[0], Mode: ResolutionForegroundCWD}, nil
+		return resolvedSession{Path: matches[0], Mode: provider.ResolutionForegroundCWD}, nil
 	}
-	return ResolvedSession{}, ErrNoSession
+	return resolvedSession{}, ErrNoSession
 }
 
 func readProcessSession(home string, pid int) (processSession, error) {

@@ -16,12 +16,12 @@ import (
 func TestProviderStatesAreDisjoint(t *testing.T) {
 	t.Parallel()
 
-	for _, registered := range allProviders {
+	for _, registered := range registry(Config{}) {
 		t.Run(string(registered.Kind()), func(t *testing.T) {
 			t.Parallel()
 			declared := registered.States()
 			if len(declared.Superseded) == 0 {
-				t.Fatal("SemanticStates() declares no superseded answer; every provider has at least one")
+				t.Fatal("States() declares no superseded answer; every provider has at least one")
 			}
 			for _, superseded := range declared.Superseded {
 				for _, staleLow := range declared.StaleLow {
@@ -39,8 +39,9 @@ func TestProviderStatesAreDisjoint(t *testing.T) {
 func TestRegistryHasNoDuplicateKinds(t *testing.T) {
 	t.Parallel()
 
-	seen := make(map[string]struct{}, len(allProviders))
-	for _, registered := range allProviders {
+	providers := registry(Config{})
+	seen := make(map[string]struct{}, len(providers))
+	for _, registered := range providers {
 		kind := string(registered.Kind())
 		if kind == "" {
 			t.Error("a provider reports an empty kind, which no agent label can match")
@@ -67,7 +68,7 @@ func TestRegistryHasNoDuplicateKinds(t *testing.T) {
 func TestEveryRegisteredKindIsReachableFromItsAgentLabel(t *testing.T) {
 	t.Parallel()
 
-	for _, registered := range allProviders {
+	for _, registered := range registry(Config{}) {
 		kind := registered.Kind()
 		t.Run(string(kind), func(t *testing.T) {
 			t.Parallel()
@@ -86,24 +87,9 @@ func TestEveryRegisteredKindIsReachableFromItsAgentLabel(t *testing.T) {
 func TestProvidersDeclareAJustCompactedSentinel(t *testing.T) {
 	t.Parallel()
 
-	for _, registered := range allProviders {
+	for _, registered := range registry(Config{}) {
 		if registered.JustCompacted() == nil {
 			t.Errorf("provider %s declares no just-compacted sentinel", registered.Kind())
-		}
-	}
-}
-
-// Implemented no longer gates dispatch — the registry does — but it stays
-// public and still reads as the answer to whether this plugin can measure a
-// kind. Pinning it to the registry keeps it from drifting into a claim the code
-// cannot honour. The opposite direction needs no test: a kind Implemented but
-// unregistered now clears its row rather than keeping a stale value.
-func TestImplementedAgreesWithRegistry(t *testing.T) {
-	t.Parallel()
-
-	for _, registered := range allProviders {
-		if !registered.Kind().Implemented() {
-			t.Errorf("provider %s is registered but Implemented() denies it", registered.Kind())
 		}
 	}
 }

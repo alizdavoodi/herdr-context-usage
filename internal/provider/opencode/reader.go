@@ -33,11 +33,11 @@ type cacheCounts struct {
 	Write *int64 `json:"write"`
 }
 
-type Store struct {
+type store struct {
 	database *sql.DB
 }
 
-func Open(ctx context.Context, explicitPath, dataHome string) (*Store, error) {
+func open(ctx context.Context, explicitPath, dataHome string) (*store, error) {
 	path, err := opencodeshared.DataPath(explicitPath, dataHome, "opencode.db")
 	if err != nil {
 		return nil, err
@@ -53,26 +53,22 @@ func Open(ctx context.Context, explicitPath, dataHome string) (*Store, error) {
 	case err != nil:
 		return nil, err
 	}
-	return &Store{database: database}, nil
+	return &store{database: database}, nil
 }
 
-func (s *Store) Close() error {
+func (s *store) Close() error {
 	return s.database.Close()
 }
 
-func (s *Store) ResolveTerminalTitle(ctx context.Context, directory, terminalTitle string) (ResolvedSession, error) {
-	id, err := opencodeshared.ResolveTitle(ctx, directory, terminalTitle, s.sessionsByTitle)
-	if err != nil {
-		return ResolvedSession{}, err
-	}
-	return ResolvedSession{ID: id, Mode: opencodeshared.ResolutionTerminalTitle}, nil
+func (s *store) resolveTerminalTitle(ctx context.Context, directory, terminalTitle string) (string, error) {
+	return opencodeshared.ResolveTitle(ctx, directory, terminalTitle, s.sessionsByTitle)
 }
 
 // sessionsByTitle is this store's own half of title correlation. The v1 schema
 // keeps root sessions in `session`, and a v1 plugin route interpolates its
 // plugin id into the same title shape opencode2 fills with a plugin name, so
 // only a positive root-session match here can produce a reading.
-func (s *Store) sessionsByTitle(ctx context.Context, directory string, title opencodeshared.Title) ([]string, error) {
+func (s *store) sessionsByTitle(ctx context.Context, directory string, title opencodeshared.Title) ([]string, error) {
 	comparison, args := title.Comparison()
 	rows, err := s.database.QueryContext(ctx,
 		`SELECT id FROM session WHERE directory = ? AND parent_id IS NULL AND `+comparison+` LIMIT 2`,
@@ -84,7 +80,7 @@ func (s *Store) sessionsByTitle(ctx context.Context, directory string, title ope
 	return opencodeshared.CollectIDs(rows)
 }
 
-func (s *Store) ReadOccupancy(ctx context.Context, sessionID string) (int64, error) {
+func (s *store) readOccupancy(ctx context.Context, sessionID string) (int64, error) {
 	if err := sessionExists(ctx, s.database, sessionID); err != nil {
 		return 0, err
 	}
