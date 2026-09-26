@@ -7,17 +7,17 @@ import (
 	"github.com/alizdavoodi/herdr-context-usage/internal/report"
 )
 
-// SemanticStates declares what each of this provider's answers proves about the
+// States declares what each of this provider's answers proves about the
 // occupancy already displayed: superseded answers clear it, stale-low answers
 // leave it standing as a lower bound, and anything undeclared is transient.
-func SemanticStates() report.States {
+func (ompProvider) States() report.States {
 	return report.States{
 		Superseded: []error{
 			ErrNoSession,
 			provider.ErrNoHome,
 			ErrNoOccupancy,
 			ErrJustCompacted,
-			// Resolve hands back a transcript path rather than a file, so a missing
+			// resolve hands back a transcript path rather than a file, so a missing
 			// file is this provider's evidence that the agent session is gone or has
 			// not been written yet.
 			fs.ErrNotExist,

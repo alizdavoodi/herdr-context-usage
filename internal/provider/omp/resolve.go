@@ -9,34 +9,33 @@ import (
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 )
 
-// One mode, because resolution has one source. herdr's reported agent session is
-// the whole of the input, so the branches below differ only in how they read one
-// value and a second constant would name a stage that does not exist.
-type ResolutionMode string
-
-const ResolutionAgentSession ResolutionMode = "agent_session"
-
 var ErrNoSession = errors.New("omp agent session cannot be resolved")
 
-// SessionInput carries no working directory and no process list, and must not
-// grow either. There is no working-directory fallback for three reasons, any one
-// of which is sufficient: omp files an agent session under a directory derived
-// from the one it started in, so a pane that has since moved resolves to nothing
-// or to an unrelated agent session; the transcript does not mark a sub-agent
-// session, so a directory-scoped match has nothing to exclude one with; and
-// recency is banned outright by ADR-0004, which measured it picking the wrong
-// session on the only live sample available.
-type SessionInput struct {
+// sessionInput carries no working directory and no process list, and must not
+// grow either, though the pane offers both and claude reads them. There is no
+// working-directory fallback for three reasons, any one of which is sufficient:
+// omp files an agent session under a directory derived from the one it started
+// in, so a pane that has since moved resolves to nothing or to an unrelated
+// agent session; the transcript does not mark a sub-agent session, so a
+// directory-scoped match has nothing to exclude one with; and recency is banned
+// outright by ADR-0004, which measured it picking the wrong session on the only
+// live sample available. Wiring either in by analogy with claude would trade a
+// blank row for a wrong number.
+type sessionInput struct {
 	OmpHome      string
 	AgentSession *provider.AgentSession
 }
 
-type ResolvedSession struct {
+// resolvedSession always carries provider.ResolutionAgentSession, because
+// resolution has one source: herdr's reported agent session is the whole of the
+// input, so the branches of resolve differ only in how they read one value, and
+// a second mode would name a stage that does not exist.
+type resolvedSession struct {
 	Path string
-	Mode ResolutionMode
+	Mode provider.ResolutionMode
 }
 
-// Resolve turns herdr's reported agent session into a transcript path.
+// resolve turns herdr's reported agent session into a transcript path.
 //
 // There is deliberately no sub-agent filter and no parent-session field is read:
 // omp's integration gates on the agent's root session and on interactive mode,
@@ -44,13 +43,13 @@ type ResolvedSession struct {
 // reports at all. The main-thread invariant is enforced upstream of this plugin,
 // which is why adding a transcript-level filter here would only add a way to be
 // wrong.
-func Resolve(input SessionInput) (ResolvedSession, error) {
+func resolve(input sessionInput) (resolvedSession, error) {
 	if path, ok := input.AgentSession.Path(); ok {
-		return ResolvedSession{Path: path, Mode: ResolutionAgentSession}, nil
+		return resolvedSession{Path: path, Mode: provider.ResolutionAgentSession}, nil
 	}
 	id, ok := input.AgentSession.ID()
 	if !ok {
-		return ResolvedSession{}, ErrNoSession
+		return resolvedSession{}, ErrNoSession
 	}
 
 	// Only the id match needs the store, so the home is resolved here rather than
@@ -63,13 +62,13 @@ func Resolve(input SessionInput) (ResolvedSession, error) {
 	// the two stores have the same layout below the home.
 	home, err := provider.Home(input.OmpHome, filepath.Join(".omp", "agent"))
 	if err != nil {
-		return ResolvedSession{}, err
+		return resolvedSession{}, err
 	}
 	path, err := uniqueTranscript(home, id)
 	if err != nil {
-		return ResolvedSession{}, err
+		return resolvedSession{}, err
 	}
-	return ResolvedSession{Path: path, Mode: ResolutionAgentSession}, nil
+	return resolvedSession{Path: path, Mode: provider.ResolutionAgentSession}, nil
 }
 
 // uniqueTranscript finds the transcript whose file name ends with id.

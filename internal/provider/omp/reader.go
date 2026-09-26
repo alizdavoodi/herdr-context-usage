@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/piompshared"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/transcript"
 )
@@ -32,22 +33,6 @@ var (
 	ErrNoOccupancy   = errors.New("omp transcript has no current context occupancy")
 	ErrJustCompacted = errors.New("omp agent session is just-compacted")
 )
-
-// Reading is what the reader observed. Version is the schema version stamped on
-// the transcript's session record, nil when absent. It is populated even when
-// the error is non-nil, so a just-compacted row still records the version it was
-// read at — the caller must therefore read Version on the error path too.
-//
-// OracleDisagreement is empty on every turn measured. omp records its own
-// prompt size alongside the counts this reader sums, and the two agreed exactly
-// on all 178 turns carrying one; a value here means they stopped agreeing, which
-// is a fact about omp's format worth surfacing rather than a reason to withhold
-// a number.
-type Reading struct {
-	Occupancy          int64
-	Version            *int
-	OracleDisagreement string
-}
 
 type sessionRecord struct {
 	Type    string `json:"type"`
@@ -120,7 +105,7 @@ type transcriptEntry struct {
 	} `json:"message"`
 }
 
-func ReadOccupancy(path string) (Reading, error) {
+func readOccupancy(path string) (provider.Reading, error) {
 	scan, err := transcript.Read("omp", path, maxScanBytes)
 	// The version rides on the failure path too. A tail read that fails after
 	// the head was read still knows the format it was reading, and that is the
@@ -128,7 +113,7 @@ func ReadOccupancy(path string) (Reading, error) {
 	// is otherwise indistinguishable from any other unreadable transcript.
 	version := readVersion(scan.Head)
 	if err != nil {
-		return Reading{Version: version}, err
+		return provider.Reading{TranscriptVersion: version}, err
 	}
 	return newestOccupancy(scan.Tail, version)
 }
@@ -136,7 +121,7 @@ func ReadOccupancy(path string) (Reading, error) {
 // newestOccupancy walks back from the end of the transcript to the newest
 // completed assistant turn. version rides on every return, including the two
 // errors, so that a blank row still records the format it was read at.
-func newestOccupancy(lines [][]byte, version *int) (Reading, error) {
+func newestOccupancy(lines [][]byte, version *int) (provider.Reading, error) {
 	for i := len(lines) - 1; i >= 0; i-- {
 		line := bytes.TrimSpace(lines[i])
 		if len(line) == 0 {
@@ -159,7 +144,7 @@ func newestOccupancy(lines [][]byte, version *int) (Reading, error) {
 			// a third full. pi punishes the same missing stop in the opposite
 			// direction, reporting a plausibly small number instead, which is
 			// why the two detectors stay in separate packages.
-			return Reading{Version: version}, ErrJustCompacted
+			return provider.Reading{TranscriptVersion: version}, ErrJustCompacted
 		}
 		if entry.Message == nil || entry.Message.Role != "assistant" || entry.Message.Usage == nil {
 			// The gate is the role plus a usage, never stopReason. All 179
@@ -191,13 +176,13 @@ func newestOccupancy(lines [][]byte, version *int) (Reading, error) {
 		if !ok {
 			continue
 		}
-		return Reading{
+		return provider.Reading{
 			Occupancy:          occupancy,
-			Version:            version,
+			TranscriptVersion:  version,
 			OracleDisagreement: oracleDisagreement(entry, occupancy),
 		}, nil
 	}
-	return Reading{Version: version}, ErrNoOccupancy
+	return provider.Reading{TranscriptVersion: version}, ErrNoOccupancy
 }
 
 // oracleDisagreement compares omp's own record of the prompt size against the
@@ -211,7 +196,10 @@ func newestOccupancy(lines [][]byte, version *int) (Reading, error) {
 // purpose: the sum is one formula backed by measurement on two agents, where
 // this field exists on one, so promoting it would give omp arithmetic that pi's
 // tests cannot corroborate. Kept as an oracle it costs nothing and catches a
-// change in omp's usage fields that the sum alone would absorb silently.
+// change in omp's usage fields that the sum alone would absorb silently. The
+// description rides on the reading beside the sum and never withholds it: a
+// value there is a fact about omp's format worth surfacing, not a reason to
+// blank the row.
 //
 // An absent snapshot is not a disagreement. The one real all-zero usage row
 // carries no snapshot at all, and a turn omp declined to describe says nothing

@@ -371,15 +371,15 @@ func TestReadOccupancy(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := ReadOccupancy(writeTranscript(t, tt.records...))
+			got, err := readOccupancy(writeTranscript(t, tt.records...))
 			if !errors.Is(err, tt.wantErr) {
-				t.Fatalf("ReadOccupancy() error = %v, want %v", err, tt.wantErr)
+				t.Fatalf("readOccupancy() error = %v, want %v", err, tt.wantErr)
 			}
 			if got.Occupancy != tt.want {
-				t.Fatalf("ReadOccupancy() occupancy = %d, want %d", got.Occupancy, tt.want)
+				t.Fatalf("readOccupancy() occupancy = %d, want %d", got.Occupancy, tt.want)
 			}
-			if !sameVersion(got.Version, tt.wantVersion) {
-				t.Fatalf("ReadOccupancy() version = %s, want %s", formatVersion(got.Version), formatVersion(tt.wantVersion))
+			if !sameVersion(got.TranscriptVersion, tt.wantVersion) {
+				t.Fatalf("readOccupancy() version = %s, want %s", formatVersion(got.TranscriptVersion), formatVersion(tt.wantVersion))
 			}
 		})
 	}
@@ -400,19 +400,19 @@ func TestReadOccupancyNeverWalksPastTheCompactionRecord(t *testing.T) {
 		measuredOverstatement = 3.2     // 132098 / 40710 = 3.24
 	)
 
-	got, err := ReadOccupancy(writeTranscript(t, titleC1, sessionC2, turnC250, customC251, compactionC252))
+	got, err := readOccupancy(writeTranscript(t, titleC1, sessionC2, turnC250, customC251, compactionC252))
 	// The overstatement is asserted before the error, so that a walk which
 	// sailed past the compaction record fails naming the number it reached
 	// rather than only the sentinel it did not return.
 	if got.Occupancy == lastPreCompactionTurn {
-		t.Fatalf("ReadOccupancy() = %d, the last pre-compaction turn; that is %.1fx the %d this agent session actually held one turn later, and the walk must stop on the record type",
+		t.Fatalf("readOccupancy() = %d, the last pre-compaction turn; that is %.1fx the %d this agent session actually held one turn later, and the walk must stop on the record type",
 			got.Occupancy, measuredOverstatement, trueOccupancyAfter)
 	}
 	if got.Occupancy != 0 {
-		t.Fatalf("ReadOccupancy() = %d, want no occupancy at a compaction boundary", got.Occupancy)
+		t.Fatalf("readOccupancy() = %d, want no occupancy at a compaction boundary", got.Occupancy)
 	}
 	if !errors.Is(err, ErrJustCompacted) {
-		t.Fatalf("ReadOccupancy() error = %v, want %v", err, ErrJustCompacted)
+		t.Fatalf("readOccupancy() error = %v, want %v", err, ErrJustCompacted)
 	}
 }
 
@@ -461,18 +461,18 @@ func TestReadOccupancyStopsSearchingForTheSessionRecord(t *testing.T) {
 			}
 			records = append(records, sessionC2, turnC250)
 
-			got, err := ReadOccupancy(writeTranscript(t, records...))
+			got, err := readOccupancy(writeTranscript(t, records...))
 			if err != nil {
-				t.Fatalf("ReadOccupancy() error = %v", err)
+				t.Fatalf("readOccupancy() error = %v", err)
 			}
 			// The occupancy is unaffected either way: the bound applies to the
 			// head search alone, and the walk that finds this number runs over
 			// the tail.
 			if got.Occupancy != 132_098 {
-				t.Fatalf("ReadOccupancy() = %d, want 132098 whatever the header search found", got.Occupancy)
+				t.Fatalf("readOccupancy() = %d, want 132098 whatever the header search found", got.Occupancy)
 			}
-			if !sameVersion(got.Version, tt.wantVersion) {
-				t.Fatalf("ReadOccupancy() version = %s, want %s", formatVersion(got.Version), formatVersion(tt.wantVersion))
+			if !sameVersion(got.TranscriptVersion, tt.wantVersion) {
+				t.Fatalf("readOccupancy() version = %s, want %s", formatVersion(got.TranscriptVersion), formatVersion(tt.wantVersion))
 			}
 		})
 	}
@@ -534,22 +534,22 @@ func TestReadOccupancyTreatsThePromptSizeAsAnOracle(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := ReadOccupancy(writeTranscript(t, titleC1, sessionC2, tt.record))
+			got, err := readOccupancy(writeTranscript(t, titleC1, sessionC2, tt.record))
 			if err != nil {
-				t.Fatalf("ReadOccupancy() error = %v", err)
+				t.Fatalf("readOccupancy() error = %v", err)
 			}
 			if got.Occupancy != tt.want {
-				t.Fatalf("ReadOccupancy() = %d, want the sum %d reported whatever the oracle says", got.Occupancy, tt.want)
+				t.Fatalf("readOccupancy() = %d, want the sum %d reported whatever the oracle says", got.Occupancy, tt.want)
 			}
 			if len(tt.wantDisagreementNaming) == 0 {
 				if got.OracleDisagreement != "" {
-					t.Fatalf("ReadOccupancy() disagreement = %q, want none", got.OracleDisagreement)
+					t.Fatalf("readOccupancy() disagreement = %q, want none", got.OracleDisagreement)
 				}
 				return
 			}
 			for _, number := range tt.wantDisagreementNaming {
 				if !strings.Contains(got.OracleDisagreement, number) {
-					t.Fatalf("ReadOccupancy() disagreement = %q, want it to name %s", got.OracleDisagreement, number)
+					t.Fatalf("readOccupancy() disagreement = %q, want it to name %s", got.OracleDisagreement, number)
 				}
 			}
 		})
@@ -581,12 +581,12 @@ func TestReadOccupancyAgreesWithOmpsOwnPerTurnTotal(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := ReadOccupancy(writeTranscript(t, titleC1, sessionC2, tt.record))
+			got, err := readOccupancy(writeTranscript(t, titleC1, sessionC2, tt.record))
 			if err != nil {
-				t.Fatalf("ReadOccupancy() error = %v", err)
+				t.Fatalf("readOccupancy() error = %v", err)
 			}
 			if want := tt.totalTokens - tt.output; got.Occupancy != want {
-				t.Fatalf("ReadOccupancy() = %d, want %d; %d is the per-turn total, which overstates by that turn's output", got.Occupancy, want, tt.totalTokens)
+				t.Fatalf("readOccupancy() = %d, want %d; %d is the per-turn total, which overstates by that turn's output", got.Occupancy, want, tt.totalTokens)
 			}
 		})
 	}
@@ -607,12 +607,12 @@ func TestReadOccupancyNeverReadsTheNonMessageCount(t *testing.T) {
 		ifItWereSubtracted = promptSize - nonMessageTokens // negative, which is the point
 	)
 
-	got, err := ReadOccupancy(writeTranscript(t, titleC1, sessionC2, turnA8))
+	got, err := readOccupancy(writeTranscript(t, titleC1, sessionC2, turnA8))
 	if err != nil {
-		t.Fatalf("ReadOccupancy() error = %v", err)
+		t.Fatalf("readOccupancy() error = %v", err)
 	}
 	if got.Occupancy != promptSize {
-		t.Fatalf("ReadOccupancy() = %d, want %d; %d would be the count added and %d subtracted",
+		t.Fatalf("readOccupancy() = %d, want %d; %d would be the count added and %d subtracted",
 			got.Occupancy, promptSize, ifItWereAdded, ifItWereSubtracted)
 	}
 }
@@ -632,12 +632,12 @@ func TestReadOccupancyTruncatedFinalLine(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := ReadOccupancy(path)
+	got, err := readOccupancy(path)
 	if err != nil {
-		t.Fatalf("ReadOccupancy() error = %v", err)
+		t.Fatalf("readOccupancy() error = %v", err)
 	}
 	if got.Occupancy != 132_098 {
-		t.Fatalf("ReadOccupancy() = %d, want 132098", got.Occupancy)
+		t.Fatalf("readOccupancy() = %d, want 132098", got.Occupancy)
 	}
 }
 
@@ -672,27 +672,27 @@ func TestReadOccupancyBeyondTheBoundedTail(t *testing.T) {
 		t.Fatalf("fixture is %d bytes, want more than the %d byte scan window", info.Size(), maxScanBytes)
 	}
 
-	got, err := ReadOccupancy(path)
+	got, err := readOccupancy(path)
 	if err != nil {
-		t.Fatalf("ReadOccupancy() error = %v", err)
+		t.Fatalf("readOccupancy() error = %v", err)
 	}
 	if got.Occupancy != 40_710 {
-		t.Fatalf("ReadOccupancy() = %d, want 40710", got.Occupancy)
+		t.Fatalf("readOccupancy() = %d, want 40710", got.Occupancy)
 	}
-	if !sameVersion(got.Version, intPtr(3)) {
-		t.Fatalf("ReadOccupancy() version = %s, want 3 read from beyond the window", formatVersion(got.Version))
+	if !sameVersion(got.TranscriptVersion, intPtr(3)) {
+		t.Fatalf("readOccupancy() version = %s, want 3 read from beyond the window", formatVersion(got.TranscriptVersion))
 	}
 }
 
 // A resolved transcript that is not there is this provider's evidence that the
-// agent session is gone, and SemanticStates classifies it by unwrapping to
+// agent session is gone, and States classifies it by unwrapping to
 // fs.ErrNotExist, so the wrapping has to keep that reachable.
 func TestReadOccupancyMissingTranscript(t *testing.T) {
 	t.Parallel()
 
-	_, err := ReadOccupancy(filepath.Join(t.TempDir(), "missing.jsonl"))
+	_, err := readOccupancy(filepath.Join(t.TempDir(), "missing.jsonl"))
 	if !errors.Is(err, fs.ErrNotExist) {
-		t.Fatalf("ReadOccupancy() error = %v, want it to unwrap to fs.ErrNotExist", err)
+		t.Fatalf("readOccupancy() error = %v, want it to unwrap to fs.ErrNotExist", err)
 	}
 }
 
