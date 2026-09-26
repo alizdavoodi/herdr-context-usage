@@ -192,6 +192,9 @@ func TestResolveRejectsUnmatchableIDs(t *testing.T) {
 		{name: "character class", value: "01a01485-4504-7000-ae6b-ace797eca8f[0-9]"},
 		{name: "escape", value: `01a01485\4504`},
 		{name: "path separator", value: "../" + repoSessionDir + "/" + repoTranscript},
+		// Labelled an id, even the absolute path of a real transcript is not
+		// read as one: the agent said it was an id.
+		{name: "an absolute path", value: filepath.Join(home, "sessions", repoSessionDir, repoTranscript)},
 	}
 
 	for _, tt := range tests {

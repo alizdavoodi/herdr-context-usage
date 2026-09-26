@@ -81,16 +81,19 @@ func TestResolveReportedSessionID(t *testing.T) {
 	home := t.TempDir()
 	cwd := "/work/acme"
 	want := filepath.Join(home, "projects", "-work-acme", "session-1.jsonl")
-	got, err := Resolve(SessionInput{
-		ClaudeHome:    home,
-		AgentSession:  &provider.AgentSession{Kind: "id", Value: "session-1"},
-		ForegroundCWD: cwd,
-	})
-	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
-	}
-	if got.Path != want || got.Mode != ResolutionAgentSession {
-		t.Fatalf("Resolve() = %#v, want %q and agent_session mode", got, want)
+	// An unlabelled value that is not absolute is an id by the shared rule.
+	for _, kind := range []string{"id", ""} {
+		got, err := Resolve(SessionInput{
+			ClaudeHome:    home,
+			AgentSession:  &provider.AgentSession{Kind: kind, Value: "session-1"},
+			ForegroundCWD: cwd,
+		})
+		if err != nil {
+			t.Fatalf("Resolve(kind=%q) error = %v", kind, err)
+		}
+		if got.Path != want || got.Mode != ResolutionAgentSession {
+			t.Fatalf("Resolve(kind=%q) = %#v, want %q and agent_session mode", kind, got, want)
+		}
 	}
 }
 

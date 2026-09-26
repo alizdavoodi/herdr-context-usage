@@ -29,12 +29,15 @@ func TestResolveReportedSessionID(t *testing.T) {
 
 	home := t.TempDir()
 	path := writeRollout(t, home, "session-1", "/work/old", nil, "cli")
-	got, err := Resolve(SessionInput{CodexHome: home, AgentSession: &provider.AgentSession{Kind: "id", Value: "session-1"}})
-	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
-	}
-	if got.Path != path || got.Mode != ResolutionAgentSession {
-		t.Fatalf("Resolve() = %#v, want reported id path", got)
+	// An unlabelled value that is not absolute is an id by the shared rule.
+	for _, kind := range []string{"id", ""} {
+		got, err := Resolve(SessionInput{CodexHome: home, AgentSession: &provider.AgentSession{Kind: kind, Value: "session-1"}})
+		if err != nil {
+			t.Fatalf("Resolve(kind=%q) error = %v", kind, err)
+		}
+		if got.Path != path || got.Mode != ResolutionAgentSession {
+			t.Fatalf("Resolve(kind=%q) = %#v, want reported id path", kind, got)
+		}
 	}
 }
 

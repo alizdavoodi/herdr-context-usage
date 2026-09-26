@@ -44,7 +44,7 @@ func TestAgentSessionReadsItsValueByOneRule(t *testing.T) {
 		{name: "an unlabelled id", session: &AgentSession{Value: id}, wantID: id},
 		{name: "an unlabelled relative path", session: &AgentSession{Value: "session.jsonl"}, wantID: "session.jsonl"},
 
-		{name: "an unknown label on a relative value", session: &AgentSession{Kind: "unknown", Value: id}},
+		{name: "an unknown label on a non-absolute value", session: &AgentSession{Kind: "unknown", Value: id}},
 		{name: "an unknown label on an absolute value", session: &AgentSession{Kind: "unknown", Value: absolute}},
 	}
 
