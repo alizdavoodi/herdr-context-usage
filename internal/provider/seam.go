@@ -25,9 +25,12 @@ type Pane struct {
 	ForegroundCWD string
 	TerminalTitle string
 	AgentSession  *AgentSession
-	// Processes is the pane's foreground process list, nil when herdr could
-	// not read it this round; a provider using it as a resolution tier
-	// degrades to its other tiers.
+	// Processes is the pane's foreground process list, empty when herdr could
+	// not read it this round, and a provider using it as a resolution tier
+	// then degrades to its other tiers. A failed read and an observed empty
+	// list look the same here on purpose: only choosing between the opencode
+	// versions has to tell them apart, and app does that before any provider
+	// is picked.
 	Processes []Process
 }
 
