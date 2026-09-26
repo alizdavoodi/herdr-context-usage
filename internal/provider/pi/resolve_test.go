@@ -35,40 +35,19 @@ func TestResolveUsesAReportedPathDirectly(t *testing.T) {
 	// transcript that is not there is the reader's evidence that the agent
 	// session is gone, and confusing the two would blank the row for the wrong
 	// reason.
+	//
+	// What a label and a value mean is provider.AgentSession's one rule, tested
+	// there; this case pins only that a path it reports reaches the reader.
 	reported := filepath.Join(t.TempDir(), repoSessionDir, repoTranscript)
-	for _, kind := range []string{"path", "Path", "PATH"} {
-		got, err := Resolve(SessionInput{
-			PiHome:       t.TempDir(),
-			AgentSession: &provider.AgentSession{Kind: kind, Value: reported},
-		})
-		if err != nil {
-			t.Fatalf("Resolve(kind=%q) error = %v", kind, err)
-		}
-		if got.Path != reported || got.Mode != ResolutionAgentSession {
-			t.Fatalf("Resolve(kind=%q) = %#v, want %q and agent_session mode", kind, got, reported)
-		}
+	got, err := Resolve(SessionInput{
+		PiHome:       t.TempDir(),
+		AgentSession: &provider.AgentSession{Kind: "path", Value: reported},
+	})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
 	}
-}
-
-// A relative value under kind "path" would be joined against whatever directory
-// herdr launched this plugin in, and a same-named file sitting there would be
-// read as the transcript. An explicit kind is not evidence of an absolute value,
-// so the label buys no trust the value itself does not carry.
-func TestResolveRejectsARelativeReportedPath(t *testing.T) {
-	t.Parallel()
-
-	for _, value := range []string{
-		repoTranscript,
-		filepath.Join("sessions", repoSessionDir, repoTranscript),
-		"./" + repoTranscript,
-		"../" + repoTranscript,
-	} {
-		if _, err := Resolve(SessionInput{
-			PiHome:       t.TempDir(),
-			AgentSession: &provider.AgentSession{Kind: "path", Value: value},
-		}); !errors.Is(err, ErrNoSession) {
-			t.Fatalf("Resolve(path=%q) error = %v, want %v", value, err, ErrNoSession)
-		}
+	if got.Path != reported || got.Mode != ResolutionAgentSession {
+		t.Fatalf("Resolve() = %#v, want %q and agent_session mode", got, reported)
 	}
 }
 
@@ -211,33 +190,6 @@ func TestResolveWithoutAReportedAgentSession(t *testing.T) {
 				t.Fatalf("Resolve(%#v) error = %v, want %v", tt.input, err, ErrNoSession)
 			}
 		})
-	}
-}
-
-func TestResolveUnlabelledValues(t *testing.T) {
-	t.Parallel()
-
-	// pi's integration labels what it reports, but an unlabelled value still has
-	// to be safe: an absolute path is a path, and anything else is tried as an id
-	// where a non-unique or absent match resolves to nothing rather than a guess.
-	home := t.TempDir()
-	transcripts := writeStore(t, home, map[string][]string{repoSessionDir: {repoTranscript}})
-
-	absolute := filepath.Join(home, "sessions", repoSessionDir, repoTranscript)
-	got, err := Resolve(SessionInput{PiHome: home, AgentSession: &provider.AgentSession{Value: absolute}})
-	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
-	}
-	if got.Path != absolute || got.Mode != ResolutionAgentSession {
-		t.Fatalf("Resolve() = %#v, want %q", got, absolute)
-	}
-
-	got, err = Resolve(SessionInput{PiHome: home, AgentSession: &provider.AgentSession{Value: repoSessionID}})
-	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
-	}
-	if got.Path != transcripts[repoTranscript] {
-		t.Fatalf("Resolve() = %#v, want %q", got, transcripts[repoTranscript])
 	}
 }
 

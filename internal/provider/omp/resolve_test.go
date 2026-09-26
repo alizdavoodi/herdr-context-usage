@@ -42,70 +42,19 @@ func TestResolveUsesAReportedPathDirectly(t *testing.T) {
 	// transcript that is not there is the reader's evidence that the agent
 	// session is gone, and confusing the two would blank the row for the wrong
 	// reason.
+	//
+	// What a label and a value mean is provider.AgentSession's one rule, tested
+	// there; this case pins only that a path it reports reaches the reader.
 	reported := filepath.Join(t.TempDir(), repoSessionDir, repoTranscript)
-	for _, kind := range []string{"path", "Path", "PATH"} {
-		got, err := Resolve(SessionInput{
-			OmpHome:      t.TempDir(),
-			AgentSession: &provider.AgentSession{Kind: kind, Value: reported},
-		})
-		if err != nil {
-			t.Fatalf("Resolve(kind=%q) error = %v", kind, err)
-		}
-		if got.Path != reported || got.Mode != ResolutionAgentSession {
-			t.Fatalf("Resolve(kind=%q) = %#v, want %q and agent_session mode", kind, got, reported)
-		}
+	got, err := Resolve(SessionInput{
+		OmpHome:      t.TempDir(),
+		AgentSession: &provider.AgentSession{Kind: "path", Value: reported},
+	})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
 	}
-}
-
-// The kind label is matched case-insensitively, and neither the "path" nor the
-// plain "id" cases can show it: an absolute value and a bare id each reach the
-// same answer through the unlabelled branch, so both pass with the lowercasing
-// deleted. The one shape that tells them apart is an absolute value labelled in
-// upper case: read as an id it is refused, because a path separator cannot be
-// part of a session id, while the unlabelled branch would see an absolute path
-// and hand it straight back.
-//
-// Refusal is the answer that matters here. An agent reporting kind "ID" is
-// telling us the value is an id, and treating it as a transcript path anyway
-// would read whatever file sits at a path the agent never claimed was one.
-func TestResolveMatchesTheKindLabelWhateverItsCase(t *testing.T) {
-	t.Parallel()
-
-	home := t.TempDir()
-	writeStore(t, home, map[string][]string{repoSessionDir: {repoTranscript}})
-	absolute := filepath.Join(home, "sessions", repoSessionDir, repoTranscript)
-
-	for _, kind := range []string{"id", "Id", "ID"} {
-		got, err := Resolve(SessionInput{
-			OmpHome:      home,
-			AgentSession: &provider.AgentSession{Kind: kind, Value: absolute},
-		})
-		if !errors.Is(err, ErrNoSession) {
-			t.Fatalf("Resolve(kind=%q, absolute value) = %#v, err = %v; want %v — the label says id, so the value is not a path",
-				kind, got, err, ErrNoSession)
-		}
-	}
-}
-
-// A relative value under kind "path" would be joined against whatever directory
-// herdr launched this plugin in, and a same-named file sitting there would be
-// read as the transcript. An explicit kind is not evidence of an absolute value,
-// so the label buys no trust the value itself does not carry.
-func TestResolveRejectsARelativeReportedPath(t *testing.T) {
-	t.Parallel()
-
-	for _, value := range []string{
-		repoTranscript,
-		filepath.Join("sessions", repoSessionDir, repoTranscript),
-		"./" + repoTranscript,
-		"../" + repoTranscript,
-	} {
-		if _, err := Resolve(SessionInput{
-			OmpHome:      t.TempDir(),
-			AgentSession: &provider.AgentSession{Kind: "path", Value: value},
-		}); !errors.Is(err, ErrNoSession) {
-			t.Fatalf("Resolve(path=%q) error = %v, want %v", value, err, ErrNoSession)
-		}
+	if got.Path != reported || got.Mode != ResolutionAgentSession {
+		t.Fatalf("Resolve() = %#v, want %q and agent_session mode", got, reported)
 	}
 }
 
@@ -286,33 +235,6 @@ func TestResolveWithoutAReportedAgentSession(t *testing.T) {
 				t.Fatalf("Resolve(%#v) error = %v, want %v", tt.input, err, ErrNoSession)
 			}
 		})
-	}
-}
-
-func TestResolveUnlabelledValues(t *testing.T) {
-	t.Parallel()
-
-	// omp's integration labels what it reports, but an unlabelled value still has
-	// to be safe: an absolute path is a path, and anything else is tried as an id
-	// where a non-unique or absent match resolves to nothing rather than a guess.
-	home := t.TempDir()
-	transcripts := writeStore(t, home, map[string][]string{repoSessionDir: {repoTranscript}})
-
-	absolute := filepath.Join(home, "sessions", repoSessionDir, repoTranscript)
-	got, err := Resolve(SessionInput{OmpHome: home, AgentSession: &provider.AgentSession{Value: absolute}})
-	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
-	}
-	if got.Path != absolute || got.Mode != ResolutionAgentSession {
-		t.Fatalf("Resolve() = %#v, want %q", got, absolute)
-	}
-
-	got, err = Resolve(SessionInput{OmpHome: home, AgentSession: &provider.AgentSession{Value: repoSessionID}})
-	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
-	}
-	if got.Path != transcripts[repoTranscript] {
-		t.Fatalf("Resolve() = %#v, want %q", got, transcripts[repoTranscript])
 	}
 }
 

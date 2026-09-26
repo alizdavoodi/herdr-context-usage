@@ -47,22 +47,12 @@ type ResolvedSession struct {
 // which is why adding a transcript-level filter here would only add a way to be
 // wrong.
 func Resolve(input SessionInput) (ResolvedSession, error) {
-	if input.AgentSession == nil || input.AgentSession.Value == "" {
-		return ResolvedSession{}, ErrNoSession
+	if path, ok := input.AgentSession.Path(); ok {
+		return ResolvedSession{Path: path, Mode: ResolutionAgentSession}, nil
 	}
-	session := *input.AgentSession
-
-	if reportsAPath(session) {
-		if !filepath.IsAbs(session.Value) {
-			// A relative value would be joined against whatever directory herdr
-			// launched this plugin in, so a same-named file sitting there would be
-			// read as the transcript — a wrong number, which is the one outcome
-			// this provider exists to avoid. Blank is the safe direction and costs
-			// nothing observed: a live pane reports kind "path" with a full
-			// transcript path.
-			return ResolvedSession{}, ErrNoSession
-		}
-		return ResolvedSession{Path: session.Value, Mode: ResolutionAgentSession}, nil
+	id, ok := input.AgentSession.ID()
+	if !ok {
+		return ResolvedSession{}, ErrNoSession
 	}
 
 	// Only the id match needs the store, so the home is resolved here rather than
@@ -73,29 +63,11 @@ func Resolve(input SessionInput) (ResolvedSession, error) {
 	if err != nil {
 		return ResolvedSession{}, err
 	}
-	path, err := uniqueTranscript(home, session.Value)
+	path, err := uniqueTranscript(home, id)
 	if err != nil {
 		return ResolvedSession{}, err
 	}
 	return ResolvedSession{Path: path, Mode: ResolutionAgentSession}, nil
-}
-
-// reportsAPath says whether the reported value is meant to be a transcript path
-// rather than a session id.
-//
-// An unlabelled value is a path only when it is already absolute. pi's
-// integration labels what it reports, but an unlabelled one still has to be
-// safe, and an unlabelled relative value falls through to the id match, where an
-// absent or non-unique match resolves to nothing rather than to a guess.
-func reportsAPath(session provider.AgentSession) bool {
-	switch strings.ToLower(session.Kind) {
-	case "path":
-		return true
-	case "id":
-		return false
-	default:
-		return filepath.IsAbs(session.Value)
-	}
 }
 
 // uniqueTranscript finds the transcript whose file name ends with id.
