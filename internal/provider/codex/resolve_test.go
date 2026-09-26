@@ -15,12 +15,12 @@ func TestResolvePrefersReportedAgentSession(t *testing.T) {
 	t.Parallel()
 
 	reported := filepath.Join(t.TempDir(), "reported.jsonl")
-	got, err := Resolve(SessionInput{AgentSession: &provider.AgentSession{Kind: "path", Value: reported}, ForegroundCWD: "/ignored"})
+	got, err := resolve(sessionInput{AgentSession: &provider.AgentSession{Kind: "path", Value: reported}, ForegroundCWD: "/ignored"})
 	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
+		t.Fatalf("resolve() error = %v", err)
 	}
-	if got.Path != reported || got.Mode != ResolutionAgentSession {
-		t.Fatalf("Resolve() = %#v, want reported path and agent_session mode", got)
+	if got.Path != reported || got.Mode != provider.ResolutionAgentSession {
+		t.Fatalf("resolve() = %#v, want reported path and agent_session mode", got)
 	}
 }
 
@@ -31,12 +31,12 @@ func TestResolveReportedSessionID(t *testing.T) {
 	path := writeRollout(t, home, "session-1", "/work/old", nil, "cli")
 	// An unlabelled value that is not absolute is an id by the shared rule.
 	for _, kind := range []string{"id", ""} {
-		got, err := Resolve(SessionInput{CodexHome: home, AgentSession: &provider.AgentSession{Kind: kind, Value: "session-1"}})
+		got, err := resolve(sessionInput{CodexHome: home, AgentSession: &provider.AgentSession{Kind: kind, Value: "session-1"}})
 		if err != nil {
-			t.Fatalf("Resolve(kind=%q) error = %v", kind, err)
+			t.Fatalf("resolve(kind=%q) error = %v", kind, err)
 		}
-		if got.Path != path || got.Mode != ResolutionAgentSession {
-			t.Fatalf("Resolve(kind=%q) = %#v, want reported id path", kind, got)
+		if got.Path != path || got.Mode != provider.ResolutionAgentSession {
+			t.Fatalf("resolve(kind=%q) = %#v, want reported id path", kind, got)
 		}
 	}
 }
@@ -49,12 +49,12 @@ func TestResolveAPathWithoutAResolvableHome(t *testing.T) {
 	t.Setenv("HOME", "")
 
 	reported := filepath.Join(t.TempDir(), "reported.jsonl")
-	got, err := Resolve(SessionInput{AgentSession: &provider.AgentSession{Kind: "path", Value: reported}})
+	got, err := resolve(sessionInput{AgentSession: &provider.AgentSession{Kind: "path", Value: reported}})
 	if err != nil {
-		t.Fatalf("Resolve() error = %v, want the reported path used without a home", err)
+		t.Fatalf("resolve() error = %v, want the reported path used without a home", err)
 	}
-	if got.Path != reported || got.Mode != ResolutionAgentSession {
-		t.Fatalf("Resolve() = %#v, want %q and agent_session mode", got, reported)
+	if got.Path != reported || got.Mode != provider.ResolutionAgentSession {
+		t.Fatalf("resolve() = %#v, want %q and agent_session mode", got, reported)
 	}
 }
 
@@ -79,9 +79,9 @@ func TestResolveBlanksAnUnusableReportedSession(t *testing.T) {
 		// A label outside herdr's set is refused whatever its value looks like.
 		{Kind: "unknown", Value: bait},
 	} {
-		got, err := Resolve(SessionInput{CodexHome: home, ForegroundCWD: "/work/acme", AgentSession: &session})
+		got, err := resolve(sessionInput{CodexHome: home, ForegroundCWD: "/work/acme", AgentSession: &session})
 		if !errors.Is(err, ErrNoSession) {
-			t.Fatalf("Resolve(%#v) = %#v, %v; want ErrNoSession", session, got, err)
+			t.Fatalf("resolve(%#v) = %#v, %v; want ErrNoSession", session, got, err)
 		}
 	}
 }
@@ -111,9 +111,9 @@ func TestResolveNeverReadsAReportedIDAsAPath(t *testing.T) {
 	}
 
 	for _, value := range []string{lookalike, shared} {
-		got, err := Resolve(SessionInput{CodexHome: home, AgentSession: &provider.AgentSession{Kind: "id", Value: value}})
+		got, err := resolve(sessionInput{CodexHome: home, AgentSession: &provider.AgentSession{Kind: "id", Value: value}})
 		if !errors.Is(err, ErrNoSession) {
-			t.Fatalf("Resolve(id=%q) = %#v, %v; want ErrNoSession", value, got, err)
+			t.Fatalf("resolve(id=%q) = %#v, %v; want ErrNoSession", value, got, err)
 		}
 	}
 }
@@ -129,12 +129,12 @@ func TestResolveFromForegroundCWDUsesActiveMainThread(t *testing.T) {
 	writeLock(t, home, mainID)
 	writeLock(t, home, "sub-session")
 
-	got, err := Resolve(SessionInput{CodexHome: home, ForegroundCWD: "/work/acme"})
+	got, err := resolve(sessionInput{CodexHome: home, ForegroundCWD: "/work/acme"})
 	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
+		t.Fatalf("resolve() error = %v", err)
 	}
-	if got.Path != path || got.Mode != ResolutionForegroundCWD {
-		t.Fatalf("Resolve() = %#v, want active main-thread rollout", got)
+	if got.Path != path || got.Mode != provider.ResolutionForegroundCWD {
+		t.Fatalf("resolve() = %#v, want active main-thread rollout", got)
 	}
 }
 
@@ -145,8 +145,8 @@ func TestResolveDoesNotGuessByRecency(t *testing.T) {
 	writeRollout(t, home, "old-session", "/work/acme", nil, "cli")
 	writeRollout(t, home, "new-session", "/work/acme", nil, "cli")
 
-	if _, err := Resolve(SessionInput{CodexHome: home, ForegroundCWD: "/work/acme"}); !errors.Is(err, ErrNoSession) {
-		t.Fatalf("Resolve() error = %v, want ErrNoSession", err)
+	if _, err := resolve(sessionInput{CodexHome: home, ForegroundCWD: "/work/acme"}); !errors.Is(err, ErrNoSession) {
+		t.Fatalf("resolve() error = %v, want ErrNoSession", err)
 	}
 }
 
@@ -164,12 +164,12 @@ func TestResolveIgnoresLegacyRolloutsWithoutSessionMetadata(t *testing.T) {
 	path := writeRollout(t, home, "active-session", "/work/acme", nil, "cli")
 	writeLock(t, home, "active-session")
 
-	got, err := Resolve(SessionInput{CodexHome: home, ForegroundCWD: "/work/acme"})
+	got, err := resolve(sessionInput{CodexHome: home, ForegroundCWD: "/work/acme"})
 	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
+		t.Fatalf("resolve() error = %v", err)
 	}
 	if got.Path != path {
-		t.Fatalf("Resolve() = %#v, want active rollout", got)
+		t.Fatalf("resolve() = %#v, want active rollout", got)
 	}
 }
 
@@ -182,8 +182,8 @@ func TestResolveRejectsAmbiguousActiveSessions(t *testing.T) {
 	writeLock(t, home, "first")
 	writeLock(t, home, "second")
 
-	if _, err := Resolve(SessionInput{CodexHome: home, ForegroundCWD: "/work/acme"}); !errors.Is(err, ErrNoSession) {
-		t.Fatalf("Resolve() error = %v, want ErrNoSession", err)
+	if _, err := resolve(sessionInput{CodexHome: home, ForegroundCWD: "/work/acme"}); !errors.Is(err, ErrNoSession) {
+		t.Fatalf("resolve() error = %v, want ErrNoSession", err)
 	}
 }
 
@@ -194,9 +194,9 @@ func TestResolveRejectsExecMainThreadWithDiagnostic(t *testing.T) {
 	writeRolloutWithMetadata(t, home, "exec-session", "/work/acme", nil, "codex-exec", "exec", "")
 	writeLock(t, home, "exec-session")
 
-	_, err := Resolve(SessionInput{CodexHome: home, ForegroundCWD: "/work/acme"})
+	_, err := resolve(sessionInput{CodexHome: home, ForegroundCWD: "/work/acme"})
 	if !errors.Is(err, ErrNoSession) || !strings.Contains(err.Error(), "exec main thread") {
-		t.Fatalf("Resolve() error = %v, want diagnosable exec ambiguity", err)
+		t.Fatalf("resolve() error = %v, want diagnosable exec ambiguity", err)
 	}
 }
 
@@ -209,12 +209,12 @@ func TestResolveRejectsLegacySourceSubagent(t *testing.T) {
 	writeLock(t, home, "tui-session")
 	writeLock(t, home, "legacy-subagent")
 
-	got, err := Resolve(SessionInput{CodexHome: home, ForegroundCWD: "/work/acme"})
+	got, err := resolve(sessionInput{CodexHome: home, ForegroundCWD: "/work/acme"})
 	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
+		t.Fatalf("resolve() error = %v", err)
 	}
 	if got.Path != path {
-		t.Fatalf("Resolve() = %#v, want TUI main-thread rollout", got)
+		t.Fatalf("resolve() = %#v, want TUI main-thread rollout", got)
 	}
 }
 
@@ -227,12 +227,12 @@ func TestResolveRejectsThreadSourceSubagent(t *testing.T) {
 	writeLock(t, home, "tui-session")
 	writeLock(t, home, "thread-source-subagent")
 
-	got, err := Resolve(SessionInput{CodexHome: home, ForegroundCWD: "/work/acme"})
+	got, err := resolve(sessionInput{CodexHome: home, ForegroundCWD: "/work/acme"})
 	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
+		t.Fatalf("resolve() error = %v", err)
 	}
 	if got.Path != path {
-		t.Fatalf("Resolve() = %#v, want TUI main-thread rollout", got)
+		t.Fatalf("resolve() = %#v, want TUI main-thread rollout", got)
 	}
 }
 
@@ -243,12 +243,12 @@ func TestResolveAcceptsLegacyTUIOriginator(t *testing.T) {
 	path := writeRolloutWithMetadata(t, home, "legacy-tui", "/work/acme", nil, "codex_cli_rs", "cli", "")
 	writeLock(t, home, "legacy-tui")
 
-	got, err := Resolve(SessionInput{CodexHome: home, ForegroundCWD: "/work/acme"})
+	got, err := resolve(sessionInput{CodexHome: home, ForegroundCWD: "/work/acme"})
 	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
+		t.Fatalf("resolve() error = %v", err)
 	}
 	if got.Path != path {
-		t.Fatalf("Resolve() = %#v, want legacy TUI rollout", got)
+		t.Fatalf("resolve() = %#v, want legacy TUI rollout", got)
 	}
 }
 
@@ -264,12 +264,12 @@ func TestResolveSkipsUnreadableRollout(t *testing.T) {
 	path := writeRollout(t, home, "z-active", "/work/acme", nil, "cli")
 	writeLock(t, home, "z-active")
 
-	got, err := Resolve(SessionInput{CodexHome: home, ForegroundCWD: "/work/acme"})
+	got, err := resolve(sessionInput{CodexHome: home, ForegroundCWD: "/work/acme"})
 	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
+		t.Fatalf("resolve() error = %v", err)
 	}
 	if got.Path != path {
-		t.Fatalf("Resolve() = %#v, want readable active rollout", got)
+		t.Fatalf("resolve() = %#v, want readable active rollout", got)
 	}
 }
 

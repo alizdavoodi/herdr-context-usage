@@ -31,7 +31,7 @@ type tokenUsage struct {
 	TotalTokens *int64 `json:"total_tokens"`
 }
 
-func ReadOccupancy(path string) (int64, error) {
+func readOccupancy(path string) (int64, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return 0, fmt.Errorf("open codex rollout: %w", err)

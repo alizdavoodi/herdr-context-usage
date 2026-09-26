@@ -102,12 +102,12 @@ func TestReadOccupancy(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := ReadOccupancy(filepath.Join("testdata", tt.fixture))
+			got, err := readOccupancy(filepath.Join("testdata", tt.fixture))
 			if !errors.Is(err, tt.wantErr) {
-				t.Fatalf("ReadOccupancy() error = %v, want %v", err, tt.wantErr)
+				t.Fatalf("readOccupancy() error = %v, want %v", err, tt.wantErr)
 			}
 			if got != tt.want {
-				t.Fatalf("ReadOccupancy() = %d, want %d", got, tt.want)
+				t.Fatalf("readOccupancy() = %d, want %d", got, tt.want)
 			}
 		})
 	}
@@ -128,19 +128,19 @@ func TestReadOccupancyNeverAddsCachedInputToInput(t *testing.T) {
 		codexRule  = input          // 85,751
 		claudeRule = input + cached // 170,487, a 1.99x overstatement
 	)
-	got, err := ReadOccupancy(filepath.Join("testdata", "input-fallback.jsonl"))
+	got, err := readOccupancy(filepath.Join("testdata", "input-fallback.jsonl"))
 	if err != nil {
-		t.Fatalf("ReadOccupancy() error = %v", err)
+		t.Fatalf("readOccupancy() error = %v", err)
 	}
 	if got != codexRule {
-		t.Fatalf("ReadOccupancy() = %d, want %d; %d would be claude's rule applied to codex's fields", got, codexRule, claudeRule)
+		t.Fatalf("readOccupancy() = %d, want %d; %d would be claude's rule applied to codex's fields", got, codexRule, claudeRule)
 	}
 }
 
 func TestReadOccupancyMissingRollout(t *testing.T) {
 	t.Parallel()
 
-	if _, err := ReadOccupancy(filepath.Join(t.TempDir(), "missing.jsonl")); err == nil {
-		t.Fatal("ReadOccupancy() error = nil")
+	if _, err := readOccupancy(filepath.Join(t.TempDir(), "missing.jsonl")); err == nil {
+		t.Fatal("readOccupancy() error = nil")
 	}
 }
