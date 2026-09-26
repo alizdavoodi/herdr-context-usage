@@ -95,7 +95,9 @@ does not mean zero. Examples include:
 - an `opencode` pane whose terminal title has been turned off — see
   [when an opencode row never fills in](#when-an-opencode-row-never-fills-in);
 - an agent home that cannot be found at all, because `HOME` is unset and no
-  override points elsewhere, which blanks the row for every provider alike;
+  override points elsewhere, for a provider that needs that home to resolve the
+  session: both opencode providers always do, while the others need it only
+  when Herdr reports no absolute transcript path for the pane;
 - a pane whose agent session cannot be resolved; or
 - the interval immediately after compaction, before a new readable occupancy
   exists.
