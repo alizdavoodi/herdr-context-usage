@@ -12,6 +12,7 @@ import (
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/claude"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/codex"
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider/pi"
 )
 
 // Adding a provider here is what makes its kind measurable, and it is not
@@ -28,7 +29,7 @@ func registry(config Config) []provider.Provider {
 		codex.New(config.CodexHome),
 		opencodeProvider{db: config.OpenCodeDB, dataHome: config.OpenCodeDataHome},
 		opencode2Provider{db: config.OpenCode2DB, dataHome: config.OpenCodeDataHome},
-		piProvider{home: config.PiHome},
+		pi.New(config.PiHome),
 		ompProvider{home: config.OmpHome},
 	}
 }

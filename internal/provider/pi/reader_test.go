@@ -300,15 +300,15 @@ func TestReadOccupancy(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := ReadOccupancy(writeTranscript(t, tt.records...))
+			got, err := readOccupancy(writeTranscript(t, tt.records...))
 			if !errors.Is(err, tt.wantErr) {
-				t.Fatalf("ReadOccupancy() error = %v, want %v", err, tt.wantErr)
+				t.Fatalf("readOccupancy() error = %v, want %v", err, tt.wantErr)
 			}
 			if got.Occupancy != tt.want {
-				t.Fatalf("ReadOccupancy() occupancy = %d, want %d", got.Occupancy, tt.want)
+				t.Fatalf("readOccupancy() occupancy = %d, want %d", got.Occupancy, tt.want)
 			}
-			if !sameVersion(got.Version, tt.wantVersion) {
-				t.Fatalf("ReadOccupancy() version = %s, want %s", formatVersion(got.Version), formatVersion(tt.wantVersion))
+			if !sameVersion(got.TranscriptVersion, tt.wantVersion) {
+				t.Fatalf("readOccupancy() version = %s, want %s", formatVersion(got.TranscriptVersion), formatVersion(tt.wantVersion))
 			}
 		})
 	}
@@ -325,15 +325,15 @@ func TestReadOccupancyNeverReadsTheCompactionRecordsOwnUsage(t *testing.T) {
 
 	const compactionRecordUsageSum = 1_383 // 1383 + 0 + 0, A line 40's own usage
 
-	got, err := ReadOccupancy(writeTranscript(t, sessionV3, turnA39, compactionA40))
+	got, err := readOccupancy(writeTranscript(t, sessionV3, turnA39, compactionA40))
 	if !errors.Is(err, ErrJustCompacted) {
-		t.Fatalf("ReadOccupancy() error = %v, want %v", err, ErrJustCompacted)
+		t.Fatalf("readOccupancy() error = %v, want %v", err, ErrJustCompacted)
 	}
 	if got.Occupancy == compactionRecordUsageSum {
-		t.Fatalf("ReadOccupancy() = %d, the compaction record's own usage; the walk must stop on the record type, not on the presence of a usage", got.Occupancy)
+		t.Fatalf("readOccupancy() = %d, the compaction record's own usage; the walk must stop on the record type, not on the presence of a usage", got.Occupancy)
 	}
 	if got.Occupancy != 0 {
-		t.Fatalf("ReadOccupancy() = %d, want no occupancy at a compaction boundary", got.Occupancy)
+		t.Fatalf("readOccupancy() = %d, want no occupancy at a compaction boundary", got.Occupancy)
 	}
 }
 
@@ -360,12 +360,12 @@ func TestReadOccupancyAgreesWithPisOwnPerTurnTotal(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := ReadOccupancy(writeTranscript(t, sessionV3, tt.record))
+			got, err := readOccupancy(writeTranscript(t, sessionV3, tt.record))
 			if err != nil {
-				t.Fatalf("ReadOccupancy() error = %v", err)
+				t.Fatalf("readOccupancy() error = %v", err)
 			}
 			if want := tt.totalTokens - tt.output; got.Occupancy != want {
-				t.Fatalf("ReadOccupancy() = %d, want %d; %d is the per-turn total, which overstates by that turn's output", got.Occupancy, want, tt.totalTokens)
+				t.Fatalf("readOccupancy() = %d, want %d; %d is the per-turn total, which overstates by that turn's output", got.Occupancy, want, tt.totalTokens)
 			}
 		})
 	}
@@ -386,12 +386,12 @@ func TestReadOccupancyTruncatedFinalLine(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := ReadOccupancy(path)
+	got, err := readOccupancy(path)
 	if err != nil {
-		t.Fatalf("ReadOccupancy() error = %v", err)
+		t.Fatalf("readOccupancy() error = %v", err)
 	}
 	if got.Occupancy != 27_905 {
-		t.Fatalf("ReadOccupancy() = %d, want 27905", got.Occupancy)
+		t.Fatalf("readOccupancy() = %d, want 27905", got.Occupancy)
 	}
 }
 
@@ -429,27 +429,27 @@ func TestReadOccupancyBeyondTheBoundedTail(t *testing.T) {
 		t.Fatalf("fixture is %d bytes, want more than the %d byte scan window", info.Size(), maxScanBytes)
 	}
 
-	got, err := ReadOccupancy(path)
+	got, err := readOccupancy(path)
 	if err != nil {
-		t.Fatalf("ReadOccupancy() error = %v", err)
+		t.Fatalf("readOccupancy() error = %v", err)
 	}
 	if got.Occupancy != 17_033 {
-		t.Fatalf("ReadOccupancy() = %d, want 17033", got.Occupancy)
+		t.Fatalf("readOccupancy() = %d, want 17033", got.Occupancy)
 	}
-	if !sameVersion(got.Version, intPtr(3)) {
-		t.Fatalf("ReadOccupancy() version = %s, want 3 read from beyond the window", formatVersion(got.Version))
+	if !sameVersion(got.TranscriptVersion, intPtr(3)) {
+		t.Fatalf("readOccupancy() version = %s, want 3 read from beyond the window", formatVersion(got.TranscriptVersion))
 	}
 }
 
 // A resolved transcript that is not there is this provider's evidence that the
-// agent session is gone, and SemanticStates classifies it by unwrapping to
+// agent session is gone, and States classifies it by unwrapping to
 // fs.ErrNotExist, so the wrapping has to keep that reachable.
 func TestReadOccupancyMissingTranscript(t *testing.T) {
 	t.Parallel()
 
-	_, err := ReadOccupancy(filepath.Join(t.TempDir(), "missing.jsonl"))
+	_, err := readOccupancy(filepath.Join(t.TempDir(), "missing.jsonl"))
 	if !errors.Is(err, fs.ErrNotExist) {
-		t.Fatalf("ReadOccupancy() error = %v, want it to unwrap to fs.ErrNotExist", err)
+		t.Fatalf("readOccupancy() error = %v, want it to unwrap to fs.ErrNotExist", err)
 	}
 }
 

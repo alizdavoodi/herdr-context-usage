@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/piompshared"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/transcript"
 )
@@ -20,15 +21,6 @@ var (
 	ErrNoOccupancy   = errors.New("pi transcript has no current context occupancy")
 	ErrJustCompacted = errors.New("pi agent session is just-compacted")
 )
-
-// Reading is what the reader observed. Version is the schema version stamped on
-// the transcript's session record, nil when absent. It is populated even when
-// the error is non-nil, so a just-compacted row still records the version it was
-// read at — the caller must therefore read Version on the error path too.
-type Reading struct {
-	Occupancy int64
-	Version   *int
-}
 
 type sessionRecord struct {
 	Type    string `json:"type"`
@@ -60,7 +52,7 @@ type transcriptEntry struct {
 	} `json:"message"`
 }
 
-func ReadOccupancy(path string) (Reading, error) {
+func readOccupancy(path string) (provider.Reading, error) {
 	scan, err := transcript.Read("pi", path, maxScanBytes)
 	// The version rides on the failure path too. A tail read that fails after
 	// the head was read still knows the format it was reading, and that is the
@@ -68,7 +60,7 @@ func ReadOccupancy(path string) (Reading, error) {
 	// is otherwise indistinguishable from any other unreadable transcript.
 	version := readVersion(scan.Head)
 	if err != nil {
-		return Reading{Version: version}, err
+		return provider.Reading{TranscriptVersion: version}, err
 	}
 	return newestOccupancy(scan.Tail, version)
 }
@@ -76,7 +68,7 @@ func ReadOccupancy(path string) (Reading, error) {
 // newestOccupancy walks back from the end of the transcript to the newest
 // completed assistant turn. version rides on every return, including the two
 // errors, so that a blank row still records the format it was read at.
-func newestOccupancy(lines [][]byte, version *int) (Reading, error) {
+func newestOccupancy(lines [][]byte, version *int) (provider.Reading, error) {
 	for i := len(lines) - 1; i >= 0; i-- {
 		line := bytes.TrimSpace(lines[i])
 		if len(line) == 0 {
@@ -96,7 +88,7 @@ func newestOccupancy(lines [][]byte, version *int) (Reading, error) {
 			// agent session, and therefore the kind of wrong number nobody
 			// questions. transcriptEntry decodes no top-level usage, which makes
 			// reading it structurally impossible rather than merely forbidden.
-			return Reading{Version: version}, ErrJustCompacted
+			return provider.Reading{TranscriptVersion: version}, ErrJustCompacted
 		}
 		if entry.Message == nil || entry.Message.Role != "assistant" || entry.Message.Usage == nil {
 			// The gate is the role plus a usage, never stopReason: both observed
@@ -111,10 +103,10 @@ func newestOccupancy(lines [][]byte, version *int) (Reading, error) {
 		// agents, so it is the only thing that lives in a shared package.
 		usage := entry.Message.Usage
 		if occupancy, ok := piompshared.Occupancy(usage.Input, usage.CacheRead, usage.CacheWrite); ok {
-			return Reading{Occupancy: occupancy, Version: version}, nil
+			return provider.Reading{Occupancy: occupancy, TranscriptVersion: version}, nil
 		}
 	}
-	return Reading{Version: version}, ErrNoOccupancy
+	return provider.Reading{TranscriptVersion: version}, ErrNoOccupancy
 }
 
 // readVersion reads the schema version off the transcript's session record.
