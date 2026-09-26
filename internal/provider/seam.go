@@ -1,0 +1,73 @@
+package provider
+
+import (
+	"context"
+
+	"github.com/alizdavoodi/herdr-context-usage/internal/report"
+)
+
+// ResolutionMode names which method identified the agent session for a pane
+// (CONTEXT.md). One set of names for every provider, so a measurement record
+// reads the same whichever package produced it.
+type ResolutionMode string
+
+const (
+	ResolutionAgentSession    ResolutionMode = "agent_session"
+	ResolutionProcessRegistry ResolutionMode = "process_registry"
+	ResolutionForegroundCWD   ResolutionMode = "foreground_cwd"
+	ResolutionTerminalTitle   ResolutionMode = "terminal_title"
+)
+
+// Pane is what herdr reports about one pane that a provider may read. app
+// maps herdr's agent record to it once; providers never see herdr's types,
+// because herdr imports this package and the reverse import would be a cycle.
+type Pane struct {
+	ForegroundCWD string
+	TerminalTitle string
+	AgentSession  *AgentSession
+	// Processes is the pane's foreground process list, nil when herdr could
+	// not read it this round; a provider using it as a resolution tier
+	// degrades to its other tiers.
+	Processes []Process
+}
+
+// Reading is what a provider's reader observed. TranscriptVersion is the schema
+// version the store stamped on the session it was read from, nil for a provider
+// whose store carries none. A reader may populate it alongside a non-nil error —
+// a just-compacted transcript was read successfully right up to the compaction
+// record — so the refresh skeleton in app records it on the failure path too.
+type Reading struct {
+	Occupancy         int64
+	ModelID           string
+	TranscriptVersion *int
+	// OracleDisagreement is a reader's own cross-check against a figure its
+	// store computes independently, empty when the two agree or when the store
+	// carries no such figure. It rides on a successful reading only: a read that
+	// produced no occupancy had nothing to cross-check.
+	OracleDisagreement string
+}
+
+// Resolved carries one provider's session resolution: a closure that reads a
+// Reading from the resolved handle, the resolution mode, and an optional
+// cleanup for any store the resolution opened. A file-backed provider leaves
+// Cleanup nil; a store-backed provider sets it to store.Close so the skeleton
+// in app can defer it, even when resolution fails after the store opened.
+//
+// Mode is the zero value until a resolution stage succeeds. app is the one
+// place that turns that into the null the measurement record must carry, so no
+// provider has to allocate a pointer to say it resolved nothing.
+type Resolved struct {
+	Read    func(context.Context) (Reading, error)
+	Mode    ResolutionMode
+	Cleanup func() error
+}
+
+// Provider contributes the parts of a refresh that are specific to one agent
+// kind. The skeleton in app owns error classification, measurement and
+// reporting, which are identical across every provider.
+type Provider interface {
+	Kind() Kind
+	States() report.States
+	JustCompacted() error
+	Resolve(ctx context.Context, pane Pane) (Resolved, error)
+}

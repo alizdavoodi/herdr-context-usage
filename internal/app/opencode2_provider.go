@@ -4,14 +4,13 @@ import (
 	"context"
 	"errors"
 
-	"github.com/alizdavoodi/herdr-context-usage/internal/herdr"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/opencode2"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/opencodeshared"
 	"github.com/alizdavoodi/herdr-context-usage/internal/report"
 )
 
-type opencode2Provider struct{}
+type opencode2Provider struct{ db, dataHome string }
 
 func (opencode2Provider) Kind() provider.Kind { return provider.OpenCode2 }
 
@@ -23,26 +22,25 @@ func (opencode2Provider) JustCompacted() error { return opencode2.ErrJustCompact
 // the TUI's terminal title. The store's own reading carries both an
 // occupancy and a ModelID, so the Read closure forwards the ModelID to the
 // measurement record. Cleanup closes the store after reading.
-func (opencode2Provider) Resolve(ctx context.Context, agent herdr.Agent, processes []provider.Process, config Config) (Resolved, error) {
-	store, err := opencode2.Open(ctx, config.OpenCode2DB, config.OpenCodeDataHome)
+func (p opencode2Provider) Resolve(ctx context.Context, pane provider.Pane) (provider.Resolved, error) {
+	store, err := opencode2.Open(ctx, p.db, p.dataHome)
 	if err != nil {
-		return Resolved{}, err
+		return provider.Resolved{}, err
 	}
-	resolved, err := store.Resolve(ctx, agent.ForegroundCWD, agent.TerminalTitle)
+	resolved, err := store.Resolve(ctx, pane.ForegroundCWD, pane.TerminalTitle)
 	if err != nil {
 		// Hand the open store back and let refreshOne close it, matching
 		// opencode, whose two-stage resolution cannot close inline. One idiom
 		// for a failed resolution is what a new provider copies correctly.
-		return Resolved{Cleanup: store.Close}, attributeMiniInterface(err, processes)
+		return provider.Resolved{Cleanup: store.Close}, attributeMiniInterface(err, pane.Processes)
 	}
-	mode := string(resolved.Mode)
 	sessionID := resolved.ID
-	return Resolved{
-		Mode:    &mode,
+	return provider.Resolved{
+		Mode:    provider.ResolutionMode(resolved.Mode),
 		Cleanup: store.Close,
-		Read: func(ctx context.Context) (Reading, error) {
+		Read: func(ctx context.Context) (provider.Reading, error) {
 			reading, err := store.ReadOccupancy(ctx, sessionID)
-			return Reading{Occupancy: reading.Occupancy, ModelID: reading.ModelID}, err
+			return provider.Reading{Occupancy: reading.Occupancy, ModelID: reading.ModelID}, err
 		},
 	}, nil
 }

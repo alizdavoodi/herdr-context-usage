@@ -48,13 +48,13 @@ const (
 )
 
 type Measurement struct {
-	Type           string        `json:"type"`
-	PaneID         string        `json:"pane_id"`
-	Provider       provider.Kind `json:"provider"`
-	ContextState   ContextState  `json:"context_state"`
-	Occupancy      *int64        `json:"occupancy"`
-	ResolutionMode *string       `json:"resolution_mode"`
-	ModelID        string        `json:"model_id,omitempty"`
+	Type           string                   `json:"type"`
+	PaneID         string                   `json:"pane_id"`
+	Provider       provider.Kind            `json:"provider"`
+	ContextState   ContextState             `json:"context_state"`
+	Occupancy      *int64                   `json:"occupancy"`
+	ResolutionMode *provider.ResolutionMode `json:"resolution_mode"`
+	ModelID        string                   `json:"model_id,omitempty"`
 	// The version is not a compatibility gate — pi and omp stamp the same one
 	// while carrying different field sets — so it is carried into the output
 	// instead: that is what makes a format change in a floating dependency
@@ -113,6 +113,7 @@ func Refresh(ctx context.Context, client Herdr, eventPaneID string, log io.Write
 		appendErr(err)
 	}
 
+	providers := registry(config)
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(refreshConcurrency)
 	for _, agent := range agents {
@@ -140,7 +141,7 @@ func Refresh(ctx context.Context, client Herdr, eventPaneID string, log io.Write
 			// Gating on it rather than on a parallel predicate means a kind nobody
 			// registered blanks its row instead of silently keeping a previous
 			// session's value, which is the safe direction for an unreadable pane.
-			p := providerFor(kind)
+			p := providerFor(kind, providers)
 			if p == nil {
 				if hasOccupancyToken(agent.Tokens) {
 					if err := client.Clear(gctx, agent.PaneID); err != nil {
@@ -149,7 +150,7 @@ func Refresh(ctx context.Context, client Herdr, eventPaneID string, log io.Write
 				}
 				return nil
 			}
-			if err := refreshOne(gctx, client, agent, processes, log, config, p); err != nil {
+			if err := refreshOne(gctx, client, agent.PaneID, paneOf(agent, processes), log, p); err != nil {
 				appendErr(err)
 			}
 			return nil

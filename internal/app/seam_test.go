@@ -16,7 +16,7 @@ import (
 func TestProviderStatesAreDisjoint(t *testing.T) {
 	t.Parallel()
 
-	for _, registered := range allProviders {
+	for _, registered := range registry(Config{}) {
 		t.Run(string(registered.Kind()), func(t *testing.T) {
 			t.Parallel()
 			declared := registered.States()
@@ -39,8 +39,9 @@ func TestProviderStatesAreDisjoint(t *testing.T) {
 func TestRegistryHasNoDuplicateKinds(t *testing.T) {
 	t.Parallel()
 
-	seen := make(map[string]struct{}, len(allProviders))
-	for _, registered := range allProviders {
+	providers := registry(Config{})
+	seen := make(map[string]struct{}, len(providers))
+	for _, registered := range providers {
 		kind := string(registered.Kind())
 		if kind == "" {
 			t.Error("a provider reports an empty kind, which no agent label can match")
@@ -67,7 +68,7 @@ func TestRegistryHasNoDuplicateKinds(t *testing.T) {
 func TestEveryRegisteredKindIsReachableFromItsAgentLabel(t *testing.T) {
 	t.Parallel()
 
-	for _, registered := range allProviders {
+	for _, registered := range registry(Config{}) {
 		kind := registered.Kind()
 		t.Run(string(kind), func(t *testing.T) {
 			t.Parallel()
@@ -86,7 +87,7 @@ func TestEveryRegisteredKindIsReachableFromItsAgentLabel(t *testing.T) {
 func TestProvidersDeclareAJustCompactedSentinel(t *testing.T) {
 	t.Parallel()
 
-	for _, registered := range allProviders {
+	for _, registered := range registry(Config{}) {
 		if registered.JustCompacted() == nil {
 			t.Errorf("provider %s declares no just-compacted sentinel", registered.Kind())
 		}
@@ -101,7 +102,7 @@ func TestProvidersDeclareAJustCompactedSentinel(t *testing.T) {
 func TestImplementedAgreesWithRegistry(t *testing.T) {
 	t.Parallel()
 
-	for _, registered := range allProviders {
+	for _, registered := range registry(Config{}) {
 		if !registered.Kind().Implemented() {
 			t.Errorf("provider %s is registered but Implemented() denies it", registered.Kind())
 		}
