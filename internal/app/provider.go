@@ -10,6 +10,7 @@ import (
 	occupancyformat "github.com/alizdavoodi/herdr-context-usage/internal/format"
 	"github.com/alizdavoodi/herdr-context-usage/internal/herdr"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider/claude"
 )
 
 // Adding a provider here is what makes its kind measurable, and it is not
@@ -22,7 +23,7 @@ import (
 // fields exist to prevent.
 func registry(config Config) []provider.Provider {
 	return []provider.Provider{
-		claudeProvider{home: config.ClaudeHome},
+		claude.New(config.ClaudeHome),
 		codexProvider{home: config.CodexHome},
 		opencodeProvider{db: config.OpenCodeDB, dataHome: config.OpenCodeDataHome},
 		opencode2Provider{db: config.OpenCode2DB, dataHome: config.OpenCodeDataHome},

@@ -14,7 +14,7 @@ import (
 func TestSemanticStatesClassifyEveryAnswer(t *testing.T) {
 	t.Parallel()
 
-	states := SemanticStates()
+	states := New("").States()
 	tests := []struct {
 		name string
 		err  error
@@ -25,7 +25,7 @@ func TestSemanticStatesClassifyEveryAnswer(t *testing.T) {
 		{name: "no usable usage record", err: ErrNoOccupancy, want: report.Superseded},
 		{name: "just compacted", err: ErrJustCompacted, want: report.Superseded},
 		{
-			// ReadOccupancy wraps the open error, so this is the shape the
+			// readOccupancy wraps the open error, so this is the shape the
 			// classifier actually sees when a resolved transcript is gone.
 			name: "resolved transcript does not exist",
 			err:  fmt.Errorf("open claude transcript: %w", fs.ErrNotExist),
@@ -51,26 +51,26 @@ func TestSemanticStatesClassifyEveryAnswer(t *testing.T) {
 // Classify's transient default and froze the displayed occupancy for the life
 // of the pane, while pi and omp blanked theirs on the same host.
 //
-// This drives Resolve rather than a constructed error so the classification is
+// This drives resolve rather than a constructed error so the classification is
 // pinned to the shape the provider actually produces. It sets the environment
 // and therefore cannot run in parallel, and unsetting HOME defeats
 // os.UserHomeDir only on unix — on Windows it reads USERPROFILE.
 func TestAnUnresolvableHomeSupersedesTheDisplayedValue(t *testing.T) {
 	t.Setenv("HOME", "")
 
-	_, err := Resolve(SessionInput{
+	_, err := resolve(sessionInput{
 		AgentSession:  &provider.AgentSession{Kind: "id", Value: "session-1"},
 		ForegroundCWD: "/work",
 	})
 	if !errors.Is(err, provider.ErrNoHome) {
-		t.Fatalf("Resolve(id) error = %v, want it to wrap ErrNoHome", err)
+		t.Fatalf("resolve(id) error = %v, want it to wrap ErrNoHome", err)
 	}
 	// A reader diagnosing a blank row has to tell "there is no home to look in"
 	// apart from "the session did not resolve"; they have different fixes.
 	if errors.Is(err, ErrNoSession) {
-		t.Fatalf("Resolve(id) error = %v, want it distinguishable from an unresolved session", err)
+		t.Fatalf("resolve(id) error = %v, want it distinguishable from an unresolved session", err)
 	}
-	if got := report.Classify(err, SemanticStates()); got != report.Superseded {
+	if got := report.Classify(err, New("").States()); got != report.Superseded {
 		t.Fatalf("Classify(%v) = %v, want %v", err, got, report.Superseded)
 	}
 }

@@ -12,15 +12,15 @@ func TestResolvePrefersReportedAgentSession(t *testing.T) {
 	t.Parallel()
 
 	reported := filepath.Join(t.TempDir(), "reported.jsonl")
-	got, err := Resolve(SessionInput{
+	got, err := resolve(sessionInput{
 		AgentSession:  &provider.AgentSession{Kind: "path", Value: reported},
 		ForegroundCWD: "/ignored",
 	})
 	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
+		t.Fatalf("resolve() error = %v", err)
 	}
-	if got.Path != reported || got.Mode != ResolutionAgentSession {
-		t.Fatalf("Resolve() = %#v, want reported path and agent_session mode", got)
+	if got.Path != reported || got.Mode != provider.ResolutionAgentSession {
+		t.Fatalf("resolve() = %#v, want reported path and agent_session mode", got)
 	}
 }
 
@@ -32,12 +32,12 @@ func TestResolveAPathWithoutAResolvableHome(t *testing.T) {
 	t.Setenv("HOME", "")
 
 	reported := filepath.Join(t.TempDir(), "reported.jsonl")
-	got, err := Resolve(SessionInput{AgentSession: &provider.AgentSession{Kind: "path", Value: reported}})
+	got, err := resolve(sessionInput{AgentSession: &provider.AgentSession{Kind: "path", Value: reported}})
 	if err != nil {
-		t.Fatalf("Resolve() error = %v, want the reported path used without a home", err)
+		t.Fatalf("resolve() error = %v, want the reported path used without a home", err)
 	}
-	if got.Path != reported || got.Mode != ResolutionAgentSession {
-		t.Fatalf("Resolve() = %#v, want %q and agent_session mode", got, reported)
+	if got.Path != reported || got.Mode != provider.ResolutionAgentSession {
+		t.Fatalf("resolve() = %#v, want %q and agent_session mode", got, reported)
 	}
 }
 
@@ -68,9 +68,9 @@ func TestResolveBlanksAnUnusableReportedSession(t *testing.T) {
 		// A label outside herdr's set is refused whatever its value looks like.
 		{Kind: "unknown", Value: bait},
 	} {
-		got, err := Resolve(SessionInput{ClaudeHome: home, ForegroundCWD: cwd, AgentSession: &session})
+		got, err := resolve(sessionInput{ClaudeHome: home, ForegroundCWD: cwd, AgentSession: &session})
 		if err != ErrNoSession {
-			t.Fatalf("Resolve(%#v) = %#v, %v; want ErrNoSession", session, got, err)
+			t.Fatalf("resolve(%#v) = %#v, %v; want ErrNoSession", session, got, err)
 		}
 	}
 }
@@ -83,16 +83,16 @@ func TestResolveReportedSessionID(t *testing.T) {
 	want := filepath.Join(home, "projects", "-work-acme", "session-1.jsonl")
 	// An unlabelled value that is not absolute is an id by the shared rule.
 	for _, kind := range []string{"id", ""} {
-		got, err := Resolve(SessionInput{
+		got, err := resolve(sessionInput{
 			ClaudeHome:    home,
 			AgentSession:  &provider.AgentSession{Kind: kind, Value: "session-1"},
 			ForegroundCWD: cwd,
 		})
 		if err != nil {
-			t.Fatalf("Resolve(kind=%q) error = %v", kind, err)
+			t.Fatalf("resolve(kind=%q) error = %v", kind, err)
 		}
-		if got.Path != want || got.Mode != ResolutionAgentSession {
-			t.Fatalf("Resolve(kind=%q) = %#v, want %q and agent_session mode", kind, got, want)
+		if got.Path != want || got.Mode != provider.ResolutionAgentSession {
+			t.Fatalf("resolve(kind=%q) = %#v, want %q and agent_session mode", kind, got, want)
 		}
 	}
 }
@@ -117,9 +117,9 @@ func TestResolveRefusesAnIDThatLeavesThePaneDirectory(t *testing.T) {
 		{Value: "../-work-other/session-1"},
 		{Kind: "id", Value: `..\-work-other\session-1`},
 	} {
-		got, err := Resolve(SessionInput{ClaudeHome: home, ForegroundCWD: "/work/acme", AgentSession: &session})
+		got, err := resolve(sessionInput{ClaudeHome: home, ForegroundCWD: "/work/acme", AgentSession: &session})
 		if err != ErrNoSession {
-			t.Fatalf("Resolve(%#v) = %#v, %v; want ErrNoSession", session, got, err)
+			t.Fatalf("resolve(%#v) = %#v, %v; want ErrNoSession", session, got, err)
 		}
 	}
 }
@@ -137,16 +137,16 @@ func TestResolveFromForegroundCWDAndClaudeProcess(t *testing.T) {
 	}
 
 	want := filepath.Join(home, "projects", "-work-acme", "session-2.jsonl")
-	got, err := Resolve(SessionInput{
+	got, err := resolve(sessionInput{
 		ClaudeHome:    home,
 		ForegroundCWD: cwd,
 		ProcessIDs:    []int{7, 42},
 	})
 	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
+		t.Fatalf("resolve() error = %v", err)
 	}
-	if got.Path != want || got.Mode != ResolutionProcessRegistry {
-		t.Fatalf("Resolve() = %#v, want %q and process_registry mode", got, want)
+	if got.Path != want || got.Mode != provider.ResolutionProcessRegistry {
+		t.Fatalf("resolve() = %#v, want %q and process_registry mode", got, want)
 	}
 }
 
@@ -165,8 +165,8 @@ func TestResolveDoesNotGuessByRecency(t *testing.T) {
 		}
 	}
 
-	if _, err := Resolve(SessionInput{ClaudeHome: home, ForegroundCWD: cwd}); !errorsIsNoSession(err) {
-		t.Fatalf("Resolve() error = %v, want ErrNoSession", err)
+	if _, err := resolve(sessionInput{ClaudeHome: home, ForegroundCWD: cwd}); !errorsIsNoSession(err) {
+		t.Fatalf("resolve() error = %v, want ErrNoSession", err)
 	}
 }
 
@@ -183,12 +183,12 @@ func TestResolveSingleTranscriptFromForegroundCWD(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := Resolve(SessionInput{ClaudeHome: home, ForegroundCWD: cwd})
+	got, err := resolve(sessionInput{ClaudeHome: home, ForegroundCWD: cwd})
 	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
+		t.Fatalf("resolve() error = %v", err)
 	}
-	if got.Path != want || got.Mode != ResolutionForegroundCWD {
-		t.Fatalf("Resolve() = %#v", got)
+	if got.Path != want || got.Mode != provider.ResolutionForegroundCWD {
+		t.Fatalf("resolve() = %#v", got)
 	}
 }
 
@@ -196,14 +196,14 @@ func TestResolveRejectsIncompleteInputs(t *testing.T) {
 	t.Parallel()
 
 	home := t.TempDir()
-	tests := []SessionInput{
+	tests := []sessionInput{
 		{ClaudeHome: home},
 		{ClaudeHome: home, AgentSession: &provider.AgentSession{Kind: "id", Value: "session"}},
 		{ClaudeHome: home, ForegroundCWD: "/work", AgentSession: &provider.AgentSession{Kind: "unknown", Value: "session"}},
 	}
 	for _, input := range tests {
-		if _, err := Resolve(input); err != ErrNoSession {
-			t.Fatalf("Resolve(%#v) error = %v, want ErrNoSession", input, err)
+		if _, err := resolve(input); err != ErrNoSession {
+			t.Fatalf("resolve(%#v) error = %v, want ErrNoSession", input, err)
 		}
 	}
 }
