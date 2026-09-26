@@ -21,7 +21,9 @@ func (opencode2Provider) Kind() provider.Kind { return provider.OpenCode2 }
 func (opencode2Provider) JustCompacted() error { return ErrJustCompacted }
 
 // Resolve correlates by the pane's directory and the TUI's terminal title,
-// because herdr reports no agent session for an opencode2 pane.
+// because herdr reports no agent session for an opencode2 pane: neither opencode
+// version sends herdr a session id, as the README records under "When an
+// opencode row never fills in".
 func (p opencode2Provider) Resolve(ctx context.Context, pane provider.Pane) (provider.Resolved, error) {
 	s, err := open(ctx, p.db, p.dataHome)
 	if err != nil {
