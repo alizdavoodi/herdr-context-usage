@@ -226,6 +226,12 @@ func TestRefreshClearsPiRowWhenNoAgentSessionIsReported(t *testing.T) {
 	if !slices.Equal(fake.clears, []string{"w1:p1"}) || len(fake.reports) != 0 {
 		t.Fatalf("clears = %v, reports = %v; want no reported session blanked", fake.clears, fake.reports)
 	}
+	// No stage resolved anything, so the record says null. A provider leaves its
+	// mode empty here and app alone turns that into null; an empty string would
+	// read as a mode that exists but has no name.
+	if got := log.String(); !strings.Contains(got, `"resolution_mode":null`) {
+		t.Fatalf("measurement = %s, want an unresolved pane's resolution mode recorded as null", got)
+	}
 }
 
 // The trap this whole provider exists to avoid. pi's compaction record carries
