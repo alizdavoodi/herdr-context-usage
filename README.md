@@ -94,6 +94,8 @@ does not mean zero. Examples include:
 - an untitled `opencode` session, whose pane cannot be correlated safely;
 - an `opencode` pane whose terminal title has been turned off — see
   [when an opencode row never fills in](#when-an-opencode-row-never-fills-in);
+- an agent home that cannot be found at all, because `HOME` is unset and no
+  override points elsewhere, which blanks the row for every provider alike;
 - a pane whose agent session cannot be resolved; or
 - the interval immediately after compaction, before a new readable occupancy
   exists.
