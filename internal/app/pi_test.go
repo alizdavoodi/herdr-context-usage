@@ -390,8 +390,8 @@ func TestRefreshClearsPiRowWhenNoAssistantTurnHasCompleted(t *testing.T) {
 // the three-way classification exists to prevent.
 //
 // Measured against pi 0.84.2 and herdr 0.8.0 by driving this same path with the
-// sentinel declared and wrapped but left out of SemanticStates, which is the
-// defect's exact shape. The record written was context_state "unknown",
+// sentinel declared and wrapped but left out of pi's declared states, which is
+// the defect's exact shape. The record written was context_state "unknown",
 // occupancy null, resolution_mode null, error "pi agent home cannot be
 // resolved: $HOME is not defined" (that sentinel's text at the time, before
 // it moved to the provider root) — and clears was empty, so the pane kept

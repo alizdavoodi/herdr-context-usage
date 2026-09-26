@@ -140,7 +140,7 @@ func TestReadAnEmptyTranscript(t *testing.T) {
 	}
 }
 
-// Each provider's SemanticStates classifies a missing transcript by unwrapping
+// Each provider's States classifies a missing transcript by unwrapping
 // to fs.ErrNotExist, so the wrapping here has to keep that reachable, and each
 // provider's own semantic test constructs the message this produces. A shared
 // message with no agent in it would leave a maintenance diagnostic unable to

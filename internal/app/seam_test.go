@@ -21,7 +21,7 @@ func TestProviderStatesAreDisjoint(t *testing.T) {
 			t.Parallel()
 			declared := registered.States()
 			if len(declared.Superseded) == 0 {
-				t.Fatal("SemanticStates() declares no superseded answer; every provider has at least one")
+				t.Fatal("States() declares no superseded answer; every provider has at least one")
 			}
 			for _, superseded := range declared.Superseded {
 				for _, staleLow := range declared.StaleLow {
