@@ -80,11 +80,11 @@ limit. Use the absolute `ctx_raw` count instead of inventing a percentage.
 An `opencode` pane can be blank permanently rather than temporarily. Both
 opencode versions are correlated to a session through the terminal title their
 TUI sets, and that title is their only correlation signal: opencode v1 stops
-setting it when `OPENCODE_DISABLE_TERMINAL_TITLE` is `true` or `1`, and either
+setting it when `OPENCODE_DISABLE_TERMINAL_TITLE` is `true` or `1`, either
 version stops when the TUI's own `Disable terminal title` command has been
-used. A pane in that state reports no occupancy at all, for any session, until
-the title comes back. Do not read a blank `opencode` row as an idle or empty
-agent.
+used, and `opencode2 mini` never sets it at all. A pane in that state reports no
+occupancy at all, for any session, until the title comes back. Do not read a
+blank `opencode` row as an idle or empty agent.
 
 A `pi` pane can be blank permanently for a different reason: its Herdr
 integration is not installed. `pi` is correlated to an agent session only
