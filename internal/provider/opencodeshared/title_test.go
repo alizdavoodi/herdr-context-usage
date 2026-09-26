@@ -87,12 +87,12 @@ func TestParseTitleRecognisesEveryForm(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := ParseTitle(tt.terminalTitle)
+			got, err := parseTitle(tt.terminalTitle)
 			if !errors.Is(err, tt.wantErr) {
-				t.Fatalf("ParseTitle() error = %v, want %v", err, tt.wantErr)
+				t.Fatalf("parseTitle() error = %v, want %v", err, tt.wantErr)
 			}
 			if got != tt.want {
-				t.Fatalf("ParseTitle() = %#v, want %#v", got, tt.want)
+				t.Fatalf("parseTitle() = %#v, want %#v", got, tt.want)
 			}
 		})
 	}
@@ -102,20 +102,20 @@ func TestParseTitleExplainsTheDisabledTerminalTitle(t *testing.T) {
 	// Not parallel: the environment is process-wide.
 	t.Setenv("OPENCODE_DISABLE_TERMINAL_TITLE", "true")
 
-	_, err := ParseTitle("zsh")
+	_, err := parseTitle("zsh")
 	if !errors.Is(err, ErrTitleDisabled) {
-		t.Fatalf("ParseTitle() error = %v, want the disabled-title explanation", err)
+		t.Fatalf("parseTitle() error = %v, want the disabled-title explanation", err)
 	}
 	if !errors.Is(err, ErrTitleUnavailable) {
-		t.Fatalf("ParseTitle() error = %v, want an unavailable title as well, so one declaration covers both", err)
+		t.Fatalf("parseTitle() error = %v, want an unavailable title as well, so one declaration covers both", err)
 	}
 	if !strings.Contains(err.Error(), "OPENCODE_DISABLE_TERMINAL_TITLE") {
 		t.Fatalf("diagnostic = %q, want it to name the variable", err.Error())
 	}
 	// A pane that still reports a title is unaffected: the variable is read from
 	// our environment, which is only a hint about the agent's.
-	if _, err := ParseTitle("OC | Probe test response"); err != nil {
-		t.Fatalf("ParseTitle() error = %v, want a usable title to survive the hint", err)
+	if _, err := parseTitle("OC | Probe test response"); err != nil {
+		t.Fatalf("parseTitle() error = %v, want a usable title to survive the hint", err)
 	}
 }
 
@@ -126,8 +126,8 @@ func TestTitleDisabledFollowsOpenCodesOwnTruthiness(t *testing.T) {
 		"": false, "0": false, "false": false, "yes": false,
 	} {
 		t.Setenv("OPENCODE_DISABLE_TERMINAL_TITLE", value)
-		if got := TitleDisabled(); got != want {
-			t.Fatalf("TitleDisabled() with %q = %v, want %v", value, got, want)
+		if got := titleDisabled(); got != want {
+			t.Fatalf("titleDisabled() with %q = %v, want %v", value, got, want)
 		}
 	}
 }

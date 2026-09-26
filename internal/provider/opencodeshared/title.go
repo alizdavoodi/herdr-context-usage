@@ -87,11 +87,6 @@ func (t Title) Comparison() (string, []any) {
 // returns at most two ids, because one is a match and two is an ambiguity.
 type Lookup func(ctx context.Context, directory string, title Title) ([]string, error)
 
-// ResolutionTerminalTitle is the resolution mode both providers record when a
-// title produced the session. It is untyped so each provider can keep its own
-// mode type while the recorded string stays identical.
-const ResolutionTerminalTitle = "terminal_title"
-
 // CollectIDs drains a lookup's rows. It is shared so that a query returning two
 // rows means the same thing in both providers.
 func CollectIDs(rows *sql.Rows) ([]string, error) {
@@ -109,14 +104,14 @@ func CollectIDs(rows *sql.Rows) ([]string, error) {
 	return ids, nil
 }
 
-// ParseTitle decides which of the three title forms a pane is showing.
-func ParseTitle(terminalTitle string) (Title, error) {
+// parseTitle decides which of the three title forms a pane is showing.
+func parseTitle(terminalTitle string) (Title, error) {
 	if terminalTitle == untitledTitle {
 		return Title{}, ErrUntitled
 	}
 	text, ok := strings.CutPrefix(terminalTitle, titlePrefix)
 	if !ok || text == "" {
-		if TitleDisabled() {
+		if titleDisabled() {
 			return Title{}, ErrTitleDisabled
 		}
 		return Title{}, ErrTitleUnavailable
@@ -142,7 +137,7 @@ func ParseTitle(terminalTitle string) (Title, error) {
 // agent session id. Both providers share every step except the lookup, which
 // they own because their schemas differ.
 func ResolveTitle(ctx context.Context, directory, terminalTitle string, lookup Lookup) (string, error) {
-	title, err := ParseTitle(terminalTitle)
+	title, err := parseTitle(terminalTitle)
 	if err != nil {
 		return "", err
 	}
@@ -161,11 +156,11 @@ func ResolveTitle(ctx context.Context, directory, terminalTitle string, lookup L
 	return matches[0], nil
 }
 
-// TitleDisabled reports whether this process inherited the variable that turns
+// titleDisabled reports whether this process inherited the variable that turns
 // opencode's terminal title off. It is a hint about our own environment rather
 // than proof about the agent's, which is why it only ever annotates a title we
 // already failed to read.
-func TitleDisabled() bool {
+func titleDisabled() bool {
 	switch strings.ToLower(os.Getenv(disableTitleEnv)) {
 	case "true", "1":
 		return true

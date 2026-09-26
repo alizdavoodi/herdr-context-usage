@@ -21,10 +21,11 @@ const miniSubcommand = "mini"
 //
 // It takes precedence over ErrTitleDisabled where both could apply. That is not
 // arbitrary: this is positive evidence read from the pane's own process list,
-// whereas TitleDisabled() is hedged in its own comment as a hint about our
-// environment rather than proof about the agent's. A mini pane started from a
-// shell exporting OPENCODE_DISABLE_TERMINAL_TITLE would otherwise be blamed on
-// the variable, which is a confidently wrong reason for a correct blank.
+// whereas ErrTitleDisabled rests on a variable read from our own environment,
+// which opencodeshared hedges as a hint rather than proof about the agent's. A
+// mini pane started from a shell exporting OPENCODE_DISABLE_TERMINAL_TITLE would
+// otherwise be blamed on the variable, which is a confidently wrong reason for a
+// correct blank.
 //
 // Wrapping ErrTitleUnavailable is also what keeps the classification right
 // without touching States: that answer is already superseded, and
