@@ -11,7 +11,7 @@ import (
 	"github.com/alizdavoodi/herdr-context-usage/internal/report"
 )
 
-func TestSemanticStatesClassifyEveryAnswer(t *testing.T) {
+func TestStatesClassifyEveryAnswer(t *testing.T) {
 	t.Parallel()
 
 	states := New("").States()
