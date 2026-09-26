@@ -105,7 +105,3 @@ func processKind(process Process) Kind {
 		return None
 	}
 }
-
-func (k Kind) Implemented() bool {
-	return k == Claude || k == Codex || k == OpenCode || k == OpenCode2 || k == Pi || k == Omp
-}

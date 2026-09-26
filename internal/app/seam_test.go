@@ -93,18 +93,3 @@ func TestProvidersDeclareAJustCompactedSentinel(t *testing.T) {
 		}
 	}
 }
-
-// Implemented no longer gates dispatch — the registry does — but it stays
-// public and still reads as the answer to whether this plugin can measure a
-// kind. Pinning it to the registry keeps it from drifting into a claim the code
-// cannot honour. The opposite direction needs no test: a kind Implemented but
-// unregistered now clears its row rather than keeping a stale value.
-func TestImplementedAgreesWithRegistry(t *testing.T) {
-	t.Parallel()
-
-	for _, registered := range registry(Config{}) {
-		if !registered.Kind().Implemented() {
-			t.Errorf("provider %s is registered but Implemented() denies it", registered.Kind())
-		}
-	}
-}
