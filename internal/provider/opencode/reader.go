@@ -37,8 +37,8 @@ type Store struct {
 	database *sql.DB
 }
 
-func Open(ctx context.Context, explicitPath string) (*Store, error) {
-	path, err := opencodeshared.DataPath(explicitPath, "opencode.db")
+func Open(ctx context.Context, explicitPath, dataHome string) (*Store, error) {
+	path, err := opencodeshared.DataPath(explicitPath, dataHome, "opencode.db")
 	if err != nil {
 		return nil, err
 	}

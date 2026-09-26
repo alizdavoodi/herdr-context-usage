@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 )
 
 type ResolutionMode string
@@ -48,7 +50,7 @@ type sessionMetadata struct {
 }
 
 func Resolve(input SessionInput) (ResolvedSession, error) {
-	home, err := resolveHome(input.CodexHome)
+	home, err := provider.Home(input.CodexHome, ".codex")
 	if err != nil {
 		return ResolvedSession{}, err
 	}
@@ -75,20 +77,6 @@ func Resolve(input SessionInput) (ResolvedSession, error) {
 		return ResolvedSession{}, err
 	}
 	return ResolvedSession{Path: path, Mode: ResolutionForegroundCWD}, nil
-}
-
-func resolveHome(explicit string) (string, error) {
-	if explicit != "" {
-		return explicit, nil
-	}
-	if configured := os.Getenv("CODEX_HOME"); configured != "" {
-		return configured, nil
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("find home directory: %w", err)
-	}
-	return filepath.Join(home, ".codex"), nil
 }
 
 func reportedPath(home string, session AgentSession) (string, error) {

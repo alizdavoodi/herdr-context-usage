@@ -40,7 +40,7 @@ func (opencodeProvider) Resolve(ctx context.Context, agent herdr.Agent, _ []prov
 		resolvedMode := string(native.Mode)
 		mode = &resolvedMode
 	}
-	store, err := opencode.Open(ctx, config.OpenCodeDB)
+	store, err := opencode.Open(ctx, config.OpenCodeDB, config.OpenCodeDataHome)
 	if err != nil {
 		return Resolved{Mode: mode}, err
 	}

@@ -72,10 +72,9 @@ func TestResolveRejectsARelativeReportedPath(t *testing.T) {
 
 // A pane reporting an absolute path is fully resolvable without a home, so a
 // home that cannot be resolved at all must not sink it. Unsetting HOME with no
-// configured home and no override is the only way to make resolveHome fail, so
-// this case sets the environment and cannot run in parallel.
+// configured home is the only way to make the home lookup fail, so this case
+// sets the environment and cannot run in parallel.
 func TestResolveAPathWithoutAResolvableHome(t *testing.T) {
-	t.Setenv("PI_CODING_AGENT_DIR", "")
 	t.Setenv("HOME", "")
 
 	want := filepath.Join(t.TempDir(), "sessions", repoSessionDir, repoTranscript)
@@ -240,46 +239,21 @@ func TestResolveUnlabelledValues(t *testing.T) {
 	}
 }
 
-// PI_CODING_AGENT_DIR is shared with omp, so a user who exported it redirected
-// both agents at once and this provider has to look where they actually wrote.
-// The configured home still wins, because one shared variable cannot express two
-// stores. These cases set the environment and so cannot run in parallel.
-func TestResolveHomePrecedence(t *testing.T) {
-	configured := t.TempDir()
-	fromEnv := t.TempDir()
+// With no configured home, pi's store is looked for under ~/.pi/agent. Which
+// home wins when one is configured is pinned once, in the provider root; what
+// stays here is this provider's own default. Sets HOME, so it cannot run in
+// parallel.
+func TestResolveDefaultsToPisOwnHome(t *testing.T) {
 	fromDefault := t.TempDir()
-
-	wantConfigured := writeStore(t, configured, map[string][]string{repoSessionDir: {repoTranscript}})[repoTranscript]
-	wantEnv := writeStore(t, fromEnv, map[string][]string{repoSessionDir: {repoTranscript}})[repoTranscript]
-	wantDefault := writeStore(t, filepath.Join(fromDefault, ".pi", "agent"), map[string][]string{repoSessionDir: {repoTranscript}})[repoTranscript]
-
-	session := &AgentSession{Kind: "id", Value: repoSessionID}
-
-	t.Setenv("PI_CODING_AGENT_DIR", fromEnv)
-	got, err := Resolve(SessionInput{PiHome: configured, AgentSession: session})
-	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
-	}
-	if got.Path != wantConfigured {
-		t.Fatalf("Resolve() = %q, want the configured home %q", got.Path, wantConfigured)
-	}
-
-	got, err = Resolve(SessionInput{AgentSession: session})
-	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
-	}
-	if got.Path != wantEnv {
-		t.Fatalf("Resolve() = %q, want the PI_CODING_AGENT_DIR home %q", got.Path, wantEnv)
-	}
-
-	t.Setenv("PI_CODING_AGENT_DIR", "")
+	want := writeStore(t, filepath.Join(fromDefault, ".pi", "agent"), map[string][]string{repoSessionDir: {repoTranscript}})[repoTranscript]
 	t.Setenv("HOME", fromDefault)
-	got, err = Resolve(SessionInput{AgentSession: session})
+
+	got, err := Resolve(SessionInput{AgentSession: &AgentSession{Kind: "id", Value: repoSessionID}})
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
 	}
-	if got.Path != wantDefault {
-		t.Fatalf("Resolve() = %q, want the default ~/.pi/agent home %q", got.Path, wantDefault)
+	if got.Path != want {
+		t.Fatalf("Resolve() = %q, want the default ~/.pi/agent home %q", got.Path, want)
 	}
 }
 

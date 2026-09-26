@@ -548,7 +548,6 @@ func oracleDisagreementIn(t *testing.T, log string) string {
 // resolves without a home and must stay healthy; that is pinned in the provider
 // package, because only the id branch reaches a home at all.
 func TestRefreshClearsOmpRowWhenTheAgentHomeCannotBeResolved(t *testing.T) {
-	t.Setenv("PI_CODING_AGENT_DIR", "")
 	t.Setenv("HOME", "")
 
 	var log bytes.Buffer
@@ -569,9 +568,14 @@ func TestRefreshClearsOmpRowWhenTheAgentHomeCannotBeResolved(t *testing.T) {
 		t.Fatalf("measurement reported zero occupancy; want null: %s", log.String())
 	}
 	// The two blanking reasons have different fixes — install the integration
-	// against export a home — so the record has to tell them apart.
-	if got := log.String(); !strings.Contains(got, "omp agent home cannot be resolved") ||
+	// against export a home — so the record has to tell them apart. The home
+	// answer is a fact about the host and carries no agent's name; the record's
+	// provider field is what names the agent.
+	if got := log.String(); !strings.Contains(got, "agent home cannot be resolved") ||
 		strings.Contains(got, "omp agent session cannot be resolved") {
 		t.Fatalf("measurement = %s, want the home named distinguishably from an unresolved agent session", got)
+	}
+	if got := log.String(); !strings.Contains(got, `"provider":"omp"`) {
+		t.Fatalf("measurement = %s, want the provider field to name the agent the home answer does not", got)
 	}
 }

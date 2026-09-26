@@ -392,7 +392,8 @@ func TestRefreshClearsPiRowWhenNoAssistantTurnHasCompleted(t *testing.T) {
 // sentinel declared and wrapped but left out of SemanticStates, which is the
 // defect's exact shape. The record written was context_state "unknown",
 // occupancy null, resolution_mode null, error "pi agent home cannot be
-// resolved: $HOME is not defined" — and clears was empty, so the pane kept
+// resolved: $HOME is not defined" (that sentinel's text at the time, before
+// it moved to the provider root) — and clears was empty, so the pane kept
 // 27,905 from its previous round.
 //
 // Sets the environment, so it cannot run in parallel. Unsetting HOME defeats
@@ -400,7 +401,6 @@ func TestRefreshClearsPiRowWhenNoAssistantTurnHasCompleted(t *testing.T) {
 // resolves without a home and must stay healthy; that is pinned in the provider
 // package, because only the id branch reaches a home at all.
 func TestRefreshClearsPiRowWhenTheAgentHomeCannotBeResolved(t *testing.T) {
-	t.Setenv("PI_CODING_AGENT_DIR", "")
 	t.Setenv("HOME", "")
 
 	var log bytes.Buffer
@@ -421,9 +421,14 @@ func TestRefreshClearsPiRowWhenTheAgentHomeCannotBeResolved(t *testing.T) {
 		t.Fatalf("measurement reported zero occupancy; want null: %s", log.String())
 	}
 	// The two blanking reasons have different fixes — install the integration
-	// against export a home — so the record has to tell them apart.
-	if got := log.String(); !strings.Contains(got, "pi agent home cannot be resolved") ||
+	// against export a home — so the record has to tell them apart. The home
+	// answer is a fact about the host and carries no agent's name; the record's
+	// provider field is what names the agent.
+	if got := log.String(); !strings.Contains(got, "agent home cannot be resolved") ||
 		strings.Contains(got, "pi agent session cannot be resolved") {
 		t.Fatalf("measurement = %s, want the home named distinguishably from an unresolved agent session", got)
+	}
+	if got := log.String(); !strings.Contains(got, `"provider":"pi"`) {
+		t.Fatalf("measurement = %s, want the provider field to name the agent the home answer does not", got)
 	}
 }

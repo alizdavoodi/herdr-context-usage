@@ -24,7 +24,7 @@ func (opencode2Provider) JustCompacted() error { return opencode2.ErrJustCompact
 // occupancy and a ModelID, so the Read closure forwards the ModelID to the
 // measurement record. Cleanup closes the store after reading.
 func (opencode2Provider) Resolve(ctx context.Context, agent herdr.Agent, processes []provider.Process, config Config) (Resolved, error) {
-	store, err := opencode2.Open(ctx, config.OpenCode2DB)
+	store, err := opencode2.Open(ctx, config.OpenCode2DB, config.OpenCodeDataHome)
 	if err != nil {
 		return Resolved{}, err
 	}

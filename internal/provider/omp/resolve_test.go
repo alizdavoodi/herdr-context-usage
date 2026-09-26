@@ -109,10 +109,9 @@ func TestResolveRejectsARelativeReportedPath(t *testing.T) {
 
 // A pane reporting an absolute path is fully resolvable without a home, so a
 // home that cannot be resolved at all must not sink it. Unsetting HOME with no
-// configured home and no override is the only way to make resolveHome fail, so
-// this case sets the environment and cannot run in parallel.
+// configured home is the only way to make the home lookup fail, so this case
+// sets the environment and cannot run in parallel.
 func TestResolveAPathWithoutAResolvableHome(t *testing.T) {
-	t.Setenv("PI_CODING_AGENT_DIR", "")
 	t.Setenv("HOME", "")
 
 	want := filepath.Join(t.TempDir(), "sessions", repoSessionDir, repoTranscript)
@@ -315,52 +314,24 @@ func TestResolveUnlabelledValues(t *testing.T) {
 	}
 }
 
-// The home is configured independently of pi's, and its default is omp's own,
-// but the override variable is shared: a user who exported PI_CODING_AGENT_DIR
-// redirected both agents at once and this provider has to look where they
-// actually wrote. The configured home still wins, because one shared variable
-// cannot express two stores. These cases set the environment and so cannot run
-// in parallel.
-func TestResolveHomePrecedence(t *testing.T) {
-	configured := t.TempDir()
-	fromEnv := t.TempDir()
+// The default is omp's own home, not pi's. A provider that defaulted to
+// ~/.pi/agent would measure the wrong agent on any machine running both, and
+// would do it silently: the two stores have the same layout below the home, so
+// the same transcript is laid out under both here and only the right default
+// resolves to omp's. Which home wins when one is configured is pinned once, in
+// the provider root. Sets HOME, so it cannot run in parallel.
+func TestResolveDefaultsToOmpsOwnHomeNotPis(t *testing.T) {
 	fromDefault := t.TempDir()
-
-	wantConfigured := writeStore(t, configured, map[string][]string{repoSessionDir: {repoTranscript}})[repoTranscript]
-	wantEnv := writeStore(t, fromEnv, map[string][]string{repoSessionDir: {repoTranscript}})[repoTranscript]
-	wantDefault := writeStore(t, filepath.Join(fromDefault, ".omp", "agent"), map[string][]string{repoSessionDir: {repoTranscript}})[repoTranscript]
-
-	session := &AgentSession{Kind: "id", Value: repoSessionID}
-
-	t.Setenv("PI_CODING_AGENT_DIR", fromEnv)
-	got, err := Resolve(SessionInput{OmpHome: configured, AgentSession: session})
-	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
-	}
-	if got.Path != wantConfigured {
-		t.Fatalf("Resolve() = %q, want the configured home %q", got.Path, wantConfigured)
-	}
-
-	got, err = Resolve(SessionInput{AgentSession: session})
-	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
-	}
-	if got.Path != wantEnv {
-		t.Fatalf("Resolve() = %q, want the PI_CODING_AGENT_DIR home %q", got.Path, wantEnv)
-	}
-
-	// The default is omp's own home, not pi's. A provider that defaulted to
-	// ~/.pi/agent would measure the wrong agent on any machine running both, and
-	// would do it silently: the two stores have the same layout below the home.
-	t.Setenv("PI_CODING_AGENT_DIR", "")
-	t.Setenv("HOME", fromDefault)
+	want := writeStore(t, filepath.Join(fromDefault, ".omp", "agent"), map[string][]string{repoSessionDir: {repoTranscript}})[repoTranscript]
 	writeStore(t, filepath.Join(fromDefault, ".pi", "agent"), map[string][]string{repoSessionDir: {repoTranscript}})
-	got, err = Resolve(SessionInput{AgentSession: session})
+	t.Setenv("HOME", fromDefault)
+
+	got, err := Resolve(SessionInput{AgentSession: &AgentSession{Kind: "id", Value: repoSessionID}})
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
 	}
-	if got.Path != wantDefault {
-		t.Fatalf("Resolve() = %q, want the default ~/.omp/agent home %q", got.Path, wantDefault)
+	if got.Path != want {
+		t.Fatalf("Resolve() = %q, want the default ~/.omp/agent home %q", got.Path, want)
 	}
 }
 

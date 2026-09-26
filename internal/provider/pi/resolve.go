@@ -3,9 +3,10 @@ package pi
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 )
 
 // One mode, because resolution has one source. herdr's reported agent session is
@@ -16,17 +17,6 @@ type ResolutionMode string
 const ResolutionAgentSession ResolutionMode = "agent_session"
 
 var ErrNoSession = errors.New("pi agent session cannot be resolved")
-
-// ErrNoHome is declared here rather than in piompshared, and the choice is the
-// one this sentinel turns on. That package's cap is written in terms of
-// measurement — a second exported name there has to be measured identical on
-// both agents — and an unset $HOME produces nothing to measure on either: it is
-// a fact about the host, not about either agent's store, and no agent release
-// can change it. So it cannot earn its way in under the stated rule and would
-// have to be admitted by exception, which is what erodes a cap whose only
-// enforcement is that it has never been crossed. Two one-line declarations cost
-// less than that precedent.
-var ErrNoHome = errors.New("pi agent home cannot be resolved")
 
 // Source and Agent are unread here, and deliberately left that way rather than
 // deleted: all five providers declare them and none reads either, so they are one
@@ -90,7 +80,7 @@ func Resolve(input SessionInput) (ResolvedSession, error) {
 	// up front: a pane reporting a path is fully resolvable without one, and
 	// looking it up early would let a failing home lookup leave that pane
 	// unmeasured for a directory it never needed.
-	home, err := resolveHome(input.PiHome)
+	home, err := provider.Home(input.PiHome, filepath.Join(".pi", "agent"))
 	if err != nil {
 		return ResolvedSession{}, err
 	}
@@ -117,27 +107,6 @@ func reportsAPath(session AgentSession) bool {
 	default:
 		return filepath.IsAbs(session.Value)
 	}
-}
-
-// resolveHome mirrors claude.resolveHome. PI_CODING_AGENT_DIR is shared with
-// omp, so a user who has exported it has redirected both agents at once and this
-// provider has to look where they actually wrote.
-func resolveHome(explicit string) (string, error) {
-	if explicit != "" {
-		return explicit, nil
-	}
-	if configured := os.Getenv("PI_CODING_AGENT_DIR"); configured != "" {
-		return configured, nil
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		// Both are wrapped: ErrNoHome is what SemanticStates classifies on, and the
-		// operating system's own text is the maintenance diagnostic. Classifying on
-		// that text instead would bind this provider to a message that reads
-		// "$HOME is not defined" on unix and something else elsewhere.
-		return "", fmt.Errorf("%w: %w", ErrNoHome, err)
-	}
-	return filepath.Join(home, ".pi", "agent"), nil
 }
 
 // uniqueTranscript finds the transcript whose file name ends with id.

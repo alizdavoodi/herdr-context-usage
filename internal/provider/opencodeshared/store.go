@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -84,16 +86,17 @@ func requireTables(ctx context.Context, database *sql.DB, tables []string) error
 
 // DataPath resolves one of opencode's store filenames. Both versions keep their
 // databases side by side in the same directory and differ only in the name.
-func DataPath(explicit, filename string) (string, error) {
+//
+// dataHome is $XDG_DATA_HOME as main read it: opencode files its stores under
+// that directory when it is set and under ~/.local/share otherwise, so it plays
+// the part an agent's configured home plays for the other providers.
+func DataPath(explicit, dataHome, filename string) (string, error) {
 	if explicit != "" {
 		return explicit, nil
 	}
-	if dataHome := os.Getenv("XDG_DATA_HOME"); dataHome != "" {
-		return filepath.Join(dataHome, "opencode", filename), nil
-	}
-	home, err := os.UserHomeDir()
+	base, err := provider.Home(dataHome, filepath.Join(".local", "share"))
 	if err != nil {
-		return "", fmt.Errorf("find home directory: %w", err)
+		return "", err
 	}
-	return filepath.Join(home, ".local", "share", "opencode", filename), nil
+	return filepath.Join(base, "opencode", filename), nil
 }

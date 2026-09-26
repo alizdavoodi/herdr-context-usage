@@ -27,6 +27,10 @@ type Config struct {
 	CodexHome   string
 	OpenCodeDB  string
 	OpenCode2DB string
+	// OpenCodeDataHome is the data directory whose opencode subdirectory holds
+	// both opencode stores when no explicit database path is given, i.e.
+	// $XDG_DATA_HOME.
+	OpenCodeDataHome string
 	// The pi and omp homes are per-provider rather than shared even though both
 	// agents honour one override variable: a single field would point a pi pane
 	// at omp's store on any machine running both, and the two stores have the

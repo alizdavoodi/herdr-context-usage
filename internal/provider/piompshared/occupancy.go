@@ -16,11 +16,11 @@
 //
 // A second exported name here would need its own measurement on both agents.
 // That cap has been tested once and held: ErrNoHome, which both providers need
-// in identical form, is declared in each of them instead. An unset $HOME is a
-// fact about the host rather than about either store, so there is nothing to
-// measure on either agent and it could only have been admitted here by
-// exception — and an exception is what erodes a cap enforced only by never
-// having been crossed.
+// in identical form, is declared in the provider root instead, where every
+// provider shares it. An unset $HOME is a fact about the host rather than about
+// either store, so there is nothing to measure on either agent and it could only
+// have been admitted here by exception — and an exception is what erodes a cap
+// enforced only by never having been crossed.
 package piompshared
 
 // Occupancy sums the three counts describing the window a turn was sent with,

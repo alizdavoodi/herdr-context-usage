@@ -165,7 +165,7 @@ func TestReadOccupancyRejectsMissingV1SchemaAndSession(t *testing.T) {
 		if err := database.Close(); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := Open(context.Background(), databasePath); !errors.Is(err, ErrNoSchema) {
+		if _, err := Open(context.Background(), databasePath, ""); !errors.Is(err, ErrNoSchema) {
 			t.Fatalf("Open() error = %v, want ErrNoSchema", err)
 		}
 	})
@@ -260,7 +260,7 @@ func TestResolveTerminalTitleToleratesTruncationAndRefusesGuesses(t *testing.T) 
 func TestOpenMissingStoreIsSemantic(t *testing.T) {
 	t.Parallel()
 
-	if _, err := Open(context.Background(), filepath.Join(t.TempDir(), "opencode.db")); !errors.Is(err, ErrStoreNotReady) {
+	if _, err := Open(context.Background(), filepath.Join(t.TempDir(), "opencode.db"), ""); !errors.Is(err, ErrStoreNotReady) {
 		t.Fatalf("Open() error = %v, want ErrStoreNotReady", err)
 	}
 }
@@ -271,7 +271,7 @@ func TestOpenDirectoryIsTransient(t *testing.T) {
 	// Both opencode providers answer this the same way now: a directory where
 	// the database should be is not a store that has not been written yet, so it
 	// preserves the pane's value instead of blanking it.
-	if _, err := Open(context.Background(), t.TempDir()); err == nil || errors.Is(err, ErrStoreNotReady) || errors.Is(err, ErrNoSchema) {
+	if _, err := Open(context.Background(), t.TempDir(), ""); err == nil || errors.Is(err, ErrStoreNotReady) || errors.Is(err, ErrNoSchema) {
 		t.Fatalf("Open() error = %v, want a transient database failure", err)
 	}
 }
@@ -313,7 +313,7 @@ func exec(t *testing.T, database *sql.DB, query string, args ...any) {
 
 func openStore(t *testing.T, path string) *Store {
 	t.Helper()
-	store, err := Open(context.Background(), path)
+	store, err := Open(context.Background(), path, "")
 	if err != nil {
 		t.Fatal(err)
 	}
