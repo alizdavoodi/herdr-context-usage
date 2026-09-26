@@ -38,6 +38,83 @@ func TestResolveReportedSessionID(t *testing.T) {
 	}
 }
 
+// A reported path is fully resolvable without a home, so a home that cannot be
+// resolved at all must not sink it. Unsetting HOME with no configured home is
+// the only way to make the home lookup fail, so this case sets the environment
+// and cannot run in parallel.
+func TestResolveAPathWithoutAResolvableHome(t *testing.T) {
+	t.Setenv("HOME", "")
+
+	reported := filepath.Join(t.TempDir(), "reported.jsonl")
+	got, err := Resolve(SessionInput{AgentSession: &provider.AgentSession{Kind: "path", Value: reported}})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v, want the reported path used without a home", err)
+	}
+	if got.Path != reported || got.Mode != ResolutionAgentSession {
+		t.Fatalf("Resolve() = %#v, want %q and agent_session mode", got, reported)
+	}
+}
+
+// herdr named a session for this pane, so a working-directory match could only
+// disagree with it: a reported session this provider cannot use blanks the row
+// rather than falling back. The active TUI main thread under the pane's
+// directory is the bait, because the fallback would accept it.
+func TestResolveBlanksAnUnusableReportedSession(t *testing.T) {
+	t.Parallel()
+
+	home := t.TempDir()
+	bait := writeRollout(t, home, "active-session", "/work/acme", nil, "cli")
+	writeLock(t, home, "active-session")
+
+	for _, session := range []provider.AgentSession{
+		// A relative path would be read against the plugin's own working
+		// directory, where a same-named file is not this pane's rollout.
+		{Kind: "path", Value: filepath.Base(bait)},
+		{Kind: "path", Value: "sessions/2026/08/16/" + filepath.Base(bait)},
+		{Kind: "path", Value: "./" + filepath.Base(bait)},
+		{Kind: "path", Value: "../" + filepath.Base(bait)},
+		// A label outside herdr's set is refused whatever its value looks like.
+		{Kind: "unknown", Value: bait},
+	} {
+		got, err := Resolve(SessionInput{CodexHome: home, ForegroundCWD: "/work/acme", AgentSession: &session})
+		if !errors.Is(err, ErrNoSession) {
+			t.Fatalf("Resolve(%#v) = %#v, %v; want ErrNoSession", session, got, err)
+		}
+	}
+}
+
+// An id is matched against rollout metadata and never opened as a file, even
+// when it looks like an absolute path. Without a unique match there is nothing
+// to resolve to, and reading the value as a path instead would open a file the
+// agent never claimed was one.
+func TestResolveNeverReadsAReportedIDAsAPath(t *testing.T) {
+	t.Parallel()
+
+	home := t.TempDir()
+	// A real rollout sits at the absolute path the id spells, and no rollout's
+	// metadata carries that id.
+	lookalike := writeRollout(t, home, "session-1", "/work/acme", nil, "cli")
+	// Two rollouts carry this id, so the match is not unique.
+	shared := filepath.Join(home, "sessions", "shared.jsonl")
+	for _, day := range []string{"16", "17"} {
+		path := filepath.Join(home, "sessions", "2026", "08", day, "rollout-"+day+".jsonl")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		entry := `{"type":"session_meta","payload":{"id":` + strconv.Quote(shared) + `,"cwd":"/work/acme","originator":"codex-tui","source":"cli"}}` + "\n"
+		if err := os.WriteFile(path, []byte(entry), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for _, value := range []string{lookalike, shared} {
+		got, err := Resolve(SessionInput{CodexHome: home, AgentSession: &provider.AgentSession{Kind: "id", Value: value}})
+		if !errors.Is(err, ErrNoSession) {
+			t.Fatalf("Resolve(id=%q) = %#v, %v; want ErrNoSession", value, got, err)
+		}
+	}
+}
+
 func TestResolveFromForegroundCWDUsesActiveMainThread(t *testing.T) {
 	t.Parallel()
 

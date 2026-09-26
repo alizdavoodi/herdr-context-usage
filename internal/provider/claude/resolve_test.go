@@ -24,6 +24,57 @@ func TestResolvePrefersReportedAgentSession(t *testing.T) {
 	}
 }
 
+// A reported path is fully resolvable without a home, so a home that cannot be
+// resolved at all must not sink it. Unsetting HOME with no configured home is
+// the only way to make the home lookup fail, so this case sets the environment
+// and cannot run in parallel.
+func TestResolveAPathWithoutAResolvableHome(t *testing.T) {
+	t.Setenv("HOME", "")
+
+	reported := filepath.Join(t.TempDir(), "reported.jsonl")
+	got, err := Resolve(SessionInput{AgentSession: &provider.AgentSession{Kind: "path", Value: reported}})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v, want the reported path used without a home", err)
+	}
+	if got.Path != reported || got.Mode != ResolutionAgentSession {
+		t.Fatalf("Resolve() = %#v, want %q and agent_session mode", got, reported)
+	}
+}
+
+// herdr named a session for this pane, so a working-directory match could only
+// disagree with it: a reported session this provider cannot use blanks the row
+// rather than falling back. The sole transcript under the pane's directory is
+// the bait, because the fallback would accept it.
+func TestResolveBlanksAnUnusableReportedSession(t *testing.T) {
+	t.Parallel()
+
+	home := t.TempDir()
+	cwd := "/work/acme"
+	bait := filepath.Join(home, "projects", "-work-acme", "only.jsonl")
+	if err := os.MkdirAll(filepath.Dir(bait), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bait, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, session := range []provider.AgentSession{
+		// A relative path would be read against the plugin's own working
+		// directory, where a same-named file is not this pane's transcript.
+		{Kind: "path", Value: "only.jsonl"},
+		{Kind: "path", Value: "projects/-work-acme/only.jsonl"},
+		{Kind: "path", Value: "./only.jsonl"},
+		{Kind: "path", Value: "../only.jsonl"},
+		// A label outside herdr's set is refused whatever its value looks like.
+		{Kind: "unknown", Value: bait},
+	} {
+		got, err := Resolve(SessionInput{ClaudeHome: home, ForegroundCWD: cwd, AgentSession: &session})
+		if err != ErrNoSession {
+			t.Fatalf("Resolve(%#v) = %#v, %v; want ErrNoSession", session, got, err)
+		}
+	}
+}
+
 func TestResolveReportedSessionID(t *testing.T) {
 	t.Parallel()
 

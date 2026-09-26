@@ -42,17 +42,28 @@ type processSession struct {
 }
 
 func Resolve(input SessionInput) (ResolvedSession, error) {
+	if path, ok := input.AgentSession.Path(); ok {
+		return ResolvedSession{Path: path, Mode: ResolutionAgentSession}, nil
+	}
+
+	// Everything below needs the store and a reported path does not, so the
+	// home is resolved only once the path branch has passed: looking it up
+	// early would let a failing home lookup leave a pane unmeasured for a
+	// directory it never needed.
 	home, err := provider.Home(input.ClaudeHome, ".claude")
 	if err != nil {
 		return ResolvedSession{}, err
 	}
 
 	if input.AgentSession != nil && input.AgentSession.Value != "" {
-		path, err := reportedPath(home, input.ForegroundCWD, *input.AgentSession)
-		if err != nil {
-			return ResolvedSession{}, err
+		// herdr named a session for this pane, so one this provider cannot use
+		// blanks the row rather than falling back: a working-directory match
+		// could only disagree with it.
+		id, ok := input.AgentSession.ID()
+		if !ok || input.ForegroundCWD == "" {
+			return ResolvedSession{}, ErrNoSession
 		}
-		return ResolvedSession{Path: path, Mode: ResolutionAgentSession}, nil
+		return ResolvedSession{Path: transcriptPath(home, input.ForegroundCWD, id), Mode: ResolutionAgentSession}, nil
 	}
 
 	if input.ForegroundCWD == "" {
@@ -80,23 +91,6 @@ func Resolve(input SessionInput) (ResolvedSession, error) {
 		return ResolvedSession{Path: matches[0], Mode: ResolutionForegroundCWD}, nil
 	}
 	return ResolvedSession{}, ErrNoSession
-}
-
-func reportedPath(home, cwd string, session provider.AgentSession) (string, error) {
-	switch strings.ToLower(session.Kind) {
-	case "path":
-		return session.Value, nil
-	case "id":
-		if cwd == "" {
-			return "", ErrNoSession
-		}
-		return transcriptPath(home, cwd, session.Value), nil
-	default:
-		if filepath.IsAbs(session.Value) {
-			return session.Value, nil
-		}
-		return "", ErrNoSession
-	}
 }
 
 func readProcessSession(home string, pid int) (processSession, error) {
