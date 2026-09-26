@@ -16,13 +16,12 @@ import (
 func TestSemanticStatesClassifyEveryAnswer(t *testing.T) {
 	t.Parallel()
 
-	states := SemanticStates()
+	states := New("", "").States()
 	tests := []struct {
 		name string
 		err  error
 		want report.Class
 	}{
-		{name: "unresolvable session", err: ErrNoSession, want: report.Superseded},
 		{name: "unresolvable agent home", err: provider.ErrNoHome, want: report.Superseded},
 		{name: "session has produced no reading", err: ErrNoOccupancy, want: report.Superseded},
 		{name: "store not written yet", err: ErrStoreNotReady, want: report.Superseded},
@@ -30,14 +29,14 @@ func TestSemanticStatesClassifyEveryAnswer(t *testing.T) {
 		{name: "untitled session", err: opencodeshared.ErrUntitled, want: report.Superseded},
 		{name: "pane reports no opencode title", err: opencodeshared.ErrTitleUnavailable, want: report.Superseded},
 		{name: "terminal title disabled in this environment", err: opencodeshared.ErrTitleDisabled, want: report.Superseded},
-		// Neither this nor the line above appears in SemanticStates. Both wrap the
+		// Neither this nor the line above appears in States. Both wrap the
 		// unavailable-title answer that does, and both are listed so that a reader
 		// adding a third attributed reason sees it has to keep that wrapping.
 		{name: "mini interface", err: ErrMiniInterface, want: report.Superseded},
 		{name: "plugin route title", err: opencodeshared.ErrPluginTitle, want: report.Superseded},
 		{name: "title matches no single session", err: opencodeshared.ErrNoTitleMatch, want: report.Superseded},
 		{
-			// Open turns a missing database into ErrStoreNotReady, so a raw
+			// open turns a missing database into ErrStoreNotReady, so a raw
 			// missing-file error here would mean the store taxonomy was bypassed.
 			name: "unexplained missing file",
 			err:  fmt.Errorf("stat opencode2 store: %w", fs.ErrNotExist),
@@ -63,23 +62,23 @@ func TestSemanticStatesClassifyEveryAnswer(t *testing.T) {
 // Classify's transient default and froze the displayed occupancy for the life
 // of the pane, while pi and omp blanked theirs on the same host.
 //
-// This drives Open rather than a constructed error so the classification is
+// This drives open rather than a constructed error so the classification is
 // pinned to the shape the provider actually produces. It sets the environment
 // and therefore cannot run in parallel, and unsetting HOME defeats
 // os.UserHomeDir only on unix — on Windows it reads USERPROFILE.
 func TestAnUnresolvableHomeSupersedesTheDisplayedValue(t *testing.T) {
 	t.Setenv("HOME", "")
 
-	_, err := Open(context.Background(), "", "")
+	_, err := open(context.Background(), "", "")
 	if !errors.Is(err, provider.ErrNoHome) {
-		t.Fatalf("Open() error = %v, want it to wrap ErrNoHome", err)
+		t.Fatalf("open() error = %v, want it to wrap ErrNoHome", err)
 	}
 	// With no home there is no store path to stat, so this is not the store
 	// being unwritten, and the two blank for different reasons.
 	if errors.Is(err, ErrStoreNotReady) {
-		t.Fatalf("Open() error = %v, want it distinguishable from a store not written yet", err)
+		t.Fatalf("open() error = %v, want it distinguishable from a store not written yet", err)
 	}
-	if got := report.Classify(err, SemanticStates()); got != report.Superseded {
+	if got := report.Classify(err, New("", "").States()); got != report.Superseded {
 		t.Fatalf("Classify(%v) = %v, want %v", err, got, report.Superseded)
 	}
 }

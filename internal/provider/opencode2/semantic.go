@@ -6,17 +6,17 @@ import (
 	"github.com/alizdavoodi/herdr-context-usage/internal/report"
 )
 
-// SemanticStates declares what each of this provider's answers proves about the
+// States declares what each of this provider's answers proves about the
 // occupancy already displayed: superseded answers clear it, stale-low answers
 // leave it standing as a lower bound, and anything undeclared is transient.
 //
 // fs.ErrNotExist is deliberately absent, for the same reason as in the v1
 // provider: a missing or uninitialised store becomes ErrStoreNotReady when the
 // database is opened, so nothing downstream should ever see the raw error.
-func SemanticStates() report.States {
+func (opencode2Provider) States() report.States {
 	return report.States{
 		Superseded: []error{
-			ErrNoSession, provider.ErrNoHome, ErrNoOccupancy, ErrStoreNotReady, ErrJustCompacted,
+			provider.ErrNoHome, ErrNoOccupancy, ErrStoreNotReady, ErrJustCompacted,
 			// A pane whose title cannot name a session is a pane we must blank,
 			// whichever of the four reasons applies. The reasons are separate so the
 			// blank is diagnosable; the classification is the same for all of them.
@@ -25,7 +25,7 @@ func SemanticStates() report.States {
 			opencodeshared.ErrPluginTitle,
 			opencodeshared.ErrNoTitleMatch,
 		},
-		// A turn in flight never surfaces as an error here: ReadOccupancy crosses
+		// A turn in flight never surfaces as an error here: readOccupancy crosses
 		// in-flight assistant rows and reports the previous completed reading.
 		StaleLow: nil,
 	}

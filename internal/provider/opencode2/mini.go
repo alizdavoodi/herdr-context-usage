@@ -1,9 +1,11 @@
 package opencode2
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/opencodeshared"
 )
 
@@ -25,12 +27,12 @@ const miniSubcommand = "mini"
 // the variable, which is a confidently wrong reason for a correct blank.
 //
 // Wrapping ErrTitleUnavailable is also what keeps the classification right
-// without touching SemanticStates: that answer is already superseded, and
+// without touching States: that answer is already superseded, and
 // errors.Is reaches through.
 var ErrMiniInterface = fmt.Errorf("%w: the pane runs the %s interface, which sets no opencode terminal title",
 	opencodeshared.ErrTitleUnavailable, miniSubcommand)
 
-// RunsMiniInterface reports whether an opencode2 process's argv names the mini
+// runsMiniInterface reports whether an opencode2 process's argv names the mini
 // subcommand. The caller passes the argv of the process dispatch already
 // identified as opencode2; the terminal title takes no part in it, because
 // "opencode2 mini" is what the shell wrote for the command it was running and
@@ -48,7 +50,7 @@ var ErrMiniInterface = fmt.Errorf("%w: the pane runs the %s interface, which set
 // A flag's own value can still absorb the subcommand position — `--log-level
 // debug mini` reads debug as the subcommand — and that is the deliberate cost of
 // not encoding a flag grammar this plugin cannot verify.
-func RunsMiniInterface(argv []string) bool {
+func runsMiniInterface(argv []string) bool {
 	for _, argument := range argv[min(1, len(argv)):] {
 		if strings.HasPrefix(argument, "-") {
 			continue
@@ -56,4 +58,25 @@ func RunsMiniInterface(argv []string) bool {
 		return argument == miniSubcommand
 	}
 	return false
+}
+
+// attributeMiniInterface names the mini interface as the reason a pane reports
+// no opencode title, when the pane's own opencode2 process says that is what it
+// is running.
+//
+// Only an unavailable title is reattributed, which is what makes this
+// attribution rather than parsing. A bare "OpenCode" title, a plugin route, a
+// well-formed title matching no session and a store failure each already carry
+// their own reason and keep it. The mini answer wraps the one it replaces, so
+// the row blanks exactly as before and States needs no new entry.
+func attributeMiniInterface(err error, processes []provider.Process) error {
+	if !errors.Is(err, opencodeshared.ErrTitleUnavailable) {
+		return err
+	}
+	for _, process := range processes {
+		if process.Kind() == provider.OpenCode2 && runsMiniInterface(process.Argv) {
+			return ErrMiniInterface
+		}
+	}
+	return err
 }

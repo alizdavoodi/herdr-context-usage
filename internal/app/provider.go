@@ -14,6 +14,7 @@ import (
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/codex"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/omp"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/opencode"
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider/opencode2"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/pi"
 )
 
@@ -30,7 +31,7 @@ func registry(config Config) []provider.Provider {
 		claude.New(config.ClaudeHome),
 		codex.New(config.CodexHome),
 		opencode.New(config.OpenCodeDB, config.OpenCodeDataHome),
-		opencode2Provider{db: config.OpenCode2DB, dataHome: config.OpenCodeDataHome},
+		opencode2.New(config.OpenCode2DB, config.OpenCodeDataHome),
 		pi.New(config.PiHome),
 		omp.New(config.OmpHome),
 	}
