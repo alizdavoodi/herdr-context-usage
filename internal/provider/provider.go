@@ -35,14 +35,10 @@ type Process struct {
 	Argv  []string `json:"argv"`
 }
 
-type ProcessList struct {
-	Entries []Process
-	// Available keeps a failed lookup distinct from an observed empty list;
-	// only the latter is evidence that an opencode pane is running v1.
-	Available bool
-}
-
-func FromAgent(agent string, processes ProcessList) Kind {
+// FromAgent chooses a pane's kind from herdr's agent label. processes is read
+// only for opencode, whose label hosts both versions; NeedsProcessList says why
+// a list that could not be read must never reach here.
+func FromAgent(agent string, processes []Process) Kind {
 	switch strings.ToLower(strings.TrimSpace(agent)) {
 	case "claude":
 		return Claude
@@ -62,10 +58,7 @@ func FromAgent(agent string, processes ProcessList) Kind {
 	case "opencode2":
 		return OpenCode2
 	case "opencode":
-		if !processes.Available {
-			return None
-		}
-		for _, process := range processes.Entries {
+		for _, process := range processes {
 			if processKind(process) == OpenCode2 {
 				return OpenCode2
 			}
@@ -77,7 +70,11 @@ func FromAgent(agent string, processes ProcessList) Kind {
 
 // NeedsProcessList reports whether classifying an agent depends on its pane's
 // process list. Only opencode does: the one label hosts both v1 and v2, and
-// the process list is the only way to tell them apart.
+// the process list is the only way to tell them apart. An observed empty list
+// is evidence of v1, and a guess would either report nonsense or blank a live
+// value, so an opencode pane whose list could not be read must not be
+// classified at all: the caller skips it for the round and keeps its displayed
+// value.
 func NeedsProcessList(agent string) bool {
 	return strings.ToLower(strings.TrimSpace(agent)) == "opencode"
 }

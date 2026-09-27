@@ -11,27 +11,28 @@ func TestFromAgent(t *testing.T) {
 	tests := []struct {
 		name      string
 		agent     string
-		processes ProcessList
+		processes []Process
 		want      Kind
 	}{
-		{name: "herdr claude wins over a child codex process", agent: "claude", processes: ProcessList{Available: true, Entries: []Process{{Argv0: "codex"}, {Argv0: "claude"}}}, want: Claude},
-		{name: "herdr codex is unambiguous", agent: "codex", processes: ProcessList{Available: true, Entries: []Process{{Argv0: "claude"}, {Argv0: "codex"}}}, want: Codex},
-		{name: "opencode2 wins regardless of process order", agent: "opencode", processes: ProcessList{Available: true, Entries: []Process{{Argv0: "opencode"}, {Argv0: ".OpenCode2"}}}, want: OpenCode2},
-		{name: "opencode v1", agent: "opencode", processes: ProcessList{Available: true, Entries: []Process{{Argv0: "opencode-helper"}, {Argv0: "opencode"}}}, want: OpenCode},
-		{name: "opencode v1 with observed empty process list", agent: "opencode", processes: ProcessList{Available: true, Entries: []Process{}}, want: OpenCode},
-		{name: "opencode version undeterminable without process list", agent: "opencode", processes: ProcessList{}, want: None},
+		{name: "herdr claude wins over a child codex process", agent: "claude", processes: []Process{{Argv0: "codex"}, {Argv0: "claude"}}, want: Claude},
+		{name: "herdr codex is unambiguous", agent: "codex", processes: []Process{{Argv0: "claude"}, {Argv0: "codex"}}, want: Codex},
+		{name: "opencode2 wins regardless of process order", agent: "opencode", processes: []Process{{Argv0: "opencode"}, {Argv0: ".OpenCode2"}}, want: OpenCode2},
+		{name: "opencode v1", agent: "opencode", processes: []Process{{Argv0: "opencode-helper"}, {Argv0: "opencode"}}, want: OpenCode},
+		{name: "opencode v1 with observed empty process list", agent: "opencode", processes: []Process{}, want: OpenCode},
 		// The opencode pair needs the process list to tell its two versions
-		// apart, and returns None without one. pi must not inherit that: herdr
-		// labels it on its own, so a pane whose processes could not be read is
-		// still measurable. This is the only pi case because it is the strongest:
-		// the pi arm returns before it reads the list at all, so a case supplying
-		// one exercises the same arm with an argument nothing looks at.
-		{name: "pi needs no process list", agent: "pi", processes: ProcessList{}, want: Pi},
+		// apart, so a pane whose list could not be read is never classified.
+		// pi must not inherit that: herdr labels it on its own, so a pane whose
+		// processes could not be read is still measurable, which
+		// TestNeedsProcessList pins. This is the only pi case because it is the
+		// strongest: the pi arm returns before it reads the list at all, so a
+		// case supplying one exercises the same arm with an argument nothing
+		// looks at.
+		{name: "pi needs no process list", agent: "pi", processes: nil, want: Pi},
 		// omp is its own label rather than a variant of pi's, so a pane running
 		// it must not resolve to the pi kind and read pi's store.
-		{name: "omp needs no process list", agent: "omp", processes: ProcessList{}, want: Omp},
-		{name: "hermes needs no process list", agent: "hermes", processes: ProcessList{}, want: Hermes},
-		{name: "unrecognised agent", agent: "unknown", processes: ProcessList{Available: true, Entries: []Process{{Argv0: "claude"}}}, want: None},
+		{name: "omp needs no process list", agent: "omp", processes: nil, want: Omp},
+		{name: "hermes needs no process list", agent: "hermes", processes: nil, want: Hermes},
+		{name: "unrecognised agent", agent: "unknown", processes: []Process{{Argv0: "claude"}}, want: None},
 	}
 
 	for _, tt := range tests {
@@ -64,6 +65,9 @@ func TestNeedsProcessList(t *testing.T) {
 		{agent: "claude", want: false},
 		{agent: "codex", want: false},
 		{agent: "opencode2", want: false},
+		{agent: "pi", want: false},
+		{agent: "omp", want: false},
+		{agent: "hermes", want: false},
 		{agent: "unknown", want: false},
 	}
 	for _, tt := range tests {

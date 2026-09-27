@@ -120,7 +120,6 @@ func Refresh(ctx context.Context, client Herdr, eventPaneID string, log io.Write
 	for _, agent := range agents {
 		g.Go(func() error {
 			processes, processErr := client.ProcessInfo(gctx, agent.PaneID)
-			kind := provider.FromAgent(agent.Agent, provider.ProcessList{Entries: processes, Available: processErr == nil})
 			if processErr != nil {
 				// The process list matters in two ways: opencode classification
 				// cannot happen without it, and every provider that uses
@@ -130,14 +129,11 @@ func Refresh(ctx context.Context, client Herdr, eventPaneID string, log io.Write
 				if err := writeMaintenanceDiagnostic(log, MaintenanceDiagnostic{Operation: "process_info", PaneID: agent.PaneID, Error: processErr.Error()}); err != nil {
 					appendErr(err)
 				}
-				// opencode hosts both v1 and v2 under one label and the
-				// process list is the only way to tell them apart. Guessing
-				// would either report nonsense or blank a live value, so the
-				// pane waits a round instead — with its value preserved.
 				if provider.NeedsProcessList(agent.Agent) {
 					return nil
 				}
 			}
+			kind := provider.FromAgent(agent.Agent, processes)
 			// The registry is the single authority on which kinds can be measured.
 			// Gating on it rather than on a parallel predicate means a kind nobody
 			// registered blanks its row instead of silently keeping a previous

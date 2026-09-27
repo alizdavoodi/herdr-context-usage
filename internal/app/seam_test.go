@@ -62,9 +62,9 @@ func TestRegistryHasNoDuplicateKinds(t *testing.T) {
 // then blanks permanently with no error anywhere to explain it.
 //
 // Deriving the label from the kind is what makes this hold for a provider nobody
-// has written yet. The opencode arm needs an available process list to choose
-// between its two versions, and returns the v1 kind when that list is empty,
-// which is what the empty ProcessList below asks for.
+// has written yet. The opencode arm reads the process list to choose between its
+// two versions, and returns the v1 kind when that list is empty, which is what
+// the nil list below asks for.
 func TestEveryRegisteredKindIsReachableFromItsAgentLabel(t *testing.T) {
 	t.Parallel()
 
@@ -72,7 +72,7 @@ func TestEveryRegisteredKindIsReachableFromItsAgentLabel(t *testing.T) {
 		kind := registered.Kind()
 		t.Run(string(kind), func(t *testing.T) {
 			t.Parallel()
-			got := provider.FromAgent(string(kind), provider.ProcessList{Available: true})
+			got := provider.FromAgent(string(kind), nil)
 			if got != kind {
 				t.Fatalf("FromAgent(%q) = %q; the provider registered for %q is unreachable", string(kind), got, kind)
 			}
