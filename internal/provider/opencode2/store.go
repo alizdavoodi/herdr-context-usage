@@ -10,6 +10,7 @@ import (
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/opencodeshared"
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider/sqlitestore"
 
 	_ "modernc.org/sqlite"
 )
@@ -47,10 +48,10 @@ func open(ctx context.Context, explicitPath, dataHome string) (*store, error) {
 	if err != nil {
 		return nil, err
 	}
-	db, err := opencodeshared.OpenReadOnly(ctx, path, "session_v2", "session_message")
+	db, err := sqlitestore.OpenReadOnly(ctx, path, "session_v2", "session_message")
 	// A database without these tables is one opencode2 has not initialised yet,
 	// which for this provider is the same lifecycle state as no file at all.
-	if errors.Is(err, opencodeshared.ErrMissing) || errors.Is(err, opencodeshared.ErrSchema) {
+	if errors.Is(err, sqlitestore.ErrMissing) || errors.Is(err, sqlitestore.ErrSchema) {
 		return nil, ErrStoreNotReady
 	}
 	if err != nil {
