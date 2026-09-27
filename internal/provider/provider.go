@@ -52,14 +52,14 @@ func FromAgent(agent string, processes []Process) Kind {
 	case "omp":
 		return Omp
 	// Hermes runs as python3.12, so its process names nothing; herdr's label is
-	// the only signal, and processKind deliberately does not learn it.
+	// the only signal, and Process.Kind deliberately does not learn it.
 	case "hermes":
 		return Hermes
 	case "opencode2":
 		return OpenCode2
 	case "opencode":
 		for _, process := range processes {
-			if processKind(process) == OpenCode2 {
+			if process.Kind() == OpenCode2 {
 				return OpenCode2
 			}
 		}
@@ -82,7 +82,7 @@ func NeedsProcessList(agent string) bool {
 func ProcessIDs(processes []Process, kind Kind) []int {
 	ids := make([]int, 0, 1)
 	for _, process := range processes {
-		if processKind(process) == kind {
+		if process.Kind() == kind {
 			ids = append(ids, process.PID)
 		}
 	}
@@ -91,20 +91,16 @@ func ProcessIDs(processes []Process, kind Kind) []int {
 
 // Kind reports which agent a single process is, by the same basename rule
 // dispatch uses to choose a provider for the pane. Exported so a provider can
-// find its own entry in a pane's process list without restating that rule.
-func (p Process) Kind() Kind { return processKind(p) }
-
-func processKind(process Process) Kind {
-	name := strings.ToLower(strings.TrimPrefix(filepath.Base(process.Argv0), "."))
-	switch name {
+// find its own entry in a pane's process list without restating that rule. It
+// names only the kinds some caller asks about: opencode2, which tells the
+// opencode versions apart, and claude, whose process ids key its registry
+// tier.
+func (p Process) Kind() Kind {
+	switch strings.ToLower(strings.TrimPrefix(filepath.Base(p.Argv0), ".")) {
 	case "opencode2":
 		return OpenCode2
-	case "opencode":
-		return OpenCode
 	case "claude":
 		return Claude
-	case "codex":
-		return Codex
 	default:
 		return None
 	}
