@@ -2,6 +2,7 @@ package opencode
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/opencodeshared"
@@ -17,7 +18,7 @@ var (
 	ErrNoOccupancy   = errors.New("opencode agent session has no current context occupancy")
 	ErrNoSchema      = errors.New("opencode v1 database schema is unavailable")
 	ErrStoreNotReady = errors.New("opencode v1 store has not been written yet")
-	ErrJustCompacted = errors.New("opencode agent session was just compacted")
+	ErrJustCompacted = fmt.Errorf("opencode %w", provider.ErrJustCompacted)
 )
 
 // Superseded lists this provider's answers that prove the displayed occupancy

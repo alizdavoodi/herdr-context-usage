@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/transcript"
 )
 
@@ -14,7 +16,7 @@ const maxScanBytes int64 = 8 << 20
 
 var (
 	ErrNoOccupancy   = errors.New("claude transcript has no current context occupancy")
-	ErrJustCompacted = errors.New("claude agent session is just-compacted")
+	ErrJustCompacted = fmt.Errorf("claude %w", provider.ErrJustCompacted)
 )
 
 type transcriptEntry struct {

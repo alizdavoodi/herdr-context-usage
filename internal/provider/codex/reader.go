@@ -8,12 +8,14 @@ import (
 	"io"
 	"os"
 	"strings"
+
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 )
 
 var (
 	ErrNoOccupancy   = errors.New("codex rollout has no current context occupancy")
 	ErrFailedTurn    = errors.New("codex turn recorded no context occupancy")
-	ErrJustCompacted = errors.New("codex agent session is just-compacted")
+	ErrJustCompacted = fmt.Errorf("codex %w", provider.ErrJustCompacted)
 )
 
 type rolloutEntry struct {

@@ -284,10 +284,9 @@ from the provider registry: every provider is a value of the
 `provider.Provider` interface the provider root declares, and the registry
 builds one of each from the plugin's configuration. The registry-derived
 property tests therefore cover both new providers automatically: that each
-declares a superseded answer, that each declares a just-compacted sentinel,
-and that no two providers claim one agent kind. Nothing tests for an answer
-declared both superseded and merely behind: there is one list of superseded
-answers.
+declares a superseded answer and that no two providers claim one agent kind.
+Nothing tests for an answer declared both superseded and merely behind: there
+is one list of superseded answers.
 
 ## Out of Scope
 

@@ -69,17 +69,3 @@ func TestEveryRegisteredKindIsReachableFromItsAgentLabel(t *testing.T) {
 		})
 	}
 }
-
-// contextState compares a read failure against this sentinel to tell a
-// compaction apart from an unreadable pane. A nil sentinel silently makes every
-// compaction look like an ordinary failure, which preserves a pre-compaction
-// value instead of clearing it.
-func TestProvidersDeclareAJustCompactedSentinel(t *testing.T) {
-	t.Parallel()
-
-	for _, registered := range registry(Config{}) {
-		if registered.JustCompacted() == nil {
-			t.Errorf("provider %s declares no just-compacted sentinel", registered.Kind())
-		}
-	}
-}

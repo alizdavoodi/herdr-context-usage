@@ -18,8 +18,6 @@ type piProvider struct{ home string }
 
 func (piProvider) Kind() provider.Kind { return provider.Pi }
 
-func (piProvider) JustCompacted() error { return ErrJustCompacted }
-
 // Resolve reads only herdr's reported agent session from the pane; sessionInput
 // says why. Reading is file-backed, so Cleanup is nil.
 func (p piProvider) Resolve(_ context.Context, pane provider.Pane) (provider.Resolved, error) {

@@ -31,7 +31,7 @@ const maxHeaderRecords = 16
 
 var (
 	ErrNoOccupancy   = errors.New("omp transcript has no current context occupancy")
-	ErrJustCompacted = errors.New("omp agent session is just-compacted")
+	ErrJustCompacted = fmt.Errorf("omp %w", provider.ErrJustCompacted)
 )
 
 type sessionRecord struct {

@@ -18,8 +18,6 @@ type opencode2Provider struct{ db, dataHome string }
 
 func (opencode2Provider) Kind() provider.Kind { return provider.OpenCode2 }
 
-func (opencode2Provider) JustCompacted() error { return ErrJustCompacted }
-
 // Resolve correlates by the pane's directory and the TUI's terminal title,
 // because herdr reports no agent session for an opencode2 pane: neither opencode
 // version sends herdr a session id, as the README records under "When an

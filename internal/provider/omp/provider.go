@@ -18,8 +18,6 @@ type ompProvider struct{ home string }
 
 func (ompProvider) Kind() provider.Kind { return provider.Omp }
 
-func (ompProvider) JustCompacted() error { return ErrJustCompacted }
-
 // Resolve reads only herdr's reported agent session from the pane; sessionInput
 // says why. Reading is file-backed, so Cleanup is nil.
 func (p ompProvider) Resolve(_ context.Context, pane provider.Pane) (provider.Resolved, error) {

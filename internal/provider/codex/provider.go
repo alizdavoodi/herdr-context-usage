@@ -17,8 +17,6 @@ type codexProvider struct{ home string }
 
 func (codexProvider) Kind() provider.Kind { return provider.Codex }
 
-func (codexProvider) JustCompacted() error { return ErrJustCompacted }
-
 // Resolve reads no process list: codex's working-directory tier tells its own
 // main thread apart by rollout metadata and writer locks, not by PID. Reading
 // is file-backed, so Cleanup is nil.

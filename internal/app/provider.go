@@ -93,7 +93,9 @@ func refreshOne(ctx context.Context, client Herdr, paneID string, pane provider.
 	// is otherwise indistinguishable from any other unreadable transcript.
 	measurement.TranscriptVersion = reading.TranscriptVersion
 	if err != nil {
-		measurement.ContextState = contextState(err, p.JustCompacted())
+		if errors.Is(err, provider.ErrJustCompacted) {
+			measurement.ContextState = ContextJustCompacted
+		}
 		return handleUnknown(ctx, client, log, p.Superseded(), measurement, err)
 	}
 	measurement.ContextState = ContextMeasured

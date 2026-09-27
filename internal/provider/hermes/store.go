@@ -14,7 +14,7 @@ import (
 var (
 	ErrStoreNotReady = errors.New("hermes store has not been written yet")
 	ErrNoOccupancy   = errors.New("hermes agent session has no current context occupancy")
-	ErrJustCompacted = errors.New("hermes agent session was just compacted")
+	ErrJustCompacted = fmt.Errorf("hermes %w", provider.ErrJustCompacted)
 	// ErrSessionEnded is a reported session Hermes has since closed. Every
 	// resume path clears ended_at again, so a closed row is not the session
 	// live in the pane; the desktop, tui and acp platforms keep reporting a

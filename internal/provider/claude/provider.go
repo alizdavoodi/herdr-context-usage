@@ -17,8 +17,6 @@ type claudeProvider struct{ home string }
 
 func (claudeProvider) Kind() provider.Kind { return provider.Claude }
 
-func (claudeProvider) JustCompacted() error { return ErrJustCompacted }
-
 // Resolve narrows the pane's process list to claude's own process ids, which
 // is what the process-registry tier matches on. Reading is file-backed, so
 // Cleanup is nil.

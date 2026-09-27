@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/piompshared"
@@ -19,7 +20,7 @@ const maxScanBytes int64 = 8 << 20
 
 var (
 	ErrNoOccupancy   = errors.New("pi transcript has no current context occupancy")
-	ErrJustCompacted = errors.New("pi agent session is just-compacted")
+	ErrJustCompacted = fmt.Errorf("pi %w", provider.ErrJustCompacted)
 )
 
 type sessionRecord struct {

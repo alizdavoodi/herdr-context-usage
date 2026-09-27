@@ -228,16 +228,6 @@ func handleUnknown(ctx context.Context, client Herdr, log io.Writer, superseded 
 	return measurementErr
 }
 
-// contextState maps a provider's own just-compacted answer onto the state herdr
-// sees. Each provider detects a compaction against its own store, in shapes
-// that have nothing in common; reporting it is what they share.
-func contextState(err, justCompacted error) ContextState {
-	if errors.Is(err, justCompacted) {
-		return ContextJustCompacted
-	}
-	return ContextUnknown
-}
-
 func writeMeasurement(writer io.Writer, measurement Measurement) error {
 	measurement.Type = "measurement"
 	if err := json.NewEncoder(writer).Encode(measurement); err != nil {

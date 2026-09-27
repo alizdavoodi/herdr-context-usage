@@ -65,6 +65,11 @@ type Resolved struct {
 	Cleanup func() error
 }
 
+// ErrJustCompacted is the state every provider reports in the interval after a
+// compaction. Each provider wraps it, so the text names the agent while app
+// recognises the state with one errors.Is.
+var ErrJustCompacted = errors.New("agent session is just-compacted")
+
 // Provider contributes the parts of a refresh that are specific to one agent
 // kind. The skeleton in app owns error classification, measurement and
 // reporting, which are identical across every provider.
@@ -73,7 +78,6 @@ type Provider interface {
 	// Superseded lists this provider's answers that IsSuperseded treats as
 	// proof the displayed value is wrong.
 	Superseded() []error
-	JustCompacted() error
 	Resolve(ctx context.Context, pane Pane) (Resolved, error)
 }
 

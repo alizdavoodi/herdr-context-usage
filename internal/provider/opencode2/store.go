@@ -20,7 +20,7 @@ const occupancyScanLimit = 256
 var (
 	ErrNoOccupancy   = errors.New("opencode2 agent session has no current context occupancy")
 	ErrStoreNotReady = errors.New("opencode2 store has not been written yet")
-	ErrJustCompacted = errors.New("opencode2 agent session was just compacted")
+	ErrJustCompacted = fmt.Errorf("opencode2 %w", provider.ErrJustCompacted)
 )
 
 type store struct {
