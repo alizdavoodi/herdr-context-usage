@@ -15,7 +15,6 @@ const SourceID = "herdr-context-usage"
 
 type Agent struct {
 	Agent         string                 `json:"agent"`
-	AgentStatus   string                 `json:"agent_status"`
 	ForegroundCWD string                 `json:"foreground_cwd"`
 	PaneID        string                 `json:"pane_id"`
 	TerminalTitle string                 `json:"terminal_title"`
