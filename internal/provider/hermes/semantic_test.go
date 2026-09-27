@@ -47,9 +47,9 @@ func TestAnUnresolvableHomeSupersedesTheDisplayedValue(t *testing.T) {
 	t.Setenv("HOME", "")
 
 	p := New("")
-	_, err := p.Resolve(context.Background(), provider.Pane{AgentSession: &provider.AgentSession{Kind: "id", Value: openID}})
+	_, err := p.Measure(context.Background(), provider.Pane{AgentSession: &provider.AgentSession{Kind: "id", Value: openID}})
 	if !errors.Is(err, provider.ErrNoHome) {
-		t.Fatalf("Resolve() error = %v, want it to wrap ErrNoHome", err)
+		t.Fatalf("Measure() error = %v, want it to wrap ErrNoHome", err)
 	}
 	if !provider.IsSuperseded(err, p.Superseded()) {
 		t.Fatalf("IsSuperseded(%v) = false, want true", err)

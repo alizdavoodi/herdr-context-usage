@@ -15,10 +15,9 @@ func New(home string) provider.Provider {
 
 type claudeProvider struct{ home string }
 
-// Resolve narrows the pane's process list to claude's own process ids, which
-// is what the process-registry tier matches on. Reading is file-backed, so
-// Cleanup is nil.
-func (p claudeProvider) Resolve(_ context.Context, pane provider.Pane) (provider.Resolved, error) {
+// Measure narrows the pane's process list to claude's own process ids, which
+// is what the process-registry tier matches on.
+func (p claudeProvider) Measure(_ context.Context, pane provider.Pane) (provider.Reading, error) {
 	resolved, err := resolve(sessionInput{
 		ClaudeHome:    p.home,
 		AgentSession:  pane.AgentSession,
@@ -26,14 +25,8 @@ func (p claudeProvider) Resolve(_ context.Context, pane provider.Pane) (provider
 		ProcessIDs:    provider.ProcessIDs(pane.Processes, provider.Claude),
 	})
 	if err != nil {
-		return provider.Resolved{}, err
+		return provider.Reading{}, err
 	}
-	path := resolved.Path
-	return provider.Resolved{
-		Mode: resolved.Mode,
-		Read: func(context.Context) (provider.Reading, error) {
-			value, err := readOccupancy(path)
-			return provider.Reading{Occupancy: value}, err
-		},
-	}, nil
+	value, err := readOccupancy(resolved.Path)
+	return provider.Reading{Mode: resolved.Mode, Occupancy: value}, err
 }

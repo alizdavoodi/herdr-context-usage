@@ -52,44 +52,38 @@ func paneOf(agent herdr.Agent, processes []provider.Process) provider.Pane {
 	}
 }
 
-// refreshOne is the shared skeleton: resolve, read, and on either failure let
-// handleUnknown decide whether to clear the pane. Each provider brings only
-// its own resolution and reading; the error classification, measurement, and
-// reporting are identical across every provider.
+// refreshOne is the shared skeleton: measure, then report the reading or decide
+// whether a failed one clears the pane. Each provider brings only its own
+// resolution and reading; the error classification, measurement, and reporting
+// are identical across every provider.
 func refreshOne(ctx context.Context, client Herdr, paneID string, kind provider.Kind, pane provider.Pane, log io.Writer, p provider.Provider) error {
-	resolved, err := p.Resolve(ctx, pane)
-	if resolved.Cleanup != nil {
-		// A provider may open a store before its resolution fails; closing it
-		// here is the original defer-store.Close path, even on the error branch.
-		defer func() { _ = resolved.Cleanup() }()
-	}
+	reading, err := p.Measure(ctx, pane)
 	// Every outcome below records the same shape and differs only in the state
-	// and in how much the reader got to observe first, so the record is built
+	// and in how much the provider got to observe first, so the record is built
 	// once here and handed on rather than passed down field by field.
 	measurement := Measurement{
 		PaneID: paneID, Provider: kind, ContextState: ContextUnknown,
-		ResolutionMode: resolutionMode(resolved.Mode),
+		ResolutionMode: resolutionMode(reading.Mode),
+		// A failed read can still have observed the schema version, and that is
+		// the case where knowing it matters most: a blank row caused by a format
+		// change is otherwise indistinguishable from any other unreadable
+		// transcript.
+		TranscriptVersion: reading.TranscriptVersion,
 	}
-	if err != nil {
-		return handleUnknown(ctx, client, log, p.Superseded(), measurement, err)
-	}
-	if resolved.Read == nil {
-		// Refresh walks every pane, so a provider that resolves without
-		// supplying a reader would panic the whole sweep rather than spoil one
-		// row. Reporting it as unknown keeps the other panes measurable.
-		err := fmt.Errorf("provider %s resolved without a reader", kind)
-		return handleUnknown(ctx, client, log, p.Superseded(), measurement, err)
-	}
-	reading, err := resolved.Read(ctx)
-	// A failed read can still have observed the schema version, and that is the
-	// case where knowing it matters most: a blank row caused by a format change
-	// is otherwise indistinguishable from any other unreadable transcript.
-	measurement.TranscriptVersion = reading.TranscriptVersion
 	if err != nil {
 		if errors.Is(err, provider.ErrJustCompacted) {
 			measurement.ContextState = ContextJustCompacted
 		}
-		return handleUnknown(ctx, client, log, p.Superseded(), measurement, err)
+		measurement.Error = err.Error()
+		measurementErr := writeMeasurement(log, measurement)
+		if provider.IsSuperseded(err, p.Superseded()) {
+			return errors.Join(measurementErr, client.Clear(ctx, paneID))
+		}
+		// Anything undeclared leaves the displayed value alone. An answer such as
+		// codex's ErrFailedTurn leaves the previous reading standing as a valid
+		// lower bound, a transient one is a failure to read, and neither is
+		// evidence that the value belongs to a superseded session.
+		return measurementErr
 	}
 	measurement.ContextState = ContextMeasured
 	measurement.Occupancy = &reading.Occupancy

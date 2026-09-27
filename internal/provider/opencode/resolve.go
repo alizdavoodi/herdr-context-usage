@@ -16,7 +16,7 @@ func New(explicitDB, dataHome string) provider.Provider {
 
 type opencodeProvider struct{ db, dataHome string }
 
-// Resolve tries the session id herdr reported, then the pane's terminal title.
+// Measure tries the session id herdr reported, then the pane's terminal title.
 // Only an id is consulted: opencode keeps its sessions in a database rather
 // than a file per session, so a reported path names nothing this provider can
 // read and is refused.
@@ -24,31 +24,25 @@ type opencodeProvider struct{ db, dataHome string }
 // The store opens between the two stages because the title fallback and the
 // reading both query it. The mode stays unresolved until a stage succeeds, so
 // a store that fails to open after a refused id records no mode, while one
-// after an accepted id keeps agent_session. Cleanup is set only once the store
-// is open.
-func (p opencodeProvider) Resolve(ctx context.Context, pane provider.Pane) (provider.Resolved, error) {
+// after an accepted id keeps agent_session.
+func (p opencodeProvider) Measure(ctx context.Context, pane provider.Pane) (provider.Reading, error) {
 	id, reported := pane.AgentSession.ID()
-	var mode provider.ResolutionMode
+	var reading provider.Reading
 	if reported {
-		mode = provider.ResolutionAgentSession
+		reading.Mode = provider.ResolutionAgentSession
 	}
 	s, err := open(ctx, p.db, p.dataHome)
 	if err != nil {
-		return provider.Resolved{Mode: mode}, err
+		return reading, err
 	}
+	defer s.Close()
 	if !reported {
 		id, err = s.resolveTerminalTitle(ctx, pane.ForegroundCWD, pane.TerminalTitle)
 		if err != nil {
-			return provider.Resolved{Cleanup: s.Close}, err
+			return provider.Reading{}, err
 		}
-		mode = provider.ResolutionTerminalTitle
+		reading.Mode = provider.ResolutionTerminalTitle
 	}
-	return provider.Resolved{
-		Mode:    mode,
-		Cleanup: s.Close,
-		Read: func(ctx context.Context) (provider.Reading, error) {
-			value, err := s.readOccupancy(ctx, id)
-			return provider.Reading{Occupancy: value}, err
-		},
-	}, nil
+	reading.Occupancy, err = s.readOccupancy(ctx, id)
+	return reading, err
 }

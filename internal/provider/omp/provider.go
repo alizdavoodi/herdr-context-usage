@@ -16,16 +16,14 @@ func New(home string) provider.Provider {
 
 type ompProvider struct{ home string }
 
-// Resolve reads only herdr's reported agent session from the pane; sessionInput
-// says why. Reading is file-backed, so Cleanup is nil.
-func (p ompProvider) Resolve(_ context.Context, pane provider.Pane) (provider.Resolved, error) {
+// Measure reads only herdr's reported agent session from the pane; sessionInput
+// says why.
+func (p ompProvider) Measure(_ context.Context, pane provider.Pane) (provider.Reading, error) {
 	resolved, err := resolve(sessionInput{OmpHome: p.home, AgentSession: pane.AgentSession})
 	if err != nil {
-		return provider.Resolved{}, err
+		return provider.Reading{}, err
 	}
-	path := resolved.Path
-	return provider.Resolved{
-		Mode: resolved.Mode,
-		Read: func(context.Context) (provider.Reading, error) { return readOccupancy(path) },
-	}, nil
+	reading, err := readOccupancy(resolved.Path)
+	reading.Mode = resolved.Mode
+	return reading, err
 }

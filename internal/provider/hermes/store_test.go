@@ -235,14 +235,14 @@ func TestResolveRefusesAnythingButAReportedID(t *testing.T) {
 		"no agent session": nil,
 		"reported path":    {Kind: "path", Value: "/Users/me/.hermes/state.db"},
 	} {
-		resolved, err := p.Resolve(context.Background(), provider.Pane{ForegroundCWD: "/work", AgentSession: session})
-		if !errors.Is(err, ErrNoSession) || resolved.Cleanup != nil || resolved.Mode != "" {
-			t.Fatalf("%s: Resolve() = %+v, %v; want ErrNoSession before the store", name, resolved, err)
+		reading, err := p.Measure(context.Background(), provider.Pane{ForegroundCWD: "/work", AgentSession: session})
+		if !errors.Is(err, ErrNoSession) || reading.Mode != "" {
+			t.Fatalf("%s: Measure() = %+v, %v; want ErrNoSession before the store", name, reading, err)
 		}
 	}
 
-	resolved, err := p.Resolve(context.Background(), provider.Pane{AgentSession: &provider.AgentSession{Kind: "id", Value: openID}})
-	if !errors.Is(err, ErrStoreNotReady) || resolved.Mode != provider.ResolutionAgentSession {
-		t.Fatalf("Resolve(id) = %+v, %v; want the store consulted under agent_session", resolved, err)
+	reading, err := p.Measure(context.Background(), provider.Pane{AgentSession: &provider.AgentSession{Kind: "id", Value: openID}})
+	if !errors.Is(err, ErrStoreNotReady) || reading.Mode != provider.ResolutionAgentSession {
+		t.Fatalf("Measure(id) = %+v, %v; want the store consulted under agent_session", reading, err)
 	}
 }
