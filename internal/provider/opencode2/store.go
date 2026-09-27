@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/opencodeshared"
@@ -126,15 +125,8 @@ func (s *store) readOccupancy(ctx context.Context, sessionID string) (provider.R
 			payload.Tokens.Cache.Read == nil || payload.Tokens.Cache.Write == nil {
 			continue
 		}
-
-		input := *payload.Tokens.Input
-		cacheRead := *payload.Tokens.Cache.Read
-		cacheWrite := *payload.Tokens.Cache.Write
-		if input < 0 || cacheRead < 0 || cacheWrite < 0 || input > math.MaxInt64-cacheRead || input+cacheRead > math.MaxInt64-cacheWrite {
-			continue
-		}
-		occupancy := input + cacheRead + cacheWrite
-		if occupancy == 0 {
+		occupancy, ok := provider.Occupancy(*payload.Tokens.Input, *payload.Tokens.Cache.Read, *payload.Tokens.Cache.Write)
+		if !ok {
 			continue
 		}
 		return provider.Reading{Occupancy: occupancy, ModelID: payload.Model.ID}, nil

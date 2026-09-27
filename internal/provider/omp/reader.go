@@ -7,7 +7,6 @@ import (
 	"fmt"
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
-	"github.com/alizdavoodi/herdr-context-usage/internal/provider/piompshared"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/transcript"
 )
 
@@ -158,8 +157,8 @@ func newestOccupancy(lines [][]byte, version *int) (provider.Reading, error) {
 			// aborted is the interesting one, because it is the case where
 			// "completed" does real work, and it is excluded by arithmetic rather
 			// than by a stopReason gate: the one aborted row sums to 0 and carries
-			// no contextSnapshot, so the all-zero rejection in piompshared drops
-			// it and the walk reaches the previous completed turn. omp 18.1.2
+			// no contextSnapshot, so the all-zero rejection in provider.Occupancy
+			// drops it and the walk reaches the previous completed turn. omp 18.1.2
 			// adds a fourth reason, error, and its two rows sum to 0 as well, so
 			// the same rejection covers it without this reader learning a new
 			// name. A gate on stopReason would instead have to be extended for
@@ -172,7 +171,7 @@ func newestOccupancy(lines [][]byte, version *int) (provider.Reading, error) {
 			continue
 		}
 		usage := entry.Message.Usage
-		occupancy, ok := piompshared.Occupancy(usage.Input, usage.CacheRead, usage.CacheWrite)
+		occupancy, ok := provider.Occupancy(usage.Input, usage.CacheRead, usage.CacheWrite)
 		if !ok {
 			continue
 		}

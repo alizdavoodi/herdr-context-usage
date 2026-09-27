@@ -54,21 +54,12 @@ func readOccupancy(path string) (int64, error) {
 		if entry.Message == nil || entry.Message.Usage == nil {
 			continue
 		}
+		// A row Occupancy rejects is walked past rather than reported, because
+		// unknown is null rather than zero — see docs/design.md.
 		usage := entry.Message.Usage
-		if usage.InputTokens < 0 || usage.CacheReadTokens < 0 || usage.CacheCreationTokens < 0 {
-			continue
+		if occupancy, ok := provider.Occupancy(usage.InputTokens, usage.CacheReadTokens, usage.CacheCreationTokens); ok {
+			return occupancy, nil
 		}
-		occupancy := usage.InputTokens + usage.CacheReadTokens + usage.CacheCreationTokens
-		if occupancy == 0 {
-			// An all-zero usage row is a failed turn, not an empty window. Claude
-			// writes one on rate-limit and billing errors; opencode v1 writes one on
-			// an aborted turn. No store examined has produced a genuine zero for a
-			// live session, so treat it as no occupancy rather than as a value.
-			// Representing unknown as null rather than zero is a separate rule and
-			// still holds — see docs/design.md.
-			continue
-		}
-		return occupancy, nil
 	}
 
 	return 0, ErrNoOccupancy

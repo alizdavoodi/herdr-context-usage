@@ -7,8 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/opencodeshared"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/sqlitestore"
 
@@ -135,14 +135,8 @@ func occupancy(message assistantMessage) (int64, error) {
 	if message.Time.Completed == nil || message.Tokens == nil || message.Tokens.Input == nil || message.Tokens.Cache == nil || message.Tokens.Cache.Read == nil || message.Tokens.Cache.Write == nil {
 		return 0, ErrNoOccupancy
 	}
-	if *message.Tokens.Input < 0 || *message.Tokens.Cache.Read < 0 || *message.Tokens.Cache.Write < 0 {
-		return 0, ErrNoOccupancy
-	}
-	if *message.Tokens.Input > math.MaxInt64-*message.Tokens.Cache.Read || *message.Tokens.Input+*message.Tokens.Cache.Read > math.MaxInt64-*message.Tokens.Cache.Write {
-		return 0, ErrNoOccupancy
-	}
-	occupancy := *message.Tokens.Input + *message.Tokens.Cache.Read + *message.Tokens.Cache.Write
-	if occupancy == 0 {
+	occupancy, ok := provider.Occupancy(*message.Tokens.Input, *message.Tokens.Cache.Read, *message.Tokens.Cache.Write)
+	if !ok {
 		return 0, ErrNoOccupancy
 	}
 	return occupancy, nil
