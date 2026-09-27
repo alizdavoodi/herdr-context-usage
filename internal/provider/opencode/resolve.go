@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider/opencodeshared"
 )
 
 // New returns the opencode v1 provider. explicitDB and dataHome are the values
@@ -37,7 +38,10 @@ func (p opencodeProvider) Measure(ctx context.Context, pane provider.Pane) (prov
 	}
 	defer s.Close()
 	if !reported {
-		id, err = s.resolveTerminalTitle(ctx, pane.ForegroundCWD, pane.TerminalTitle)
+		// Root sessions live in session, and a v1 plugin route interpolates its
+		// plugin id into the same title shape opencode2 fills with a plugin name,
+		// so only a positive root-session match can produce a reading.
+		id, err = opencodeshared.ResolveTitle(ctx, s.DB, "session", pane.ForegroundCWD, pane.TerminalTitle)
 		if err != nil {
 			return provider.Reading{}, err
 		}

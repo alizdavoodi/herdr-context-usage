@@ -1,8 +1,8 @@
 // Package opencodeshared holds what the two opencode providers genuinely have
-// in common. Their stores are different databases with different schemas, so
-// every query stays in its own provider; the terminal-title format, what makes
-// a title unusable, and how a missing store is classified are identical and
-// live here.
+// in common: where their stores live, the terminal-title format, what makes a
+// title unusable, and the query that turns a title into a root session,
+// parameterised by the table each store keeps root sessions in. Their message
+// queries stay in each provider, because the two stores have different schemas.
 package opencodeshared
 
 import (
@@ -23,8 +23,8 @@ const (
 	// slice(0,37)+"...", so 40 is the longest a session title can be on the
 	// wire. Read from the TUI of opencode 1.18.18 and opencode2
 	// 0.0.0-next-17444, which agree on the format, the limit and the three
-	// title forms; only the interpolated field differs, and that lives in each
-	// provider's own query rather than here.
+	// title forms; only the interpolated field differs, which each provider notes
+	// where it names its sessions table.
 	maxSessionTitle = 40
 	truncationMark  = "..."
 
@@ -61,9 +61,9 @@ var (
 	ErrNoTitleMatch = errors.New("opencode terminal title matches no single agent session")
 )
 
-// Title is a pane's terminal title, once it has been established that it names
-// an agent session.
-type Title struct {
+// parsedTitle is a pane's terminal title, once it has been established that it
+// names an agent session.
+type parsedTitle struct {
 	// Text is the session title as the TUI wrote it, without the truncation
 	// mark. It is a prefix of the stored title when Truncated is set.
 	Text string
@@ -72,55 +72,23 @@ type Title struct {
 	Truncated bool
 }
 
-// Comparison returns the SQL predicate that matches this title against a
-// sessions table, and its arguments. The predicate travels between the two
-// providers; the query it is spliced into does not, because the two stores keep
-// root sessions in different tables.
-func (t Title) Comparison() (string, []any) {
-	if t.Truncated {
-		return "substr(title, 1, length(?)) = ?", []any{t.Text, t.Text}
-	}
-	return "title = ?", []any{t.Text}
-}
-
-// Lookup is a provider's own query for the sessions a title could name. It
-// returns at most two ids, because one is a match and two is an ambiguity.
-type Lookup func(ctx context.Context, directory string, title Title) ([]string, error)
-
-// CollectIDs drains a lookup's rows. It is shared so that a query returning two
-// rows means the same thing in both providers.
-func CollectIDs(rows *sql.Rows) ([]string, error) {
-	var ids []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, fmt.Errorf("read resolved opencode session: %w", err)
-		}
-		ids = append(ids, id)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("resolve opencode session: %w", err)
-	}
-	return ids, nil
-}
-
 // parseTitle decides which of the three title forms a pane is showing.
-func parseTitle(terminalTitle string) (Title, error) {
+func parseTitle(terminalTitle string) (parsedTitle, error) {
 	if terminalTitle == untitledTitle {
-		return Title{}, ErrUntitled
+		return parsedTitle{}, ErrUntitled
 	}
 	text, ok := strings.CutPrefix(terminalTitle, titlePrefix)
 	if !ok || text == "" {
 		if titleDisabled() {
-			return Title{}, ErrTitleDisabled
+			return parsedTitle{}, ErrTitleDisabled
 		}
-		return Title{}, ErrTitleUnavailable
+		return parsedTitle{}, ErrTitleUnavailable
 	}
 	if prefix, truncated := strings.CutSuffix(text, truncationMark); truncated {
 		if prefix == "" {
-			return Title{}, ErrTitleUnavailable
+			return parsedTitle{}, ErrTitleUnavailable
 		}
-		return Title{Text: prefix, Truncated: true}, nil
+		return parsedTitle{Text: prefix, Truncated: true}, nil
 	}
 	// Only a session title is ever shortened, so a title too long to have
 	// survived shortening is a plugin's. Counted in runes because the TUI counts
@@ -128,15 +96,14 @@ func parseTitle(terminalTitle string) (Title, error) {
 	// where they disagree this one is the more permissive, which keeps a real
 	// session title from being dismissed as a plugin's.
 	if utf8.RuneCountInString(text) > maxSessionTitle {
-		return Title{}, ErrPluginTitle
+		return parsedTitle{}, ErrPluginTitle
 	}
-	return Title{Text: text}, nil
+	return parsedTitle{Text: text}, nil
 }
 
-// ResolveTitle turns a pane's directory and terminal title into exactly one
-// agent session id. Both providers share every step except the lookup, which
-// they own because their schemas differ.
-func ResolveTitle(ctx context.Context, directory, terminalTitle string, lookup Lookup) (string, error) {
+// ResolveTitle turns a pane's directory and terminal title into exactly one root
+// agent session id from table, the one a store keeps its root sessions in.
+func ResolveTitle(ctx context.Context, db *sql.DB, table, directory, terminalTitle string) (string, error) {
 	title, err := parseTitle(terminalTitle)
 	if err != nil {
 		return "", err
@@ -146,14 +113,34 @@ func ResolveTitle(ctx context.Context, directory, terminalTitle string, lookup L
 		// nothing to disambiguate with and recency is banned.
 		return "", ErrNoTitleMatch
 	}
-	matches, err := lookup(ctx, directory, title)
-	if err != nil {
-		return "", err
+	predicate, args := "title = ?", []any{directory, title.Text}
+	if title.Truncated {
+		predicate, args = "substr(title, 1, length(?)) = ?", []any{directory, title.Text, title.Text}
 	}
-	if len(matches) != 1 {
+	// table only ever comes from the two providers' own constants, never from
+	// input, which is what makes splicing it into the query safe. Two rows are
+	// enough to decide, because one is a match and two is an ambiguity.
+	rows, err := db.QueryContext(ctx,
+		`SELECT id FROM `+table+` WHERE directory = ? AND parent_id IS NULL AND `+predicate+` LIMIT 2`, args...)
+	if err != nil {
+		return "", fmt.Errorf("resolve opencode session: %w", err)
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return "", fmt.Errorf("read resolved opencode session: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return "", fmt.Errorf("resolve opencode session: %w", err)
+	}
+	if len(ids) != 1 {
 		return "", ErrNoTitleMatch
 	}
-	return matches[0], nil
+	return ids[0], nil
 }
 
 // titleDisabled reports whether this process inherited the variable that turns

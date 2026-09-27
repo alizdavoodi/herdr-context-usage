@@ -51,26 +51,6 @@ func open(ctx context.Context, explicitPath, dataHome string) (*store, error) {
 	return &store{DB: db}, nil
 }
 
-func (s *store) resolveTerminalTitle(ctx context.Context, directory, terminalTitle string) (string, error) {
-	return opencodeshared.ResolveTitle(ctx, directory, terminalTitle, s.sessionsByTitle)
-}
-
-// sessionsByTitle is this store's own half of title correlation. The v2 schema
-// keeps root sessions in `session_v2`, and a v2 plugin route interpolates its
-// plugin name into the same title shape v1 fills with a plugin id, so only a
-// positive root-session match here can produce a reading.
-func (s *store) sessionsByTitle(ctx context.Context, directory string, title opencodeshared.Title) ([]string, error) {
-	comparison, args := title.Comparison()
-	rows, err := s.QueryContext(ctx,
-		`SELECT id FROM session_v2 WHERE directory = ? AND parent_id IS NULL AND `+comparison+` LIMIT 2`,
-		append([]any{directory}, args...)...)
-	if err != nil {
-		return nil, fmt.Errorf("resolve opencode2 session: %w", err)
-	}
-	defer rows.Close()
-	return opencodeshared.CollectIDs(rows)
-}
-
 func (s *store) readOccupancy(ctx context.Context, sessionID string) (provider.Reading, error) {
 	rows, err := s.QueryContext(ctx, `SELECT type, data FROM session_message
 		WHERE session_id = ? AND type IN ('assistant', 'compaction')

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/opencodeshared"
@@ -183,78 +182,25 @@ func TestReadOccupancyRejectsMissingV1SchemaAndSession(t *testing.T) {
 	})
 }
 
-func TestResolveTerminalTitleMatchesDirectoryWithoutRecency(t *testing.T) {
+// The title query and its refusals are pinned in opencodeshared; this pins it
+// against the v1 schema, whose root sessions live in session and whose child
+// sessions carry the parent_id the query excludes them by.
+func TestResolveTitleReadsTheV1SessionTable(t *testing.T) {
 	t.Parallel()
 
 	databasePath := fixtureDatabase(t, func(database *sql.DB) {
 		exec(t, database, `INSERT INTO session (id, directory, title) VALUES ('target', '/work/acme', 'Probe test response')`)
 		exec(t, database, `INSERT INTO session (id, directory, title, parent_id) VALUES ('child', '/work/acme', 'Probe test response', 'target')`)
-		exec(t, database, `INSERT INTO session (id, directory, title) VALUES ('wrong-title', '/work/acme', 'Newer unrelated session')`)
-		exec(t, database, `INSERT INTO session (id, directory, title) VALUES ('wrong-directory', '/work/other', 'Probe test response')`)
 	})
 	s := openStore(t, databasePath)
 	defer s.Close()
 
-	id, err := s.resolveTerminalTitle(context.Background(), "/work/acme", "OC | Probe test response")
+	id, err := opencodeshared.ResolveTitle(context.Background(), s.DB, "session", "/work/acme", "OC | Probe test response")
 	if err != nil {
-		t.Fatalf("resolveTerminalTitle() error = %v", err)
+		t.Fatalf("ResolveTitle() error = %v", err)
 	}
 	if id != "target" {
-		t.Fatalf("resolveTerminalTitle() = %q, want target", id)
-	}
-}
-
-func TestResolveTerminalTitleToleratesTruncationAndRefusesGuesses(t *testing.T) {
-	t.Parallel()
-
-	prefix := strings.Repeat("long-title-", 4)[:37]
-	tests := []struct {
-		name          string
-		directory     string
-		terminalTitle string
-		populate      func(*testing.T, *sql.DB)
-		wantID        string
-		wantErr       error
-	}{
-		{
-			name:          "truncated title matches its unique prefix",
-			directory:     "/work/acme",
-			terminalTitle: "OC | " + prefix + "...",
-			populate: func(t *testing.T, database *sql.DB) {
-				exec(t, database, `INSERT INTO session (id, directory, title) VALUES ('target', '/work/acme', ?)`, prefix+"continuation")
-			},
-			wantID: "target",
-		},
-		{
-			name:          "ambiguous truncated prefix stays blank",
-			directory:     "/work/acme",
-			terminalTitle: "OC | " + prefix + "...",
-			populate: func(t *testing.T, database *sql.DB) {
-				exec(t, database, `INSERT INTO session (id, directory, title) VALUES ('first', '/work/acme', ?)`, prefix+" first")
-				exec(t, database, `INSERT INTO session (id, directory, title) VALUES ('second', '/work/acme', ?)`, prefix+" second")
-			},
-			wantErr: opencodeshared.ErrNoTitleMatch,
-		},
-		{name: "bare title is untitled", directory: "/work/acme", terminalTitle: "OpenCode", wantErr: opencodeshared.ErrUntitled},
-		{name: "missing title prefix has no fallback", directory: "/work/acme", terminalTitle: "shell", wantErr: opencodeshared.ErrTitleUnavailable},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			path := fixtureDatabase(t, func(database *sql.DB) {
-				if tt.populate != nil {
-					tt.populate(t, database)
-				}
-			})
-			s := openStore(t, path)
-			defer s.Close()
-			id, err := s.resolveTerminalTitle(context.Background(), tt.directory, tt.terminalTitle)
-			if !errors.Is(err, tt.wantErr) {
-				t.Fatalf("resolveTerminalTitle() error = %v, want %v", err, tt.wantErr)
-			}
-			if tt.wantID != "" && id != tt.wantID {
-				t.Fatalf("resolveTerminalTitle() = %q, want %q", id, tt.wantID)
-			}
-		})
+		t.Fatalf("ResolveTitle() = %q, want target", id)
 	}
 }
 
