@@ -117,6 +117,15 @@ not read a blank `omp` row as an idle or empty agent, and do not read one as
 proof that the integration is working. Observed against omp 18.1.4 and Herdr
 0.8.0; omp is not pinned to a version.
 
+A `hermes` pane can be blank permanently for the same reason: its Herdr
+integration is not installed, and `hermes` is correlated only through the
+session id that integration reports, with no fallback. It is also blank while
+the reported session has ended, which on Hermes's desktop, TUI and ACP
+platforms can last indefinitely: those report a session only at start and at
+`/new`, so a session switched inside the app is never seen. Do not read a blank
+`hermes` row as an idle or empty agent. Observed against Hermes Agent 0.21.5 and
+Herdr 0.9.1; Hermes is not pinned to a version.
+
 Tokens are only as fresh as the last event that wrote them. Occupancy changes
 at turn boundaries, and Herdr events fire at turn boundaries, so the normal
 staleness window is empty. A blank or absent token means unknown, never zero.

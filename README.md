@@ -96,8 +96,10 @@ does not mean zero. Examples include:
   [when an opencode row never fills in](#when-an-opencode-row-never-fills-in);
 - an agent home that cannot be found at all, because `HOME` is unset and no
   override points elsewhere, for a provider that needs that home to resolve the
-  session: both opencode providers always do, while the others need it only
-  when Herdr reports no absolute transcript path for the pane;
+  session: both opencode providers and `hermes` always do, while the others
+  need it only when Herdr reports no absolute transcript path for the pane;
+- a `hermes` pane still reporting a session Hermes has since closed — see
+  [when a hermes row is blank](#when-a-hermes-row-is-blank);
 - a pane whose agent session cannot be resolved; or
 - the interval immediately after compaction, before a new readable occupancy
   exists.
@@ -123,6 +125,7 @@ provider guesses by newest-file or newest-session recency.
 | Implemented | `opencode2` | `~/.local/share/opencode/opencode2.db`, `session_v2` plus `session_message`; newest completed assistant `input + cache.read + cache.write` | Pane directory plus its `OC \| <session title>` terminal title; untitled sessions remain blank |
 | Implemented | `pi` | `~/.pi/agent/sessions/<wrapped-cwd>/<start-timestamp>_<session-id>.jsonl`; newest completed assistant `input + cacheRead + cacheWrite`; home overridable with `PI_CODING_AGENT_DIR` | Herdr's reported `agent_session` only — a path used directly, an id matched to the sole transcript whose name ends with it, non-unique treated as unresolved; no directory or recency fallback, so pi's Herdr integration is a precondition |
 | Implemented | `omp` | `~/.omp/agent/sessions/<stripped-cwd>/<start-timestamp>_<session-id>.jsonl`; newest completed assistant `input + cacheRead + cacheWrite`, cross-checked against the turn's own `contextSnapshot.promptTokens`; home overridable with `PI_CODING_AGENT_DIR`, independently of pi's | Herdr's reported `agent_session` only — a path used directly, an id matched to the sole transcript whose name ends with it, non-unique treated as unresolved; no directory or recency fallback, so omp's Herdr integration is a precondition for the row filling in. Herdr labels the pane an `omp` agent from its own process either way, so a missing integration shows as a blank row rather than an absent one |
+| Implemented | `hermes` | `<home>/state.db` (`HERMES_HOME` overrides `~/.hermes`); `sessions.model_config._usage_anchor.prompt_tokens`, the latest main-loop call's input + cache read + cache write | Herdr's reported `agent_session` id only; no fallback, so Hermes's Herdr integration is a precondition |
 
 The two opencode providers use separate stores, both opened read-only; the v1
 provider does not read legacy JSON message files or the v1 database's unrelated
@@ -194,6 +197,36 @@ Worth reporting upstream all the same. The integration already reports at two
 other points in an agent session's life, so a switch is a third it could
 report; nothing here needs the plugin to change once it does.
 
+### When a hermes row is blank
+
+Measured against Hermes Agent 0.21.5, Herdr 0.9.1 and Herdr's hermes
+integration v5; Hermes is not pinned to a version.
+
+**The integration is a precondition.** A hermes pane is correlated only
+through the session id Herdr's hermes integration reports, with no directory,
+title or recency fallback: desktop sessions record no directory, and delegated
+sub-agents run in their parent's. Without the integration the row stays blank
+permanently. `herdr integration status` shows whether it is installed.
+
+**Desktop, TUI and ACP sessions report only at start and at `/new`.** Only the
+CLI reports again before each model call. So a session switched inside the app
+is not seen, and the row keeps describing the session reported last. When that
+session has ended, the row blanks rather than showing its last figure: Hermes
+clears a session's end marker whenever it is resumed, so an ended session is
+never the one live in the pane.
+
+**Profiles are not read.** Only `<home>/state.db` is, where `<home>` is
+`HERMES_HOME` or `~/.hermes`. A profile keeps its own store under
+`<home>/profiles/<name>/`, and reports to Herdr only if the integration was
+installed into that profile too.
+
+**The number is a little below Hermes's own status bar.** It is the prompt size
+the provider reported for the main loop's latest call. Hermes's status bar adds
+that call's completion and a rough estimate of messages appended since. The row
+also blanks after a compaction and before a session's first completed call,
+because Hermes removes or has not yet written the figure. See
+[ADR-0007](docs/adr/0007-hermes-reads-the-usage-anchor.md).
+
 ## Query the tokens
 
 There is no plugin command. Herdr answers queries from its own metadata reads.
@@ -237,3 +270,4 @@ The implementation follows the agreed design in
 - [ADR-0004: provider-specific session correlation](docs/adr/0004-provider-specific-session-correlation.md)
 - [ADR-0005: no plugin CLI](docs/adr/0005-no-plugin-cli.md)
 - [ADR-0006: two providers for pi and omp](docs/adr/0006-two-providers-for-pi-and-omp.md)
+- [ADR-0007: hermes reads the usage anchor](docs/adr/0007-hermes-reads-the-usage-anchor.md)
