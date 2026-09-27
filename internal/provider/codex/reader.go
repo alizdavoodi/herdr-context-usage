@@ -57,7 +57,7 @@ func readOccupancy(path string) (int64, error) {
 					if _, ok := occupancy(latest); ok {
 						justCompacted = false
 					}
-				} else if isCompaction(entry) {
+				} else if strings.EqualFold(entry.Type, "compacted") || strings.EqualFold(entry.Payload.Type, "compacted") {
 					justCompacted = true
 				}
 			}
@@ -108,12 +108,4 @@ func occupancy(usage *tokenUsage) (int64, bool) {
 		return *usage.InputTokens, true
 	}
 	return 0, false
-}
-
-func isCompaction(entry rolloutEntry) bool {
-	return isCompactionType(entry.Type) || isCompactionType(entry.Payload.Type)
-}
-
-func isCompactionType(kind string) bool {
-	return strings.EqualFold(kind, "compacted")
 }
