@@ -278,6 +278,10 @@ func TestRefreshClearsOmpOccupancyAtTheCompactionBoundary(t *testing.T) {
 	if !strings.Contains(got, `"context_state":"just_compacted"`) {
 		t.Fatalf("measurement = %q, want just_compacted", got)
 	}
+	// Resolution succeeded before the read failed, so its mode is still recorded.
+	if !strings.Contains(got, `"resolution_mode":"agent_session"`) {
+		t.Fatalf("measurement = %q, want the resolution mode kept on the failed read", got)
+	}
 	// Occupancy and the version arrive from one struct, so hoisting the occupancy
 	// assignment above the error check in refreshOne would compile and would
 	// publish a zero here. Pinning the null is what fails that edit.

@@ -137,6 +137,10 @@ func TestRefreshClearsOpenCode2OccupancyAtCompactionBoundary(t *testing.T) {
 	if got := log.String(); !strings.Contains(got, `"context_state":"just_compacted"`) {
 		t.Fatalf("measurement = %q, want just_compacted state", got)
 	}
+	// Resolution succeeded before the read failed, so its mode is still recorded.
+	if got := log.String(); !strings.Contains(got, `"resolution_mode":"terminal_title"`) {
+		t.Fatalf("measurement = %q, want the resolution mode kept on the failed read", got)
+	}
 }
 
 func TestRefreshClearsSupersededOpenCode2Values(t *testing.T) {

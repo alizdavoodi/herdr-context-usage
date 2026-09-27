@@ -380,6 +380,10 @@ func TestRefreshClearsValueWhenTranscriptIsJustCompacted(t *testing.T) {
 	if got := log.String(); !strings.Contains(got, `"context_state":"just_compacted"`) || !strings.Contains(got, `"occupancy":null`) {
 		t.Fatalf("diagnostic = %s, want just-compacted state with null occupancy", got)
 	}
+	// Resolution succeeded before the read failed, so its mode is still recorded.
+	if got := log.String(); !strings.Contains(got, `"resolution_mode":"agent_session"`) {
+		t.Fatalf("diagnostic = %s, want the resolution mode kept on the failed read", got)
+	}
 }
 
 func TestRefreshTreatsSyntheticZeroUsageAsUnknown(t *testing.T) {
@@ -748,6 +752,10 @@ func TestRefreshOpenCodeClearsValueWhenNewestMessageIsCompactionSummary(t *testi
 	if got := log.String(); !strings.Contains(got, `"context_state":"just_compacted"`) {
 		t.Fatalf("diagnostic = %s, want just-compacted state", got)
 	}
+	// Resolution succeeded before the read failed, so its mode is still recorded.
+	if got := log.String(); !strings.Contains(got, `"resolution_mode":"agent_session"`) {
+		t.Fatalf("diagnostic = %s, want the resolution mode kept on the failed read", got)
+	}
 }
 
 func TestRefreshKeepsOpenCodeV1OccupancyDuringInFlightTurn(t *testing.T) {
@@ -862,6 +870,10 @@ func TestRefreshClearsValueWhenCodexRolloutIsJustCompacted(t *testing.T) {
 	}
 	if got := log.String(); !strings.Contains(got, `"context_state":"just_compacted"`) {
 		t.Fatalf("diagnostic = %s, want just-compacted state", got)
+	}
+	// Resolution succeeded before the read failed, so its mode is still recorded.
+	if got := log.String(); !strings.Contains(got, `"resolution_mode":"agent_session"`) {
+		t.Fatalf("diagnostic = %s, want the resolution mode kept on the failed read", got)
 	}
 }
 
