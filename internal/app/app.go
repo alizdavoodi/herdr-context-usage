@@ -31,13 +31,13 @@ type Config struct {
 	// both opencode stores when no explicit database path is given, i.e.
 	// $XDG_DATA_HOME.
 	OpenCodeDataHome string
-	// The pi and omp homes are per-provider rather than shared even though both
-	// agents honour one override variable: a single field would point a pi pane
-	// at omp's store on any machine running both, and the two stores have the
-	// same layout below the home, so the mistake would be silent.
-	PiHome     string
-	OmpHome    string
-	HermesHome string
+	// PiCodingAgentDir is PI_CODING_AGENT_DIR. Both pi and omp honour that one
+	// variable, so one export redirects both agents. It is passed to each
+	// unresolved: an empty value is what lets each provider fall back to its
+	// own default home, which keeps an omp pane off pi's store on a machine
+	// running both.
+	PiCodingAgentDir string
+	HermesHome       string
 }
 
 type ContextState string

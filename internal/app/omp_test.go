@@ -112,7 +112,7 @@ func TestRefreshReportsOmpOccupancyFromAReportedPath(t *testing.T) {
 		reports: make(map[string][2]string),
 	}
 
-	if err := Refresh(context.Background(), fake, "", &log, Config{OmpHome: home}); err != nil {
+	if err := Refresh(context.Background(), fake, "", &log, Config{PiCodingAgentDir: home}); err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
 	if got := fake.reports["w1:p1"]; got != [2]string{"132k", "132098"} {
@@ -160,7 +160,7 @@ func TestRefreshResolvesOmpSessionFromAReportedID(t *testing.T) {
 		reports: make(map[string][2]string),
 	}
 
-	if err := Refresh(context.Background(), fake, "", &log, Config{OmpHome: home}); err != nil {
+	if err := Refresh(context.Background(), fake, "", &log, Config{PiCodingAgentDir: home}); err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
 	if got := fake.reports["w1:p1"]; got != [2]string{"132k", "132098"} {
@@ -209,7 +209,7 @@ func TestRefreshClearsOmpRowWhenAnIDDoesNotResolveUniquely(t *testing.T) {
 				reports: make(map[string][2]string),
 			}
 
-			if err := Refresh(context.Background(), fake, "", &log, Config{OmpHome: home}); err != nil {
+			if err := Refresh(context.Background(), fake, "", &log, Config{PiCodingAgentDir: home}); err != nil {
 				t.Fatalf("Refresh() error = %v", err)
 			}
 			if !slices.Equal(fake.clears, []string{"w1:p1"}) || len(fake.reports) != 0 {
@@ -238,7 +238,7 @@ func TestRefreshClearsOmpRowWhenNoAgentSessionIsReported(t *testing.T) {
 		reports: make(map[string][2]string),
 	}
 
-	if err := Refresh(context.Background(), fake, "", &log, Config{OmpHome: t.TempDir()}); err != nil {
+	if err := Refresh(context.Background(), fake, "", &log, Config{PiCodingAgentDir: t.TempDir()}); err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
 	if !slices.Equal(fake.clears, []string{"w1:p1"}) || len(fake.reports) != 0 {
@@ -267,7 +267,7 @@ func TestRefreshClearsOmpOccupancyAtTheCompactionBoundary(t *testing.T) {
 		reports: make(map[string][2]string),
 	}
 
-	if err := Refresh(context.Background(), fake, "", &log, Config{OmpHome: home}); err != nil {
+	if err := Refresh(context.Background(), fake, "", &log, Config{PiCodingAgentDir: home}); err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
 	if !slices.Equal(fake.clears, []string{"w1:p1"}) || len(fake.reports) != 0 {
@@ -319,7 +319,7 @@ func TestRefreshReportsOmpOccupancyOnTheTurnAfterACompaction(t *testing.T) {
 		reports: make(map[string][2]string),
 	}
 
-	if err := Refresh(context.Background(), fake, "", &log, Config{OmpHome: home}); err != nil {
+	if err := Refresh(context.Background(), fake, "", &log, Config{PiCodingAgentDir: home}); err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
 	if got := fake.reports["w1:p1"]; got != [2]string{"41k", "40710"} {
@@ -354,7 +354,7 @@ func TestRefreshPreservesOmpValueOnATransientReadFailure(t *testing.T) {
 		reports: make(map[string][2]string),
 	}
 
-	if err := Refresh(context.Background(), fake, "", nil, Config{OmpHome: home}); err != nil {
+	if err := Refresh(context.Background(), fake, "", nil, Config{PiCodingAgentDir: home}); err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
 	if len(fake.clears) != 0 || len(fake.reports) != 0 {
@@ -377,7 +377,7 @@ func TestRefreshClearsOmpRowWhenNoAssistantTurnHasCompleted(t *testing.T) {
 		reports: make(map[string][2]string),
 	}
 
-	if err := Refresh(context.Background(), fake, "", &log, Config{OmpHome: home}); err != nil {
+	if err := Refresh(context.Background(), fake, "", &log, Config{PiCodingAgentDir: home}); err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
 	if !slices.Equal(fake.clears, []string{"w1:p1"}) || len(fake.reports) != 0 {
@@ -444,7 +444,7 @@ func TestRefreshRecordsOmpOracleDisagreementAndStillReportsTheSum(t *testing.T) 
 				reports: make(map[string][2]string),
 			}
 
-			if err := Refresh(context.Background(), fake, "", &log, Config{OmpHome: home}); err != nil {
+			if err := Refresh(context.Background(), fake, "", &log, Config{PiCodingAgentDir: home}); err != nil {
 				t.Fatalf("Refresh() error = %v", err)
 			}
 			if got := fake.reports["w1:p1"]; got != tt.want {
@@ -477,11 +477,9 @@ func TestRefreshRecordsOmpOracleDisagreementAndStillReportsTheSum(t *testing.T) 
 	}
 }
 
-// A pi pane and an omp pane in the same round must each be measured against
-// their own agent. The two stores have the same layout below the home and both
-// stamp version 3, so a provider reaching for the wrong home would report a
-// number rather than fail — which is the whole reason the homes are two
-// configuration fields rather than one.
+// A pi pane and an omp pane in one round are each read by their own provider,
+// which report different numbers for their own transcripts. Both panes report
+// absolute paths, so neither provider consults a home.
 func TestRefreshMeasuresPiAndOmpPanesAgainstTheirOwnStores(t *testing.T) {
 	t.Parallel()
 
@@ -500,7 +498,7 @@ func TestRefreshMeasuresPiAndOmpPanesAgainstTheirOwnStores(t *testing.T) {
 		reports: make(map[string][2]string),
 	}
 
-	if err := Refresh(context.Background(), fake, "", &log, Config{PiHome: piHome, OmpHome: ompHome}); err != nil {
+	if err := Refresh(context.Background(), fake, "", &log, Config{}); err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
 	if got := fake.reports["w1:p1"]; got != [2]string{"28k", "27905"} {

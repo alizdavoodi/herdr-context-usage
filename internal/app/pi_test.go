@@ -98,7 +98,7 @@ func TestRefreshReportsPiOccupancyFromAReportedPath(t *testing.T) {
 		reports: make(map[string][2]string),
 	}
 
-	if err := Refresh(context.Background(), fake, "", &log, Config{PiHome: home}); err != nil {
+	if err := Refresh(context.Background(), fake, "", &log, Config{PiCodingAgentDir: home}); err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
 	if got := fake.reports["w1:p1"]; got != [2]string{"28k", "27905"} {
@@ -146,7 +146,7 @@ func TestRefreshResolvesPiSessionFromAReportedID(t *testing.T) {
 		reports: make(map[string][2]string),
 	}
 
-	if err := Refresh(context.Background(), fake, "", &log, Config{PiHome: home}); err != nil {
+	if err := Refresh(context.Background(), fake, "", &log, Config{PiCodingAgentDir: home}); err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
 	if got := fake.reports["w1:p1"]; got != [2]string{"28k", "27905"} {
@@ -195,7 +195,7 @@ func TestRefreshClearsPiRowWhenAnIDDoesNotResolveUniquely(t *testing.T) {
 				reports: make(map[string][2]string),
 			}
 
-			if err := Refresh(context.Background(), fake, "", &log, Config{PiHome: home}); err != nil {
+			if err := Refresh(context.Background(), fake, "", &log, Config{PiCodingAgentDir: home}); err != nil {
 				t.Fatalf("Refresh() error = %v", err)
 			}
 			if !slices.Equal(fake.clears, []string{"w1:p1"}) || len(fake.reports) != 0 {
@@ -220,7 +220,7 @@ func TestRefreshClearsPiRowWhenNoAgentSessionIsReported(t *testing.T) {
 		reports: make(map[string][2]string),
 	}
 
-	if err := Refresh(context.Background(), fake, "", &log, Config{PiHome: t.TempDir()}); err != nil {
+	if err := Refresh(context.Background(), fake, "", &log, Config{PiCodingAgentDir: t.TempDir()}); err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
 	if !slices.Equal(fake.clears, []string{"w1:p1"}) || len(fake.reports) != 0 {
@@ -254,7 +254,7 @@ func TestRefreshClearsPiOccupancyAtTheCompactionBoundary(t *testing.T) {
 		reports: make(map[string][2]string),
 	}
 
-	if err := Refresh(context.Background(), fake, "", &log, Config{PiHome: home}); err != nil {
+	if err := Refresh(context.Background(), fake, "", &log, Config{PiCodingAgentDir: home}); err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
 	if !slices.Equal(fake.clears, []string{"w1:p1"}) || len(fake.reports) != 0 {
@@ -312,7 +312,7 @@ func TestRefreshReportsPiOccupancyOnTheTurnAfterACompaction(t *testing.T) {
 		reports: make(map[string][2]string),
 	}
 
-	if err := Refresh(context.Background(), fake, "", &log, Config{PiHome: home}); err != nil {
+	if err := Refresh(context.Background(), fake, "", &log, Config{PiCodingAgentDir: home}); err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
 	if got := fake.reports["w1:p1"]; got != [2]string{"17k", "17033"} {
@@ -347,7 +347,7 @@ func TestRefreshPreservesPiValueOnATransientReadFailure(t *testing.T) {
 		reports: make(map[string][2]string),
 	}
 
-	if err := Refresh(context.Background(), fake, "", nil, Config{PiHome: home}); err != nil {
+	if err := Refresh(context.Background(), fake, "", nil, Config{PiCodingAgentDir: home}); err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
 	if len(fake.clears) != 0 || len(fake.reports) != 0 {
@@ -370,7 +370,7 @@ func TestRefreshClearsPiRowWhenNoAssistantTurnHasCompleted(t *testing.T) {
 		reports: make(map[string][2]string),
 	}
 
-	if err := Refresh(context.Background(), fake, "", &log, Config{PiHome: home}); err != nil {
+	if err := Refresh(context.Background(), fake, "", &log, Config{PiCodingAgentDir: home}); err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
 	if !slices.Equal(fake.clears, []string{"w1:p1"}) || len(fake.reports) != 0 {

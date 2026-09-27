@@ -122,8 +122,10 @@ override applies to both. The two agents derive their directory names
 differently: pi wraps the whole absolute path, omp strips the home prefix. Each
 provider therefore owns its own derivation.
 
-Configuration gains an independent home for each provider. One shared field
-would point a pi pane at omp's store on any machine running both.
+Configuration carries the one override and hands it to each provider
+unresolved, so an unset override leaves each on its own default home. Resolving
+it once, to either agent's default, would point a pi pane at omp's store on any
+machine running both.
 
 ### Context occupancy
 

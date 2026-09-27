@@ -24,17 +24,16 @@ import (
 // so a kind that function never returns stays unreachable however complete its
 // package is. internal/app/seam_test.go pins both halves.
 //
-// Each provider is handed only its own fields of config, once, so no resolution
-// can read another provider's home — the silent mistake the separate pi and omp
-// fields exist to prevent.
+// Each provider is handed only the config it reads, once; Config.PiCodingAgentDir
+// says why pi and omp share a field.
 func registry(config Config) []provider.Provider {
 	return []provider.Provider{
 		claude.New(config.ClaudeHome),
 		codex.New(config.CodexHome),
 		opencode.New(config.OpenCodeDB, config.OpenCodeDataHome),
 		opencode2.New(config.OpenCode2DB, config.OpenCodeDataHome),
-		pi.New(config.PiHome),
-		omp.New(config.OmpHome),
+		pi.New(config.PiCodingAgentDir),
+		omp.New(config.PiCodingAgentDir),
 		hermes.New(config.HermesHome),
 	}
 }
