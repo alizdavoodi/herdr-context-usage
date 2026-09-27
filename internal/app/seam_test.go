@@ -13,8 +13,8 @@ import (
 func TestEveryRegisteredProviderDeclaresASupersededAnswer(t *testing.T) {
 	t.Parallel()
 
-	for _, registered := range registry(Config{}) {
-		t.Run(string(registered.Kind()), func(t *testing.T) {
+	for kind, registered := range registry(Config{}) {
+		t.Run(string(kind), func(t *testing.T) {
 			t.Parallel()
 			declared := registered.Superseded()
 			if len(declared) == 0 {
@@ -24,30 +24,10 @@ func TestEveryRegisteredProviderDeclaresASupersededAnswer(t *testing.T) {
 	}
 }
 
-// providerFor returns the first match, so two providers claiming one kind would
-// leave the second permanently unreachable with nothing to indicate it.
-func TestRegistryHasNoDuplicateKinds(t *testing.T) {
-	t.Parallel()
-
-	providers := registry(Config{})
-	seen := make(map[string]struct{}, len(providers))
-	for _, registered := range providers {
-		kind := string(registered.Kind())
-		if kind == "" {
-			t.Error("a provider reports an empty kind, which no agent label can match")
-			continue
-		}
-		if _, duplicate := seen[kind]; duplicate {
-			t.Errorf("two providers claim kind %q; only the first is reachable", kind)
-		}
-		seen[kind] = struct{}{}
-	}
-}
-
 // Registering a provider is necessary to make an agent kind live but not
 // sufficient: dispatch reaches the registry only through FromAgent, which parses
 // herdr's agent label into a Kind. A provider registered under a kind FromAgent
-// never returns is unreachable, and every other property test here still passes
+// never returns is unreachable, and the other property test here still passes
 // — the registry is internally consistent, it is just never consulted. The row
 // then blanks permanently with no error anywhere to explain it.
 //
@@ -58,8 +38,7 @@ func TestRegistryHasNoDuplicateKinds(t *testing.T) {
 func TestEveryRegisteredKindIsReachableFromItsAgentLabel(t *testing.T) {
 	t.Parallel()
 
-	for _, registered := range registry(Config{}) {
-		kind := registered.Kind()
+	for kind := range registry(Config{}) {
 		t.Run(string(kind), func(t *testing.T) {
 			t.Parallel()
 			got := provider.FromAgent(string(kind), nil)

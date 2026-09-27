@@ -137,7 +137,7 @@ func Refresh(ctx context.Context, client Herdr, eventPaneID string, log io.Write
 			// Gating on it rather than on a parallel predicate means a kind nobody
 			// registered blanks its row instead of silently keeping a previous
 			// session's value, which is the safe direction for an unreadable pane.
-			p := providerFor(kind, providers)
+			p := providers[kind]
 			if p == nil {
 				if hasOccupancyToken(agent.Tokens) {
 					if err := client.Clear(gctx, agent.PaneID); err != nil {
@@ -146,7 +146,7 @@ func Refresh(ctx context.Context, client Herdr, eventPaneID string, log io.Write
 				}
 				return nil
 			}
-			if err := refreshOne(gctx, client, agent.PaneID, paneOf(agent, processes), log, p); err != nil {
+			if err := refreshOne(gctx, client, agent.PaneID, kind, paneOf(agent, processes), log, p); err != nil {
 				appendErr(err)
 			}
 			return nil

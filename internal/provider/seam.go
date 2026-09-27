@@ -74,7 +74,6 @@ var ErrJustCompacted = errors.New("agent session is just-compacted")
 // kind. The skeleton in app owns error classification, measurement and
 // reporting, which are identical across every provider.
 type Provider interface {
-	Kind() Kind
 	// Superseded lists this provider's answers that IsSuperseded treats as
 	// proof the displayed value is wrong.
 	Superseded() []error

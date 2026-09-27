@@ -16,8 +16,6 @@ func New(home string) provider.Provider {
 
 type ompProvider struct{ home string }
 
-func (ompProvider) Kind() provider.Kind { return provider.Omp }
-
 // Resolve reads only herdr's reported agent session from the pane; sessionInput
 // says why. Reading is file-backed, so Cleanup is nil.
 func (p ompProvider) Resolve(_ context.Context, pane provider.Pane) (provider.Resolved, error) {

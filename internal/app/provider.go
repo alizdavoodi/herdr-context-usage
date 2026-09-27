@@ -20,31 +20,24 @@ import (
 )
 
 // Adding a provider here is what makes its kind measurable, and it is not
-// enough on its own: dispatch reaches this list only through provider.FromAgent,
+// enough on its own: dispatch reaches this map only through provider.FromAgent,
 // so a kind that function never returns stays unreachable however complete its
-// package is. internal/app/seam_test.go pins both halves.
+// package is. internal/app/seam_test.go pins both halves. Two providers cannot
+// claim one kind, because Go rejects a duplicate constant key in a map literal
+// and so the registry would not compile.
 //
 // Each provider is handed only the config it reads, once; Config.PiCodingAgentDir
 // says why pi and omp share a field.
-func registry(config Config) []provider.Provider {
-	return []provider.Provider{
-		claude.New(config.ClaudeHome),
-		codex.New(config.CodexHome),
-		opencode.New(config.OpenCodeDB, config.OpenCodeDataHome),
-		opencode2.New(config.OpenCode2DB, config.OpenCodeDataHome),
-		pi.New(config.PiCodingAgentDir),
-		omp.New(config.PiCodingAgentDir),
-		hermes.New(config.HermesHome),
+func registry(config Config) map[provider.Kind]provider.Provider {
+	return map[provider.Kind]provider.Provider{
+		provider.Claude:    claude.New(config.ClaudeHome),
+		provider.Codex:     codex.New(config.CodexHome),
+		provider.OpenCode:  opencode.New(config.OpenCodeDB, config.OpenCodeDataHome),
+		provider.OpenCode2: opencode2.New(config.OpenCode2DB, config.OpenCodeDataHome),
+		provider.Pi:        pi.New(config.PiCodingAgentDir),
+		provider.Omp:       omp.New(config.PiCodingAgentDir),
+		provider.Hermes:    hermes.New(config.HermesHome),
 	}
-}
-
-func providerFor(kind provider.Kind, registered []provider.Provider) provider.Provider {
-	for _, p := range registered {
-		if p.Kind() == kind {
-			return p
-		}
-	}
-	return nil
 }
 
 // paneOf is the one place herdr's agent record becomes what a provider reads,
@@ -63,7 +56,7 @@ func paneOf(agent herdr.Agent, processes []provider.Process) provider.Pane {
 // handleUnknown decide whether to clear the pane. Each provider brings only
 // its own resolution and reading; the error classification, measurement, and
 // reporting are identical across every provider.
-func refreshOne(ctx context.Context, client Herdr, paneID string, pane provider.Pane, log io.Writer, p provider.Provider) error {
+func refreshOne(ctx context.Context, client Herdr, paneID string, kind provider.Kind, pane provider.Pane, log io.Writer, p provider.Provider) error {
 	resolved, err := p.Resolve(ctx, pane)
 	if resolved.Cleanup != nil {
 		// A provider may open a store before its resolution fails; closing it
@@ -74,7 +67,7 @@ func refreshOne(ctx context.Context, client Herdr, paneID string, pane provider.
 	// and in how much the reader got to observe first, so the record is built
 	// once here and handed on rather than passed down field by field.
 	measurement := Measurement{
-		PaneID: paneID, Provider: p.Kind(), ContextState: ContextUnknown,
+		PaneID: paneID, Provider: kind, ContextState: ContextUnknown,
 		ResolutionMode: resolutionMode(resolved.Mode),
 	}
 	if err != nil {
@@ -84,7 +77,7 @@ func refreshOne(ctx context.Context, client Herdr, paneID string, pane provider.
 		// Refresh walks every pane, so a provider that resolves without
 		// supplying a reader would panic the whole sweep rather than spoil one
 		// row. Reporting it as unknown keeps the other panes measurable.
-		err := fmt.Errorf("provider %s resolved without a reader", p.Kind())
+		err := fmt.Errorf("provider %s resolved without a reader", kind)
 		return handleUnknown(ctx, client, log, p.Superseded(), measurement, err)
 	}
 	reading, err := resolved.Read(ctx)

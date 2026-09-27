@@ -15,8 +15,6 @@ func New(home string) provider.Provider {
 
 type claudeProvider struct{ home string }
 
-func (claudeProvider) Kind() provider.Kind { return provider.Claude }
-
 // Resolve narrows the pane's process list to claude's own process ids, which
 // is what the process-registry tier matches on. Reading is file-backed, so
 // Cleanup is nil.

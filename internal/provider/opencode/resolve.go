@@ -16,8 +16,6 @@ func New(explicitDB, dataHome string) provider.Provider {
 
 type opencodeProvider struct{ db, dataHome string }
 
-func (opencodeProvider) Kind() provider.Kind { return provider.OpenCode }
-
 // Resolve tries the session id herdr reported, then the pane's terminal title.
 // Only an id is consulted: opencode keeps its sessions in a database rather
 // than a file per session, so a reported path names nothing this provider can

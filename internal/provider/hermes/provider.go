@@ -20,8 +20,6 @@ func New(home string) provider.Provider {
 
 type hermesProvider struct{ home string }
 
-func (hermesProvider) Kind() provider.Kind { return provider.Hermes }
-
 // Resolve reads only herdr's reported agent session id, and nothing else the
 // pane offers. There is no working-directory, title, process or recency
 // fallback, and each would be wrong here rather than merely weak: a desktop
