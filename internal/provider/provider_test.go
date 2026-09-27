@@ -30,6 +30,7 @@ func TestFromAgent(t *testing.T) {
 		// omp is its own label rather than a variant of pi's, so a pane running
 		// it must not resolve to the pi kind and read pi's store.
 		{name: "omp needs no process list", agent: "omp", processes: ProcessList{}, want: Omp},
+		{name: "hermes needs no process list", agent: "hermes", processes: ProcessList{}, want: Hermes},
 		{name: "unrecognised agent", agent: "unknown", processes: ProcessList{Available: true, Entries: []Process{{Argv0: "claude"}}}, want: None},
 	}
 

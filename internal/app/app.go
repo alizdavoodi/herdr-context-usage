@@ -35,8 +35,9 @@ type Config struct {
 	// agents honour one override variable: a single field would point a pi pane
 	// at omp's store on any machine running both, and the two stores have the
 	// same layout below the home, so the mistake would be silent.
-	PiHome  string
-	OmpHome string
+	PiHome     string
+	OmpHome    string
+	HermesHome string
 }
 
 type ContextState string

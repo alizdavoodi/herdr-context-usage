@@ -26,6 +26,11 @@ fallback at all. A path is used directly; an id is matched against the
 transcript whose name ends with it under that provider's own home; a match that
 is not unique is treated as unresolved rather than chosen between.
 
+`hermes` joins them, on Hermes Agent 0.21.5 and Herdr 0.9.1: it resolves only
+from the session id Herdr's hermes integration reports, because a desktop
+session records no directory and a delegated sub-agent shares its parent's
+([ADR-0007](0007-hermes-reads-the-usage-anchor.md)).
+
 Two reasons put the fallback out of reach, and both bear on each agent. Both
 agents file an agent session under the directory the agent *started* in, so a
 pane that has since moved resolves to nothing or to an unrelated agent session
