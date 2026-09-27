@@ -24,6 +24,9 @@ const (
 	// applies, and more sharply: "oh-my-pi" is what the project calls itself
 	// in prose, and it is not the label.
 	Omp Kind = "omp"
+	// The same load-bearing spelling as pi and omp: "hermes-agent" is the
+	// package's name, and it is not the label.
+	Hermes Kind = "hermes"
 )
 
 type Process struct {
@@ -52,6 +55,10 @@ func FromAgent(agent string, processes ProcessList) Kind {
 		return Pi
 	case "omp":
 		return Omp
+	// Hermes runs as python3.12, so its process names nothing; herdr's label is
+	// the only signal, and processKind deliberately does not learn it.
+	case "hermes":
+		return Hermes
 	case "opencode2":
 		return OpenCode2
 	case "opencode":

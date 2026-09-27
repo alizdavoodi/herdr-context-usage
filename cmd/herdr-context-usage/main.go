@@ -30,8 +30,9 @@ func main() {
 		// actually wrote rather than at either agent's default home. The two
 		// fields stay separate all the same: unset, each provider falls back to
 		// its own default home, and one field could not express that.
-		PiHome:  os.Getenv("PI_CODING_AGENT_DIR"),
-		OmpHome: os.Getenv("PI_CODING_AGENT_DIR"),
+		PiHome:     os.Getenv("PI_CODING_AGENT_DIR"),
+		OmpHome:    os.Getenv("PI_CODING_AGENT_DIR"),
+		HermesHome: os.Getenv("HERMES_HOME"),
 	}
 	if err := app.Refresh(ctx, client, os.Getenv("HERDR_PANE_ID"), os.Stdout, config); err != nil {
 		fmt.Fprintf(os.Stderr, "herdr-context-usage: %v\n", err)
