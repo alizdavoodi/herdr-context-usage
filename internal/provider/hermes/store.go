@@ -22,20 +22,14 @@ var (
 	ErrSessionEnded = errors.New("hermes agent session has ended")
 )
 
-type store struct {
-	db *sql.DB
-}
+type store struct{ *sql.DB }
 
 func open(ctx context.Context, path string) (*store, error) {
 	db, err := sqlitestore.OpenReadOnly(ctx, path, "sessions", "messages")
 	if err != nil {
 		return nil, err
 	}
-	return &store{db: db}, nil
-}
-
-func (s *store) Close() error {
-	return s.db.Close()
+	return &store{DB: db}, nil
 }
 
 // modelConfig is the one key of sessions.model_config this provider reads.
@@ -62,13 +56,13 @@ func (s *store) readOccupancy(ctx context.Context, id string) (provider.Reading,
 	// row caused by a schema change is diagnosable, which is why it is read
 	// before anything that can fail.
 	var version int
-	if s.db.QueryRowContext(ctx, `SELECT version FROM schema_version`).Scan(&version) == nil {
+	if s.QueryRowContext(ctx, `SELECT version FROM schema_version`).Scan(&version) == nil {
 		reading.TranscriptVersion = &version
 	}
 
 	var model, config, endReason sql.NullString
 	var ended bool
-	err := s.db.QueryRowContext(ctx,
+	err := s.QueryRowContext(ctx,
 		`SELECT model, model_config, ended_at IS NOT NULL, end_reason FROM sessions WHERE id = ?`, id).
 		Scan(&model, &config, &ended, &endReason)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -106,7 +100,7 @@ func (s *store) readOccupancy(ctx context.Context, id string) (provider.Reading,
 		// caught. The full check is Hermes's base_last_fp fingerprint, rejected
 		// because it means byte-matching Python's json.dumps in Go.
 		var active int64
-		if err := s.db.QueryRowContext(ctx,
+		if err := s.QueryRowContext(ctx,
 			`SELECT COUNT(*) FROM messages WHERE session_id = ? AND active = 1`, id).Scan(&active); err != nil {
 			return reading, fmt.Errorf("read hermes transcript length: %w", err)
 		}
@@ -125,7 +119,7 @@ func (s *store) readOccupancy(ctx context.Context, id string) (provider.Reading,
 	// is labelled just-compacted too. Both answers clear the row, so only the
 	// record's context_state differs; a per-compaction marker would split them.
 	var compacted bool
-	if err := s.db.QueryRowContext(ctx,
+	if err := s.QueryRowContext(ctx,
 		`SELECT EXISTS(SELECT 1 FROM messages WHERE session_id = ? AND compacted = 1)`, id).Scan(&compacted); err != nil {
 		return reading, fmt.Errorf("read hermes compaction state: %w", err)
 	}

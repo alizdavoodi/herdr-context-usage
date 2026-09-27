@@ -221,7 +221,7 @@ func TestOpenRefusesWrites(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if _, err := s.db.Exec(`UPDATE sessions SET model_config = NULL`); err == nil {
+	if _, err := s.Exec(`UPDATE sessions SET model_config = NULL`); err == nil {
 		t.Fatal("a store opened for reading accepted a write against Hermes's live database")
 	}
 }

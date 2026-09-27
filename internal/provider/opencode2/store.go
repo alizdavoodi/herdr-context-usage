@@ -21,9 +21,7 @@ var (
 	ErrJustCompacted = fmt.Errorf("opencode2 %w", provider.ErrJustCompacted)
 )
 
-type store struct {
-	db *sql.DB
-}
+type store struct{ *sql.DB }
 
 type assistantPayload struct {
 	Time struct {
@@ -50,11 +48,7 @@ func open(ctx context.Context, explicitPath, dataHome string) (*store, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &store{db: db}, nil
-}
-
-func (s *store) Close() error {
-	return s.db.Close()
+	return &store{DB: db}, nil
 }
 
 func (s *store) resolveTerminalTitle(ctx context.Context, directory, terminalTitle string) (string, error) {
@@ -67,7 +61,7 @@ func (s *store) resolveTerminalTitle(ctx context.Context, directory, terminalTit
 // positive root-session match here can produce a reading.
 func (s *store) sessionsByTitle(ctx context.Context, directory string, title opencodeshared.Title) ([]string, error) {
 	comparison, args := title.Comparison()
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := s.QueryContext(ctx,
 		`SELECT id FROM session_v2 WHERE directory = ? AND parent_id IS NULL AND `+comparison+` LIMIT 2`,
 		append([]any{directory}, args...)...)
 	if err != nil {
@@ -78,7 +72,7 @@ func (s *store) sessionsByTitle(ctx context.Context, directory string, title ope
 }
 
 func (s *store) readOccupancy(ctx context.Context, sessionID string) (provider.Reading, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT type, data FROM session_message
+	rows, err := s.QueryContext(ctx, `SELECT type, data FROM session_message
 		WHERE session_id = ? AND type IN ('assistant', 'compaction')
 		ORDER BY seq DESC
 		LIMIT ?`, sessionID, occupancyScanLimit)

@@ -282,7 +282,7 @@ func TestOpenRejectsWrites(t *testing.T) {
 
 	s := openStore(t, fixtureDatabase(t, func(*sql.DB) {}))
 	defer s.Close()
-	if _, err := s.database.ExecContext(context.Background(), `INSERT INTO session (id) VALUES ('write')`); err == nil {
+	if _, err := s.ExecContext(context.Background(), `INSERT INTO session (id) VALUES ('write')`); err == nil {
 		t.Fatal("read-only opencode store accepted a write")
 	}
 }

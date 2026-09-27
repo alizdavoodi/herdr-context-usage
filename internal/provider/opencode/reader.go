@@ -34,9 +34,7 @@ type cacheCounts struct {
 	Write *int64 `json:"write"`
 }
 
-type store struct {
-	database *sql.DB
-}
+type store struct{ *sql.DB }
 
 func open(ctx context.Context, explicitPath, dataHome string) (*store, error) {
 	path, err := opencodeshared.DataPath(explicitPath, dataHome, "opencode.db")
@@ -45,15 +43,11 @@ func open(ctx context.Context, explicitPath, dataHome string) (*store, error) {
 	}
 	// opencode's schema is mid-migration: the v1 database also carries a stalled
 	// session_v2, so having session and message is what makes a file a v1 store.
-	database, err := sqlitestore.OpenReadOnly(ctx, path, "session", "message")
+	db, err := sqlitestore.OpenReadOnly(ctx, path, "session", "message")
 	if err != nil {
 		return nil, err
 	}
-	return &store{database: database}, nil
-}
-
-func (s *store) Close() error {
-	return s.database.Close()
+	return &store{DB: db}, nil
 }
 
 func (s *store) resolveTerminalTitle(ctx context.Context, directory, terminalTitle string) (string, error) {
@@ -66,7 +60,7 @@ func (s *store) resolveTerminalTitle(ctx context.Context, directory, terminalTit
 // only a positive root-session match here can produce a reading.
 func (s *store) sessionsByTitle(ctx context.Context, directory string, title opencodeshared.Title) ([]string, error) {
 	comparison, args := title.Comparison()
-	rows, err := s.database.QueryContext(ctx,
+	rows, err := s.QueryContext(ctx,
 		`SELECT id FROM session WHERE directory = ? AND parent_id IS NULL AND `+comparison+` LIMIT 2`,
 		append([]any{directory}, args...)...)
 	if err != nil {
@@ -77,11 +71,11 @@ func (s *store) sessionsByTitle(ctx context.Context, directory string, title ope
 }
 
 func (s *store) readOccupancy(ctx context.Context, sessionID string) (int64, error) {
-	if err := sessionExists(ctx, s.database, sessionID); err != nil {
+	if err := sessionExists(ctx, s.DB, sessionID); err != nil {
 		return 0, err
 	}
 
-	rows, err := s.database.QueryContext(ctx, `SELECT data FROM message WHERE session_id = ? ORDER BY time_created DESC, id DESC`, sessionID)
+	rows, err := s.QueryContext(ctx, `SELECT data FROM message WHERE session_id = ? ORDER BY time_created DESC, id DESC`, sessionID)
 	if err != nil {
 		return 0, fmt.Errorf("read opencode messages: %w", err)
 	}

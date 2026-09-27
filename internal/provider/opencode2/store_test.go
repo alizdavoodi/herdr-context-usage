@@ -361,7 +361,7 @@ func TestOpenIsReadOnly(t *testing.T) {
 	path := newTestDatabase(t)
 	s := openStore(t, path)
 	defer s.Close()
-	if _, err := s.db.ExecContext(context.Background(), `INSERT INTO session_v2 (id, directory, title, time_updated) VALUES ('write', '/work', 'write', 1)`); err == nil {
+	if _, err := s.ExecContext(context.Background(), `INSERT INTO session_v2 (id, directory, title, time_updated) VALUES ('write', '/work', 'write', 1)`); err == nil {
 		t.Fatal("read-only store accepted a write")
 	}
 }
