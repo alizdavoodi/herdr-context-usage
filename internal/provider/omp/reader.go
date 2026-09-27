@@ -17,17 +17,6 @@ import (
 // scan independent of how long the agent session has run.
 const maxScanBytes int64 = 8 << 20
 
-// maxHeaderRecords bounds the search for the session record.
-//
-// It is not the first record. omp writes a fixed-width title record ahead of it
-// — padded so the title can be rewritten in place — which puts the session
-// record at line 2 on all five real transcripts. The most header records
-// observed ahead of a transcript's first message is 7: title, session, then a
-// run of model_change and thinking_level_change records. 16 is a little over
-// twice that, and exists so that a transcript carrying no session record cannot
-// turn the search into a scan of the whole bounded head.
-const maxHeaderRecords = 16
-
 var (
 	ErrNoOccupancy   = errors.New("omp transcript has no current context occupancy")
 	ErrJustCompacted = fmt.Errorf("omp %w", provider.ErrJustCompacted)
@@ -229,12 +218,10 @@ func oracleDisagreement(entry transcriptEntry, occupancy int64) string {
 // that took the first line and looked for a version would find none, and one
 // that accepted any version-shaped key there would report 1 for every omp agent
 // session. A head with no session record in it leaves the version nil and the
-// walk proceeds.
+// walk proceeds. The head is already bounded by transcript.Read, so the search
+// needs no bound of its own.
 func readVersion(head [][]byte) *int {
-	for i, line := range head {
-		if i >= maxHeaderRecords {
-			return nil
-		}
+	for _, line := range head {
 		var record sessionRecord
 		if json.Unmarshal(bytes.TrimSpace(line), &record) != nil {
 			continue
