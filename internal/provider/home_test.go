@@ -2,6 +2,7 @@ package provider
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -50,5 +51,39 @@ func TestHomeWithoutAUserHomeWrapsErrNoHome(t *testing.T) {
 	explicit := t.TempDir()
 	if got, err := Home(explicit, filepath.Join("x", "y")); err != nil || got != explicit {
 		t.Fatalf("Home(explicit) with no user home = %q, %v; want %q", got, err, explicit)
+	}
+}
+
+// Both callers refuse an empty id before they get here, so this refusal is
+// pinned directly: the pattern would become sessions/*/*.jsonl, and a store
+// holding one transcript would resolve an empty id to it.
+func TestSessionTranscriptRefusesAnEmptyID(t *testing.T) {
+	t.Parallel()
+
+	const id = "01a014de-020a-70b2-bc8e-b6a70ed3e784"
+	home := t.TempDir()
+	dir := filepath.Join(home, "sessions", "--Users-alirezadavoodi--")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "2026-08-18T12-34-48-971Z_"+id+".jsonl"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, found, err := SessionTranscript(home, id); !found || err != nil {
+		t.Fatalf("SessionTranscript(id) = %t, %v; want the fixture found by its own id", found, err)
+	}
+	if path, found, err := SessionTranscript(home, ""); found || err != nil {
+		t.Fatalf("SessionTranscript(\"\") = %q, %t, %v; want no match", path, found, err)
+	}
+}
+
+// A glob that cannot run is a failure to look, not an answer about the session,
+// so it comes back as an error rather than as no match: no match blanks the row,
+// and a failure to look must leave the displayed value alone.
+func TestSessionTranscriptReportsAGlobFailure(t *testing.T) {
+	t.Parallel()
+
+	if _, found, err := SessionTranscript("[", "01a014de"); found || !errors.Is(err, filepath.ErrBadPattern) {
+		t.Fatalf("SessionTranscript() = %t, %v; want filepath.ErrBadPattern", found, err)
 	}
 }

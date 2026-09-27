@@ -59,7 +59,7 @@ func TestSupersededClassifiesEveryAnswer(t *testing.T) {
 func TestAnUnresolvableHomeSupersedesTheDisplayedValue(t *testing.T) {
 	t.Setenv("HOME", "")
 
-	_, err := resolve(sessionInput{AgentSession: &provider.AgentSession{Kind: "id", Value: "01a01485"}})
+	_, err := resolve("", &provider.AgentSession{Kind: "id", Value: "01a01485"})
 	if !errors.Is(err, provider.ErrNoHome) {
 		t.Fatalf("resolve(id) error = %v, want it to wrap ErrNoHome", err)
 	}

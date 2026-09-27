@@ -16,14 +16,18 @@ func New(home string) provider.Provider {
 
 type ompProvider struct{ home string }
 
-// Measure reads only herdr's reported agent session from the pane; sessionInput
-// says why.
+// Measure reads only herdr's reported agent session from the pane; resolve says
+// why.
 func (p ompProvider) Measure(_ context.Context, pane provider.Pane) (provider.Reading, error) {
-	resolved, err := resolve(sessionInput{OmpHome: p.home, AgentSession: pane.AgentSession})
+	path, err := resolve(p.home, pane.AgentSession)
 	if err != nil {
 		return provider.Reading{}, err
 	}
-	reading, err := readOccupancy(resolved.Path)
-	reading.Mode = resolved.Mode
+	reading, err := readOccupancy(path)
+	// Always agent_session, because resolution has one source: herdr's reported
+	// agent session is the whole of the input, so resolve's branches differ only
+	// in how they read one value, and a second mode would name a stage that does
+	// not exist.
+	reading.Mode = provider.ResolutionAgentSession
 	return reading, err
 }
