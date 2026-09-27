@@ -18,8 +18,8 @@ import (
 //
 // It is permanent for the life of the process, not momentary: there is nowhere
 // to look and every later refresh reads the same way. Every provider therefore
-// declares it superseded, so the displayed occupancy clears rather than falling
-// to Classify's transient default and standing as if it were current.
+// declares it superseded, so the displayed occupancy clears; an undeclared
+// answer would preserve it, standing as if it were current.
 var ErrNoHome = errors.New("agent home cannot be resolved")
 
 // Home returns explicit when it is set, and otherwise defaultRel joined under

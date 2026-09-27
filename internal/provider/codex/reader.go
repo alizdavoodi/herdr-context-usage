@@ -82,13 +82,14 @@ func readOccupancy(path string) (int64, error) {
 		return value, nil
 	}
 	// An all-zero usage row outside a compaction is a turn that recorded
-	// nothing, not an empty window. The other three providers walk back to the
+	// nothing, not an empty window. The other providers walk back to the
 	// previous reading here; codex reads only the newest row, so it says so
-	// instead and the value already on the pane stands as the lower bound. No
-	// rollout in the local corpus has produced this row — 0 of 7,143 usage
-	// events — which is why it needs its own name: one error covering both this
-	// and "nothing recorded yet" makes the difference between clearing and
-	// preserving invisible.
+	// instead, and leaving this answer out of Superseded is what lets the value
+	// already on the pane stand: occupancy only rises within a turn, so the
+	// previous reading is a valid lower bound. No rollout in the local corpus
+	// has produced this row — 0 of 7,143 usage events — which is why it needs
+	// its own name: one error covering both this and "nothing recorded yet"
+	// makes the difference between clearing and preserving invisible.
 	return 0, ErrFailedTurn
 }
 

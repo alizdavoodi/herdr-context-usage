@@ -78,14 +78,14 @@ func refreshOne(ctx context.Context, client Herdr, paneID string, pane provider.
 		ResolutionMode: resolutionMode(resolved.Mode),
 	}
 	if err != nil {
-		return handleUnknown(ctx, client, log, p.States(), measurement, err)
+		return handleUnknown(ctx, client, log, p.Superseded(), measurement, err)
 	}
 	if resolved.Read == nil {
 		// Refresh walks every pane, so a provider that resolves without
 		// supplying a reader would panic the whole sweep rather than spoil one
 		// row. Reporting it as unknown keeps the other panes measurable.
 		err := fmt.Errorf("provider %s resolved without a reader", p.Kind())
-		return handleUnknown(ctx, client, log, p.States(), measurement, err)
+		return handleUnknown(ctx, client, log, p.Superseded(), measurement, err)
 	}
 	reading, err := resolved.Read(ctx)
 	// A failed read can still have observed the schema version, and that is the
@@ -94,7 +94,7 @@ func refreshOne(ctx context.Context, client Herdr, paneID string, pane provider.
 	measurement.TranscriptVersion = reading.TranscriptVersion
 	if err != nil {
 		measurement.ContextState = contextState(err, p.JustCompacted())
-		return handleUnknown(ctx, client, log, p.States(), measurement, err)
+		return handleUnknown(ctx, client, log, p.Superseded(), measurement, err)
 	}
 	measurement.ContextState = ContextMeasured
 	measurement.Occupancy = &reading.Occupancy

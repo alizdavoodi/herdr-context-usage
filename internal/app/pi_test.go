@@ -389,19 +389,15 @@ func TestRefreshClearsPiRowWhenNoAssistantTurnHasCompleted(t *testing.T) {
 	}
 }
 
-// The defect this closes: an agent home that cannot be resolved at all left the
-// pane displaying its last occupancy for as long as it lived. Pi classified
-// the failure nowhere, so Classify fell to its transient default and preserved
-// a number that was correct once and stays plausible forever — the exact shape
-// the three-way classification exists to prevent.
+// An agent home that cannot be resolved at all must blank the row. Left
+// undeclared, the answer would be preserved as any undeclared answer is, and the
+// pane would keep a number that was correct once and stays plausible forever,
+// for as long as it lived.
 //
 // Measured against pi 0.84.2 and herdr 0.8.0 by driving this same path with the
-// sentinel declared and wrapped but left out of pi's declared states, which is
-// the defect's exact shape. The record written was context_state "unknown",
-// occupancy null, resolution_mode null, error "pi agent home cannot be
-// resolved: $HOME is not defined" (that sentinel's text at the time, before
-// it moved to the provider root) — and clears was empty, so the pane kept
-// 27,905 from its previous round.
+// sentinel wrapped but left out of pi's superseded answers: the record read
+// context_state "unknown", occupancy null and resolution_mode null, and clears
+// was empty, so the pane kept 27,905 from its previous round.
 //
 // Sets the environment, so it cannot run in parallel. Unsetting HOME defeats
 // os.UserHomeDir only on unix; Windows reads USERPROFILE. A pane reporting a path

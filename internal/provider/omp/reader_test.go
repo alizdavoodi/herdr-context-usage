@@ -685,7 +685,7 @@ func TestReadOccupancyBeyondTheBoundedTail(t *testing.T) {
 }
 
 // A resolved transcript that is not there is this provider's evidence that the
-// agent session is gone, and States classifies it by unwrapping to
+// agent session is gone, and Superseded matches it by unwrapping to
 // fs.ErrNotExist, so the wrapping has to keep that reachable.
 func TestReadOccupancyMissingTranscript(t *testing.T) {
 	t.Parallel()

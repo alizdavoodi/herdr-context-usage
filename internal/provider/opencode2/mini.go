@@ -28,7 +28,7 @@ const miniSubcommand = "mini"
 // correct blank.
 //
 // Wrapping ErrTitleUnavailable is also what keeps the classification right
-// without touching States: that answer is already superseded, and
+// without touching Superseded: that answer is already declared there, and
 // errors.Is reaches through.
 var ErrMiniInterface = fmt.Errorf("%w: the pane runs the %s interface, which sets no opencode terminal title",
 	opencodeshared.ErrTitleUnavailable, miniSubcommand)
@@ -69,7 +69,7 @@ func runsMiniInterface(argv []string) bool {
 // attribution rather than parsing. A bare "OpenCode" title, a plugin route, a
 // well-formed title matching no session and a store failure each already carry
 // their own reason and keep it. The mini answer wraps the one it replaces, so
-// the row blanks exactly as before and States needs no new entry.
+// the row blanks exactly as before and Superseded needs no new entry.
 func attributeMiniInterface(err error, processes []provider.Process) error {
 	if !errors.Is(err, opencodeshared.ErrTitleUnavailable) {
 		return err

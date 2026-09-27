@@ -10,7 +10,6 @@ import (
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/herdr"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
-	"github.com/alizdavoodi/herdr-context-usage/internal/report"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -211,19 +210,20 @@ func hasOccupancyToken(tokens map[string]string) bool {
 }
 
 // handleUnknown is the one place a failed reading becomes a decision about the
-// pane, for every provider. Each provider brings its own states and its own
-// half-built record; only the classification is shared. refreshOne fills the
-// record in because how much a failed reading observed before giving up varies
-// per provider, and threading each of those fields through here as a parameter
-// is how this signature grew unreadable once already.
-func handleUnknown(ctx context.Context, client Herdr, log io.Writer, states report.States, measurement Measurement, err error) error {
+// pane, for every provider. Each provider brings its own superseded answers and
+// its own half-built record; only the classification is shared. refreshOne
+// fills the record in because how much a failed reading observed before giving
+// up varies per provider, and threading each of those fields through here as a
+// parameter is how this signature grew unreadable once already.
+func handleUnknown(ctx context.Context, client Herdr, log io.Writer, superseded []error, measurement Measurement, err error) error {
 	measurement.Error = err.Error()
 	measurementErr := writeMeasurement(log, measurement)
-	if report.Classify(err, states) == report.Superseded {
+	if provider.IsSuperseded(err, superseded) {
 		return errors.Join(measurementErr, client.Clear(ctx, measurement.PaneID))
 	}
-	// Stale-low and transient answers both leave the displayed value alone: one
-	// is a valid lower bound, the other is a failure to read, and neither is
+	// Anything undeclared leaves the displayed value alone. An answer such as
+	// codex's ErrFailedTurn leaves the previous reading standing as a valid
+	// lower bound, a transient one is a failure to read, and neither is
 	// evidence that the value belongs to a superseded session.
 	return measurementErr
 }

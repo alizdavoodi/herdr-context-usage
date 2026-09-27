@@ -2,8 +2,8 @@ package provider
 
 import (
 	"context"
-
-	"github.com/alizdavoodi/herdr-context-usage/internal/report"
+	"errors"
+	"slices"
 )
 
 // ResolutionMode names which method identified the agent session for a pane
@@ -70,7 +70,18 @@ type Resolved struct {
 // reporting, which are identical across every provider.
 type Provider interface {
 	Kind() Kind
-	States() report.States
+	// Superseded lists this provider's answers that IsSuperseded treats as
+	// proof the displayed value is wrong.
+	Superseded() []error
 	JustCompacted() error
 	Resolve(ctx context.Context, pane Pane) (Resolved, error)
+}
+
+// IsSuperseded decides what a failed measurement proves about the value already
+// displayed for a pane. A declared answer proves it wrong, so the pane is
+// cleared. Anything undeclared — a permission or I/O failure, a turn that
+// recorded nothing — says nothing about the session and preserves it, so a new
+// error defaults to keeping a value rather than blanking a pane.
+func IsSuperseded(err error, declared []error) bool {
+	return slices.ContainsFunc(declared, func(state error) bool { return errors.Is(err, state) })
 }

@@ -5,7 +5,6 @@ import (
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/opencodeshared"
-	"github.com/alizdavoodi/herdr-context-usage/internal/report"
 )
 
 var (
@@ -21,28 +20,22 @@ var (
 	ErrJustCompacted = errors.New("opencode agent session was just compacted")
 )
 
-// States declares what each of this provider's answers proves about the
-// occupancy already displayed: superseded answers clear it, stale-low answers
-// leave it standing as a lower bound, and anything undeclared is transient.
+// Superseded lists this provider's answers that prove the displayed occupancy
+// wrong and clear it; anything left out preserves the value.
 //
 // fs.ErrNotExist is deliberately absent. Unlike the file-backed providers, this
 // one turns a missing or uninitialised store into ErrStoreNotReady or
 // ErrNoSchema at the point it opens the database, so a raw missing-file error
 // reaching here would be a bug rather than a lifecycle state.
-func (opencodeProvider) States() report.States {
-	return report.States{
-		Superseded: []error{
-			ErrNoSession, provider.ErrNoHome, ErrNoOccupancy, ErrNoSchema, ErrStoreNotReady, ErrJustCompacted,
-			// A pane whose title cannot name a session is a pane we must blank,
-			// whichever of the four reasons applies. The reasons are separate so the
-			// blank is diagnosable; the classification is the same for all of them.
-			opencodeshared.ErrUntitled,
-			opencodeshared.ErrTitleUnavailable,
-			opencodeshared.ErrPluginTitle,
-			opencodeshared.ErrNoTitleMatch,
-		},
-		// A turn in flight never surfaces as an error here: readOccupancy walks
-		// back to the previous completed assistant message and reports it.
-		StaleLow: nil,
+func (opencodeProvider) Superseded() []error {
+	return []error{
+		ErrNoSession, provider.ErrNoHome, ErrNoOccupancy, ErrNoSchema, ErrStoreNotReady, ErrJustCompacted,
+		// A pane whose title cannot name a session is a pane we must blank,
+		// whichever of the four reasons applies. The reasons are separate so the
+		// blank is diagnosable; the classification is the same for all of them.
+		opencodeshared.ErrUntitled,
+		opencodeshared.ErrTitleUnavailable,
+		opencodeshared.ErrPluginTitle,
+		opencodeshared.ErrNoTitleMatch,
 	}
 }
