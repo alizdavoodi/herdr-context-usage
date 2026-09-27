@@ -284,10 +284,12 @@ from the provider registry: every provider is a value of the
 `provider.Provider` interface the provider root declares, and the registry
 builds one of each from the plugin's configuration. The registry-derived
 property tests therefore cover both new providers automatically: that each
-declares a superseded answer. Nothing tests for an answer declared both
-superseded and merely behind, or for two providers claiming one kind: there is
-one list of superseded answers, and the compiler rejects a duplicate kind in
-the registry.
+declares a superseded answer, that one of those answers wraps the shared
+just-compacted sentinel, and that each registered kind is reachable from its
+agent label and is not the kind every unrecognised label dispatches to. Nothing
+tests for an answer declared both superseded and merely behind, or for two
+providers claiming one kind: there is one list of superseded answers, and the
+compiler rejects a duplicate kind in the registry.
 
 ## Out of Scope
 

@@ -1,6 +1,8 @@
 package app
 
 import (
+	"errors"
+	"slices"
 	"testing"
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
@@ -8,7 +10,11 @@ import (
 
 // A provider that declares no superseded answer can never clear its pane, so a
 // compaction or a session the pane has left would keep a number presented as
-// current. Iterating the registry rather than a hand-written list means a newly
+// current. The just-compacted answer is required by name: refreshOne recognises
+// that state only through provider.ErrJustCompacted, so a provider whose own
+// sentinel does not wrap it records unknown where it means just_compacted, and
+// one that does not declare it superseded leaves the pre-compaction number up.
+// Iterating the registry rather than a hand-written list means a newly
 // registered provider is covered here without anyone remembering to add it.
 func TestEveryRegisteredProviderDeclaresASupersededAnswer(t *testing.T) {
 	t.Parallel()
@@ -19,6 +25,9 @@ func TestEveryRegisteredProviderDeclaresASupersededAnswer(t *testing.T) {
 			declared := registered.Superseded()
 			if len(declared) == 0 {
 				t.Fatal("Superseded() declares no answer; every provider has at least one")
+			}
+			if !slices.ContainsFunc(declared, func(e error) bool { return errors.Is(e, provider.ErrJustCompacted) }) {
+				t.Fatal("Superseded() declares no answer wrapping provider.ErrJustCompacted; a provider whose own sentinel does not wrap the root records unknown instead of just_compacted")
 			}
 		})
 	}
@@ -35,12 +44,20 @@ func TestEveryRegisteredProviderDeclaresASupersededAnswer(t *testing.T) {
 // has written yet. The opencode arm reads the process list to choose between its
 // two versions, and returns the v1 kind when that list is empty, which is what
 // the nil list below asks for.
+//
+// provider.None is refused outright. FromAgent returns it for every label it
+// does not recognise, so a provider registered there would measure every
+// unrecognised agent, and the reachability check is vacuous for it:
+// FromAgent("", nil) is None as well.
 func TestEveryRegisteredKindIsReachableFromItsAgentLabel(t *testing.T) {
 	t.Parallel()
 
 	for kind := range registry(Config{}) {
 		t.Run(string(kind), func(t *testing.T) {
 			t.Parallel()
+			if kind == provider.None {
+				t.Fatal("a provider is registered under provider.None, the kind every unrecognised agent label dispatches to")
+			}
 			got := provider.FromAgent(string(kind), nil)
 			if got != kind {
 				t.Fatalf("FromAgent(%q) = %q; the provider registered for %q is unreachable", string(kind), got, kind)
