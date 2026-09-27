@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"strconv"
 
-	occupancyformat "github.com/alizdavoodi/herdr-context-usage/internal/format"
 	"github.com/alizdavoodi/herdr-context-usage/internal/herdr"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/claude"
@@ -101,9 +101,22 @@ func refreshOne(ctx context.Context, client Herdr, paneID string, pane provider.
 	measurement.Occupancy = &reading.Occupancy
 	measurement.ModelID = reading.ModelID
 	measurement.OracleDisagreement = reading.OracleDisagreement
-	reportErr := client.Report(ctx, paneID, occupancyformat.Occupancy(reading.Occupancy), strconv.FormatInt(reading.Occupancy, 10))
+	reportErr := client.Report(ctx, paneID, formatOccupancy(reading.Occupancy), strconv.FormatInt(reading.Occupancy, 10))
 	measurementErr := writeMeasurement(log, measurement)
 	return errors.Join(measurementErr, reportErr)
+}
+
+// formatOccupancy keeps the sidebar compact while ctx_raw remains the exact machine value.
+func formatOccupancy(tokens int64) string {
+	switch {
+	case tokens < 1_000:
+		return fmt.Sprintf("%d", tokens)
+	case tokens < 999_500:
+		return fmt.Sprintf("%.0fk", float64(tokens)/1_000)
+	default:
+		millions := math.Round(float64(tokens)/100_000) / 10
+		return fmt.Sprintf("%.1fM", millions)
+	}
 }
 
 // resolutionMode is the one place an unresolved pane's mode becomes null. A
