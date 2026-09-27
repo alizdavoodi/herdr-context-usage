@@ -46,12 +46,7 @@ func open(ctx context.Context, explicitPath, dataHome string) (*store, error) {
 	// opencode's schema is mid-migration: the v1 database also carries a stalled
 	// session_v2, so having session and message is what makes a file a v1 store.
 	database, err := sqlitestore.OpenReadOnly(ctx, path, "session", "message")
-	switch {
-	case errors.Is(err, sqlitestore.ErrMissing):
-		return nil, ErrStoreNotReady
-	case errors.Is(err, sqlitestore.ErrSchema):
-		return nil, ErrNoSchema
-	case err != nil:
+	if err != nil {
 		return nil, err
 	}
 	return &store{database: database}, nil

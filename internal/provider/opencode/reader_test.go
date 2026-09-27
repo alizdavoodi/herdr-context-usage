@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/opencodeshared"
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider/sqlitestore"
 )
 
 // Provenance for the fixtures in this file: session
@@ -165,8 +166,8 @@ func TestReadOccupancyRejectsMissingV1SchemaAndSession(t *testing.T) {
 		if err := database.Close(); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := open(context.Background(), databasePath, ""); !errors.Is(err, ErrNoSchema) {
-			t.Fatalf("open() error = %v, want ErrNoSchema", err)
+		if _, err := open(context.Background(), databasePath, ""); !errors.Is(err, sqlitestore.ErrSchema) {
+			t.Fatalf("open() error = %v, want sqlitestore.ErrSchema", err)
 		}
 	})
 
@@ -260,8 +261,8 @@ func TestResolveTerminalTitleToleratesTruncationAndRefusesGuesses(t *testing.T) 
 func TestOpenMissingStoreIsSemantic(t *testing.T) {
 	t.Parallel()
 
-	if _, err := open(context.Background(), filepath.Join(t.TempDir(), "opencode.db"), ""); !errors.Is(err, ErrStoreNotReady) {
-		t.Fatalf("open() error = %v, want ErrStoreNotReady", err)
+	if _, err := open(context.Background(), filepath.Join(t.TempDir(), "opencode.db"), ""); !errors.Is(err, sqlitestore.ErrMissing) {
+		t.Fatalf("open() error = %v, want sqlitestore.ErrMissing", err)
 	}
 }
 
@@ -271,7 +272,7 @@ func TestOpenDirectoryIsTransient(t *testing.T) {
 	// Both opencode providers answer this the same way now: a directory where
 	// the database should be is not a store that has not been written yet, so it
 	// preserves the pane's value instead of blanking it.
-	if _, err := open(context.Background(), t.TempDir(), ""); err == nil || errors.Is(err, ErrStoreNotReady) || errors.Is(err, ErrNoSchema) {
+	if _, err := open(context.Background(), t.TempDir(), ""); err == nil || errors.Is(err, sqlitestore.ErrMissing) || errors.Is(err, sqlitestore.ErrSchema) {
 		t.Fatalf("open() error = %v, want a transient database failure", err)
 	}
 }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/opencodeshared"
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider/sqlitestore"
 )
 
 func TestSupersededClassifiesEveryAnswer(t *testing.T) {
@@ -23,7 +24,8 @@ func TestSupersededClassifiesEveryAnswer(t *testing.T) {
 	}{
 		{name: "unresolvable agent home", err: provider.ErrNoHome, want: true},
 		{name: "session has produced no reading", err: ErrNoOccupancy, want: true},
-		{name: "store not written yet", err: ErrStoreNotReady, want: true},
+		{name: "store not written yet", err: sqlitestore.ErrMissing, want: true},
+		{name: "store not initialised yet", err: sqlitestore.ErrSchema, want: true},
 		{name: "just compacted", err: ErrJustCompacted, want: true},
 		{name: "untitled session", err: opencodeshared.ErrUntitled, want: true},
 		{name: "pane reports no opencode title", err: opencodeshared.ErrTitleUnavailable, want: true},
@@ -35,7 +37,7 @@ func TestSupersededClassifiesEveryAnswer(t *testing.T) {
 		{name: "plugin route title", err: opencodeshared.ErrPluginTitle, want: true},
 		{name: "title matches no single session", err: opencodeshared.ErrNoTitleMatch, want: true},
 		{
-			// open turns a missing database into ErrStoreNotReady, so a raw
+			// sqlitestore turns a missing database into ErrMissing, so a raw
 			// missing-file error here would mean the store taxonomy was bypassed.
 			name: "unexplained missing file",
 			err:  fmt.Errorf("stat opencode2 store: %w", fs.ErrNotExist),
@@ -74,7 +76,7 @@ func TestAnUnresolvableHomeSupersedesTheDisplayedValue(t *testing.T) {
 	}
 	// With no home there is no store path to stat, so this is not the store
 	// being unwritten, and the two blank for different reasons.
-	if errors.Is(err, ErrStoreNotReady) {
+	if errors.Is(err, sqlitestore.ErrMissing) {
 		t.Fatalf("open() error = %v, want it distinguishable from a store not written yet", err)
 	}
 	if !provider.IsSuperseded(err, New("", "").Superseded()) {

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/opencodeshared"
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider/sqlitestore"
 
 	_ "modernc.org/sqlite"
 )
@@ -369,8 +370,8 @@ func TestOpenMissingStoreIsSemantic(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "not-written.db")
-	if _, err := open(context.Background(), path, ""); !errors.Is(err, ErrStoreNotReady) {
-		t.Fatalf("open() error = %v, want ErrStoreNotReady", err)
+	if _, err := open(context.Background(), path, ""); !errors.Is(err, sqlitestore.ErrMissing) {
+		t.Fatalf("open() error = %v, want sqlitestore.ErrMissing", err)
 	}
 }
 
@@ -382,15 +383,15 @@ func TestOpenUninitialisedStoreIsSemantic(t *testing.T) {
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := open(context.Background(), path, ""); !errors.Is(err, ErrStoreNotReady) {
-		t.Fatalf("open() error = %v, want ErrStoreNotReady", err)
+	if _, err := open(context.Background(), path, ""); !errors.Is(err, sqlitestore.ErrSchema) {
+		t.Fatalf("open() error = %v, want sqlitestore.ErrSchema", err)
 	}
 }
 
 func TestOpenDirectoryIsTransient(t *testing.T) {
 	t.Parallel()
 
-	if _, err := open(context.Background(), t.TempDir(), ""); err == nil || errors.Is(err, ErrStoreNotReady) {
+	if _, err := open(context.Background(), t.TempDir(), ""); err == nil || errors.Is(err, sqlitestore.ErrMissing) || errors.Is(err, sqlitestore.ErrSchema) {
 		t.Fatalf("open() error = %v, want transient database failure", err)
 	}
 }

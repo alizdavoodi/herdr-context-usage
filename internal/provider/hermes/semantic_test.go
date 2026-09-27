@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider/sqlitestore"
 )
 
 func TestSupersededClassifiesEveryAnswer(t *testing.T) {
@@ -22,10 +23,11 @@ func TestSupersededClassifiesEveryAnswer(t *testing.T) {
 		{name: "unresolvable agent home", err: provider.ErrNoHome, want: true},
 		{name: "no reported session", err: ErrNoSession, want: true},
 		{name: "session ended", err: ErrSessionEnded, want: true},
-		{name: "store not written yet", err: ErrStoreNotReady, want: true},
+		{name: "store not written yet", err: sqlitestore.ErrMissing, want: true},
+		{name: "store not initialised yet", err: sqlitestore.ErrSchema, want: true},
 		{name: "session has produced no reading", err: ErrNoOccupancy, want: true},
 		{name: "just compacted", err: ErrJustCompacted, want: true},
-		// open turns a missing store into ErrStoreNotReady, so a raw missing-file
+		// sqlitestore turns a missing store into ErrMissing, so a raw missing-file
 		// error here would mean the store taxonomy was bypassed.
 		{name: "unexplained missing file", err: fs.ErrNotExist, want: false},
 		{name: "unreadable database", err: fs.ErrPermission, want: false},

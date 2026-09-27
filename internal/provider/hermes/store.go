@@ -12,7 +12,6 @@ import (
 )
 
 var (
-	ErrStoreNotReady = errors.New("hermes store has not been written yet")
 	ErrNoOccupancy   = errors.New("hermes agent session has no current context occupancy")
 	ErrJustCompacted = fmt.Errorf("hermes %w", provider.ErrJustCompacted)
 	// ErrSessionEnded is a reported session Hermes has since closed. Every
@@ -29,9 +28,6 @@ type store struct {
 
 func open(ctx context.Context, path string) (*store, error) {
 	db, err := sqlitestore.OpenReadOnly(ctx, path, "sessions", "messages")
-	if errors.Is(err, sqlitestore.ErrMissing) || errors.Is(err, sqlitestore.ErrSchema) {
-		return nil, ErrStoreNotReady
-	}
 	if err != nil {
 		return nil, err
 	}

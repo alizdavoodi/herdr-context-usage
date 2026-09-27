@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider/sqlitestore"
 
 	_ "modernc.org/sqlite"
 )
@@ -187,8 +188,8 @@ func TestReadOccupancyTreatsAnUnknownIDAsUnresolved(t *testing.T) {
 func TestOpenSeparatesAnUnwrittenStoreFromAnUnreadableOne(t *testing.T) {
 	t.Parallel()
 
-	if _, err := open(context.Background(), filepath.Join(t.TempDir(), "state.db")); !errors.Is(err, ErrStoreNotReady) {
-		t.Fatalf("open(missing) error = %v, want ErrStoreNotReady", err)
+	if _, err := open(context.Background(), filepath.Join(t.TempDir(), "state.db")); !errors.Is(err, sqlitestore.ErrMissing) {
+		t.Fatalf("open(missing) error = %v, want sqlitestore.ErrMissing", err)
 	}
 
 	empty := filepath.Join(t.TempDir(), "state.db")
@@ -200,12 +201,12 @@ func TestOpenSeparatesAnUnwrittenStoreFromAnUnreadableOne(t *testing.T) {
 		t.Fatal(err)
 	}
 	db.Close()
-	if _, err := open(context.Background(), empty); !errors.Is(err, ErrStoreNotReady) {
-		t.Fatalf("open(uninitialised) error = %v, want ErrStoreNotReady", err)
+	if _, err := open(context.Background(), empty); !errors.Is(err, sqlitestore.ErrSchema) {
+		t.Fatalf("open(uninitialised) error = %v, want sqlitestore.ErrSchema", err)
 	}
 
 	_, err = open(context.Background(), t.TempDir())
-	if err == nil || errors.Is(err, ErrStoreNotReady) {
+	if err == nil || errors.Is(err, sqlitestore.ErrMissing) || errors.Is(err, sqlitestore.ErrSchema) {
 		t.Fatalf("open(directory) error = %v, want a transient failure", err)
 	}
 }
@@ -226,7 +227,7 @@ func TestOpenRefusesWrites(t *testing.T) {
 }
 
 // Both refusals are answers about the pane, so neither may reach the store: the
-// home here does not exist, and reaching it would answer ErrStoreNotReady.
+// home here does not exist, and reaching it would answer sqlitestore.ErrMissing.
 func TestResolveRefusesAnythingButAReportedID(t *testing.T) {
 	t.Parallel()
 
@@ -242,7 +243,7 @@ func TestResolveRefusesAnythingButAReportedID(t *testing.T) {
 	}
 
 	reading, err := p.Measure(context.Background(), provider.Pane{AgentSession: &provider.AgentSession{Kind: "id", Value: openID}})
-	if !errors.Is(err, ErrStoreNotReady) || reading.Mode != provider.ResolutionAgentSession {
+	if !errors.Is(err, sqlitestore.ErrMissing) || reading.Mode != provider.ResolutionAgentSession {
 		t.Fatalf("Measure(id) = %+v, %v; want the store consulted under agent_session", reading, err)
 	}
 }

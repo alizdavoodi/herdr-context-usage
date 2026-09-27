@@ -18,7 +18,6 @@ const occupancyScanLimit = 256
 
 var (
 	ErrNoOccupancy   = errors.New("opencode2 agent session has no current context occupancy")
-	ErrStoreNotReady = errors.New("opencode2 store has not been written yet")
 	ErrJustCompacted = fmt.Errorf("opencode2 %w", provider.ErrJustCompacted)
 )
 
@@ -48,11 +47,6 @@ func open(ctx context.Context, explicitPath, dataHome string) (*store, error) {
 		return nil, err
 	}
 	db, err := sqlitestore.OpenReadOnly(ctx, path, "session_v2", "session_message")
-	// A database without these tables is one opencode2 has not initialised yet,
-	// which for this provider is the same lifecycle state as no file at all.
-	if errors.Is(err, sqlitestore.ErrMissing) || errors.Is(err, sqlitestore.ErrSchema) {
-		return nil, ErrStoreNotReady
-	}
 	if err != nil {
 		return nil, err
 	}
