@@ -36,9 +36,8 @@ import (
 // read.
 //
 // Position is what these fixtures are for. A record of the right shape at the
-// wrong position measures the wrong instant, which is what both earlier codex
-// regressions in this repository were, so each case below says where in A, C or
-// E its records came from and in what order they are being replayed.
+// wrong position measures the wrong instant, so each case below says where in A,
+// C or E its records came from and in what order they are being replayed.
 const (
 	// C line 1, with pad abbreviated from 128 spaces. This is why omp's session
 	// record is not the transcript's first line: the record is padded so omp can

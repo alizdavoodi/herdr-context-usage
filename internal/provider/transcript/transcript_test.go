@@ -206,6 +206,5 @@ func truncate(line []byte) string {
 // on a blank row. No portable fixture produces that state: on a regular file the
 // seek does not fail and the tail read fails only on failing hardware, and the
 // one target that does fail — a directory — fails the head read first, so its
-// head is empty for a different reason. The behaviour predates this package,
-// having been pi's before the extraction, so it is preserved and stated in the
-// package documentation rather than claimed as covered here.
+// head is empty for a different reason. The behaviour is therefore stated in
+// Read's documentation rather than claimed as covered here.

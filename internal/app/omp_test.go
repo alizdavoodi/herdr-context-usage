@@ -225,10 +225,11 @@ func TestRefreshClearsOmpRowWhenAnIDDoesNotResolveUniquely(t *testing.T) {
 }
 
 // A pane whose agent has not reported an agent session at all is the case the
-// documented integration precondition produces, and on omp that precondition
-// bites harder than on pi: omp ships no screen-detection manifest, so before its
-// integration is installed the pane is not labelled an agent at all. Whatever
-// the cause, the row must blank rather than keep what the pane last showed.
+// documented integration precondition produces. herdr labels an omp pane an
+// agent from its process name whether or not omp's integration is installed,
+// as herdr 0.8.0 does with omp 18.1.4, so without the integration the pane
+// reaches this plugin with no agent session to resolve. Whatever the cause, the
+// row must blank rather than keep what the pane last showed.
 func TestRefreshClearsOmpRowWhenNoAgentSessionIsReported(t *testing.T) {
 	t.Parallel()
 

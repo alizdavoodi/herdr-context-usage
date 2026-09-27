@@ -31,9 +31,8 @@ import (
 // carry nothing this reader decodes.
 //
 // Position is what these fixtures are for. A record of the right shape at the
-// wrong position measures the wrong instant, which is what both earlier codex
-// regressions in this repository were, so each case below says where in A or B
-// its records came from and in what order they are being replayed.
+// wrong position measures the wrong instant, so each case below says where in A
+// or B its records came from and in what order they are being replayed.
 const (
 	// A line 1, as written.
 	sessionV3 = `{"type":"session","version":3,"id":"01a014de-020a-70b2-bc8e-b6a70ed3e784","timestamp":"2026-08-18T12:34:48.971Z","cwd":"/Users/alirezadavoodi/projects/github.com/alizdavoodi/herdr-context-usage"}`
@@ -84,8 +83,7 @@ const (
 	// compaction.
 	userA41 = `{"id":"512774df","type":"message","parentId":"ace9e4fe","timestamp":"2026-08-18T14:48:07.648Z","message":{"content":[],"role":"user"}}`
 
-	// A line 42, the first assistant turn after A's compaction, and the
-	// measurement that closes this ticket's stated precondition: 17033 + 0 + 0 =
+	// A line 42, the first assistant turn after A's compaction: 17033 + 0 + 0 =
 	// 17033, against 27905 immediately before the compaction. The identity holds
 	// here too, 17033 + 18 = 17051 = totalTokens, so no compensating arithmetic
 	// is needed once the walk stops at line 40. Note that pi does not zero the

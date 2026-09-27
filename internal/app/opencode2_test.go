@@ -321,8 +321,7 @@ func newAppOpenCode2Database(t *testing.T, sessions []appSession, messages []app
 // row stayed blank while a pane on the same build running the ordinary TUI
 // reported normally.
 //
-// The row staying blank is correct and is not what this changes. What changes is
-// that the record says why.
+// The row staying blank is correct; what this pins is that the record says why.
 func TestRefreshExplainsAnOpenCode2MiniPane(t *testing.T) {
 	t.Parallel()
 
@@ -344,8 +343,8 @@ func TestRefreshExplainsAnOpenCode2MiniPane(t *testing.T) {
 	if got := log.String(); !strings.Contains(got, "mini") {
 		t.Fatalf("diagnostic = %s, want the mini interface named", got)
 	}
-	// Still blank, and still not a number: this ticket changes the reason, not
-	// the outcome. There is no session title, so there is nothing to correlate.
+	// Still blank, and still not a number: attributing the reason leaves the
+	// outcome alone. There is no session title, so there is nothing to correlate.
 	if !slices.Equal(fake.clears, []string{"w1:p1"}) || len(fake.reports) != 0 {
 		t.Fatalf("clears = %v, reports = %v; want a mini pane blanked and never reported", fake.clears, fake.reports)
 	}

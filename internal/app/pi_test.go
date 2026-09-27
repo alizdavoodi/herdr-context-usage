@@ -264,7 +264,7 @@ func TestRefreshClearsPiOccupancyAtTheCompactionBoundary(t *testing.T) {
 	if !strings.Contains(got, `"context_state":"just_compacted"`) {
 		t.Fatalf("measurement = %q, want just_compacted", got)
 	}
-	// Occupancy and the version now arrive from one struct, so hoisting the
+	// Occupancy and the version arrive from one struct, so hoisting the
 	// occupancy assignment above the error check in refreshOne would compile and
 	// would publish a zero here. Pinning the null is what fails that edit.
 	if !strings.Contains(got, `"occupancy":null`) {

@@ -28,7 +28,7 @@ type sessionRecord struct {
 }
 
 // transcriptEntry decodes only what the walk decides on, and the fields it
-// leaves out are the point. Each of the three below is a real field of a real
+// leaves out are the point. Each of the four below is a real field of a real
 // omp record, named here with the number that disqualified it so that a later
 // reader does not reintroduce one because its name looks right.
 //
@@ -38,23 +38,10 @@ type sessionRecord struct {
 // is the one to prefer, for a reason particular to codex, so neither provider's
 // rule may be copied to the other.
 //
-// omp's own log settles why that field is so inviting, and it was read once as
-// evidence rather than as an interface. Each turn logged an auto-compaction
-// decision carrying a contextWindow of 1,000,000, a thresholdTokens of 850,000
-// and a resolvedContextTokens — and 20 of the 31 distinct values of the last
-// coincided exactly with a transcript totalTokens while not one coincided with a
-// promptTokens, the compaction point among them at 134,693. So omp answers "when
-// should I compact" with the per-turn total and this plugin answers "how much is
-// resident now" with the prompt size: two questions, two numbers, and the
-// tempting field belongs to the other one.
-//
-// Those per-process logs rotate, and the ones behind that reading are already
-// gone from the machine, so unlike every other number in this file it cannot be
-// re-checked. Its transcript-side half can: tokensBefore and the previous turn's
-// totalTokens are both 134,693, which the fixtures pin. The reason to keep the
-// rest anyway is that it also establishes where omp's window limit lives — in
-// the log, not the transcript — so this reader could not read the limit at
-// runtime even if ADR-0001 had not declined to display it.
+// That field is inviting because omp's own auto-compaction decisions track the
+// per-turn total, which answers "when should I compact". This reader answers
+// "how much is resident now" with the prompt size: two questions, two numbers,
+// and the tempting field belongs to the other one.
 //
 // There is no tokensBefore field: omp's compaction record carries 134,693, which
 // is exactly that same per-turn total, and it describes the agent session before

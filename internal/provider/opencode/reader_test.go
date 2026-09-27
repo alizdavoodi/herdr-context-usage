@@ -215,7 +215,7 @@ func TestOpenMissingStoreIsSemantic(t *testing.T) {
 func TestOpenDirectoryIsTransient(t *testing.T) {
 	t.Parallel()
 
-	// Both opencode providers answer this the same way now: a directory where
+	// Both opencode providers answer this the same way: a directory where
 	// the database should be is not a store that has not been written yet, so it
 	// preserves the pane's value instead of blanking it.
 	if _, err := open(context.Background(), t.TempDir(), ""); err == nil || errors.Is(err, sqlitestore.ErrMissing) || errors.Is(err, sqlitestore.ErrSchema) {
