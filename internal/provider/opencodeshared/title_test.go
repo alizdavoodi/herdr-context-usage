@@ -2,9 +2,13 @@ package opencodeshared
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	_ "modernc.org/sqlite"
 )
 
 // The longest root-session title in the live opencode2 store, at 52 characters:
@@ -21,7 +25,7 @@ func TestParseTitleRecognisesEveryForm(t *testing.T) {
 	tests := []struct {
 		name          string
 		terminalTitle string
-		want          Title
+		want          parsedTitle
 		wantErr       error
 	}{
 		{
@@ -29,12 +33,12 @@ func TestParseTitleRecognisesEveryForm(t *testing.T) {
 			// against, reported by herdr as `OC | Probe test response`.
 			name:          "session title",
 			terminalTitle: "OC | Probe test response",
-			want:          Title{Text: "Probe test response"},
+			want:          parsedTitle{Text: "Probe test response"},
 		},
 		{
 			name:          "truncated session title",
 			terminalTitle: "OC | " + realTruncatedTitle + "...",
-			want:          Title{Text: realTruncatedTitle, Truncated: true},
+			want:          parsedTitle{Text: realTruncatedTitle, Truncated: true},
 		},
 		{
 			// Both TUIs write the bare application name on their home screen and
@@ -61,7 +65,7 @@ func TestParseTitleRecognisesEveryForm(t *testing.T) {
 			// every one of them.
 			name:          "session title of exactly forty characters is not a plugin",
 			terminalTitle: "OC | " + strings.Repeat("x", 40),
-			want:          Title{Text: strings.Repeat("x", 40)},
+			want:          parsedTitle{Text: strings.Repeat("x", 40)},
 		},
 		{
 			// One character past it, with no ellipsis, cannot have come from the
@@ -76,7 +80,7 @@ func TestParseTitleRecognisesEveryForm(t *testing.T) {
 			// two-byte runes are 80 bytes, twice the limit.
 			name:          "long multi-byte session title stays a session title",
 			terminalTitle: "OC | " + strings.Repeat("é", 40),
-			want:          Title{Text: strings.Repeat("é", 40)},
+			want:          parsedTitle{Text: strings.Repeat("é", 40)},
 		},
 		{name: "another program's title", terminalTitle: "zsh", wantErr: ErrTitleUnavailable},
 		{name: "no title at all", terminalTitle: "", wantErr: ErrTitleUnavailable},
@@ -132,47 +136,133 @@ func TestTitleDisabledFollowsOpenCodesOwnTruthiness(t *testing.T) {
 	}
 }
 
-func TestComparisonMatchesWholeTitlesExactlyAndTruncatedOnesByPrefix(t *testing.T) {
-	t.Parallel()
+// session is one row of the minimal sessions table below: the four columns the
+// title query reads, with an empty parent for a root session.
+type session struct{ id, directory, title, parent string }
 
-	exact, args := Title{Text: "Probe test response"}.Comparison()
-	if exact != "title = ?" || len(args) != 1 {
-		t.Fatalf("Comparison() = %q, %v; want an exact match", exact, args)
+// sessionsDB is a store holding only sessions, in a table this test names for
+// itself. Each provider pins the query against its own real table.
+func sessionsDB(t *testing.T, sessions ...session) *sql.DB {
+	t.Helper()
+
+	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "opencode.db"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	prefix, args := Title{Text: realTruncatedTitle, Truncated: true}.Comparison()
-	if prefix != "substr(title, 1, length(?)) = ?" || len(args) != 2 {
-		t.Fatalf("Comparison() = %q, %v; want a prefix match", prefix, args)
+	t.Cleanup(func() { db.Close() })
+	if _, err := db.Exec(`CREATE TABLE sessions (id TEXT PRIMARY KEY, directory TEXT, title TEXT, parent_id TEXT)`); err != nil {
+		t.Fatal(err)
 	}
+	for _, s := range sessions {
+		var parent any
+		if s.parent != "" {
+			parent = s.parent
+		}
+		if _, err := db.Exec(`INSERT INTO sessions VALUES (?, ?, ?, ?)`, s.id, s.directory, s.title, parent); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return db
 }
 
 func TestResolveTitleRefusesToGuess(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name      string
-		directory string
-		matches   []string
-		want      string
-		wantErr   error
+		name          string
+		sessions      []session
+		directory     string
+		terminalTitle string
+		want          string
+		wantErr       error
 	}{
-		{name: "one match resolves", directory: "/work", matches: []string{"ses_one"}, want: "ses_one"},
-		{name: "two matches stay blank", directory: "/work", matches: []string{"ses_one", "ses_two"}, wantErr: ErrNoTitleMatch},
-		{name: "no match stays blank", directory: "/work", matches: nil, wantErr: ErrNoTitleMatch},
+		{
+			name:          "a whole title matches its root session",
+			sessions:      []session{{id: "ses_one", directory: "/work", title: "Probe test response"}},
+			directory:     "/work",
+			terminalTitle: "OC | Probe test response",
+			want:          "ses_one",
+		},
+		{
+			name:          "a truncated title matches the root session it is a prefix of",
+			sessions:      []session{{id: "ses_long", directory: "/work", title: realLongTitle}},
+			directory:     "/work",
+			terminalTitle: "OC | " + realTruncatedTitle + "...",
+			want:          "ses_long",
+		},
+		{
+			// Only a truncated title is compared as a prefix; a whole one must be
+			// the stored title exactly.
+			name:          "a whole title is not a prefix match",
+			sessions:      []session{{id: "ses_longer", directory: "/work", title: "Probe test response, continued"}},
+			directory:     "/work",
+			terminalTitle: "OC | Probe test response",
+			wantErr:       ErrNoTitleMatch,
+		},
+		{
+			// The unrelated session is the one a recency fallback would pick.
+			name:          "no match stays blank",
+			sessions:      []session{{id: "ses_other", directory: "/work", title: "Newer unrelated session"}},
+			directory:     "/work",
+			terminalTitle: "OC | Probe test response",
+			wantErr:       ErrNoTitleMatch,
+		},
+		{
+			name: "two matches stay blank",
+			sessions: []session{
+				{id: "ses_one", directory: "/work", title: realTruncatedTitle + " first"},
+				{id: "ses_two", directory: "/work", title: realTruncatedTitle + " second"},
+			},
+			directory:     "/work",
+			terminalTitle: "OC | " + realTruncatedTitle + "...",
+			wantErr:       ErrNoTitleMatch,
+		},
+		{
+			// A child session is a sub-agent's, never the pane's main thread, so
+			// it is not a candidate even under the same title.
+			name: "a child session is not a candidate",
+			sessions: []session{
+				{id: "ses_root", directory: "/work", title: "Probe test response"},
+				{id: "ses_child", directory: "/work", title: "Probe test response", parent: "ses_root"},
+			},
+			directory:     "/work",
+			terminalTitle: "OC | Probe test response",
+			want:          "ses_root",
+		},
+		{
+			name: "another directory's session is not a candidate",
+			sessions: []session{
+				{id: "ses_here", directory: "/work/acme", title: "Probe test response"},
+				{id: "ses_elsewhere", directory: "/work/other", title: "Probe test response"},
+			},
+			directory:     "/work/acme",
+			terminalTitle: "OC | Probe test response",
+			want:          "ses_here",
+		},
 		{
 			// Titles are not unique across directories: 14 sessions share one
 			// repository in the sampled store.
-			name:      "no directory to disambiguate with",
-			directory: "",
-			matches:   []string{"ses_one"},
-			wantErr:   ErrNoTitleMatch,
+			name:          "no directory to disambiguate with",
+			sessions:      []session{{id: "ses_one", directory: "/work", title: "Probe test response"}},
+			directory:     "",
+			terminalTitle: "OC | Probe test response",
+			wantErr:       ErrNoTitleMatch,
+		},
+		{
+			// An unusable title is answered before the store is asked anything, so
+			// no fallback can reach the session sitting there.
+			name:          "an unusable title never reaches the store",
+			sessions:      []session{{id: "ses_one", directory: "/work", title: "Probe test response"}},
+			directory:     "/work",
+			terminalTitle: "zsh",
+			wantErr:       ErrTitleUnavailable,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			lookup := func(context.Context, string, Title) ([]string, error) { return tt.matches, nil }
-			got, err := ResolveTitle(context.Background(), tt.directory, "OC | Probe test response", lookup)
+			got, err := ResolveTitle(context.Background(), sessionsDB(t, tt.sessions...), "sessions", tt.directory, tt.terminalTitle)
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("ResolveTitle() error = %v, want %v", err, tt.wantErr)
 			}
@@ -183,31 +273,14 @@ func TestResolveTitleRefusesToGuess(t *testing.T) {
 	}
 }
 
-func TestResolveTitleReportsLookupFailureAsItself(t *testing.T) {
+// A failing query is a failure to look, not evidence about the session, so it
+// must surface as itself rather than be flattened into a blank-the-pane answer.
+func TestResolveTitleReportsAQueryFailureAsItself(t *testing.T) {
 	t.Parallel()
 
-	// A failing query is a transient database failure, not evidence about the
-	// session, so it must not be flattened into a blank-the-pane answer.
-	want := errors.New("database is locked")
-	lookup := func(context.Context, string, Title) ([]string, error) { return nil, want }
-	if _, err := ResolveTitle(context.Background(), "/work", "OC | Probe test response", lookup); !errors.Is(err, want) {
-		t.Fatalf("ResolveTitle() error = %v, want %v", err, want)
-	}
-}
-
-func TestResolveTitlePassesTheParsedTitleToTheStore(t *testing.T) {
-	t.Parallel()
-
-	var got Title
-	var gotDirectory string
-	lookup := func(_ context.Context, directory string, title Title) ([]string, error) {
-		gotDirectory, got = directory, title
-		return []string{"ses_one"}, nil
-	}
-	if _, err := ResolveTitle(context.Background(), "/work/acme", "OC | "+realTruncatedTitle+"...", lookup); err != nil {
-		t.Fatalf("ResolveTitle() error = %v", err)
-	}
-	if gotDirectory != "/work/acme" || got != (Title{Text: realTruncatedTitle, Truncated: true}) {
-		t.Fatalf("lookup received %q, %#v; want the pane directory and the parsed title", gotDirectory, got)
+	db := sessionsDB(t, session{id: "ses_one", directory: "/work", title: "Probe test response"})
+	_, err := ResolveTitle(context.Background(), db, "no_such_table", "/work", "OC | Probe test response")
+	if err == nil || errors.Is(err, ErrNoTitleMatch) || !strings.Contains(err.Error(), "resolve opencode session") {
+		t.Fatalf("ResolveTitle() error = %v, want the query failure itself", err)
 	}
 }

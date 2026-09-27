@@ -110,7 +110,7 @@ func TestReadOccupancy(t *testing.T) {
 	}
 }
 
-// Claude's and codex's cache fields are opposites, and both now live in one
+// Claude's and codex's cache fields are opposites, and both live in one
 // tree. Claude's three fields are disjoint segments of one prefix and add;
 // codex's cached_input_tokens is a subset of input_tokens and must never be
 // added. Applying codex's rule here reports 2 tokens for a 149k context, so

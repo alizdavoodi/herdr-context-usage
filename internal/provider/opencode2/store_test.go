@@ -6,10 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/opencodeshared"
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider/sqlitestore"
 
 	_ "modernc.org/sqlite"
 )
@@ -35,19 +35,17 @@ import (
 // which is where both the row type and the status predicate this provider
 // matches on come from. The statuses other than "completed" are inferred from
 // that predicate rather than observed.
-func TestResolveMatchesDirectoryAndTerminalTitle(t *testing.T) {
+//
+// The title query and its refusals are pinned in opencodeshared; this first
+// test pins it against the v2 schema, whose root sessions live in session_v2
+// and whose child sessions carry the parent_id the query excludes them by.
+func TestResolveTitleReadsTheV2SessionTable(t *testing.T) {
 	t.Parallel()
 
 	path := newTestDatabase(t)
 	db := openFixtureDatabase(t, path)
 	insertSession(t, db, testSession{
 		ID: "target", Directory: "/work/acme", Title: "Probe test response", Updated: 100,
-	})
-	insertSession(t, db, testSession{
-		ID: "newest-wrong-title", Directory: "/work/acme", Title: "Unrelated newer session", Updated: 300,
-	})
-	insertSession(t, db, testSession{
-		ID: "same-title-wrong-directory", Directory: "/work/other", Title: "Probe test response", Updated: 400,
 	})
 	insertSession(t, db, testSession{
 		ID: "child", Directory: "/work/acme", Title: "Probe test response", ParentID: "target", Updated: 500,
@@ -57,98 +55,12 @@ func TestResolveMatchesDirectoryAndTerminalTitle(t *testing.T) {
 	s := openStore(t, path)
 	defer s.Close()
 
-	got, err := s.resolveTerminalTitle(context.Background(), "/work/acme", "OC | Probe test response")
+	got, err := opencodeshared.ResolveTitle(context.Background(), s.DB, "session_v2", "/work/acme", "OC | Probe test response")
 	if err != nil {
-		t.Fatalf("resolveTerminalTitle() error = %v", err)
+		t.Fatalf("ResolveTitle() error = %v", err)
 	}
 	if got != "target" {
-		t.Fatalf("resolveTerminalTitle() = %q, want target", got)
-	}
-}
-
-func TestResolveToleratesTruncatedTitles(t *testing.T) {
-	t.Parallel()
-
-	path := newTestDatabase(t)
-	db := openFixtureDatabase(t, path)
-	prefix := strings.Repeat("long-title-", 4)[:37]
-	insertSession(t, db, testSession{ID: "long", Directory: "/work/acme", Title: prefix + "continuation", Updated: 100})
-	db.Close()
-
-	s := openStore(t, path)
-	defer s.Close()
-
-	got, err := s.resolveTerminalTitle(context.Background(), "/work/acme", "OC | "+prefix+"...")
-	if err != nil {
-		t.Fatalf("resolveTerminalTitle() error = %v", err)
-	}
-	if got != "long" {
-		t.Fatalf("resolveTerminalTitle() = %q, want long", got)
-	}
-}
-
-func TestResolveRefusesGuesses(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name          string
-		directory     string
-		terminalTitle string
-		prepare       func(*testing.T, *sql.DB)
-		wantErr       error
-	}{
-		{
-			name:          "bare OpenCode title is deliberately untitled",
-			directory:     "/work/acme",
-			terminalTitle: "OpenCode",
-			wantErr:       opencodeshared.ErrUntitled,
-		},
-		{
-			name:          "missing title prefix does not fall back to recency",
-			directory:     "/work/acme",
-			terminalTitle: "shell",
-			prepare: func(t *testing.T, db *sql.DB) {
-				insertSession(t, db, testSession{ID: "newest", Directory: "/work/acme", Title: "Newest", Updated: 999})
-			},
-			wantErr: opencodeshared.ErrTitleUnavailable,
-		},
-		{
-			name:          "unmatched title does not fall back to recency",
-			directory:     "/work/acme",
-			terminalTitle: "OC | Not present",
-			prepare: func(t *testing.T, db *sql.DB) {
-				insertSession(t, db, testSession{ID: "newest", Directory: "/work/acme", Title: "Newest", Updated: 999})
-			},
-			wantErr: opencodeshared.ErrNoTitleMatch,
-		},
-		{
-			name:          "ambiguous truncated prefix stays blank",
-			directory:     "/work/acme",
-			terminalTitle: "OC | " + strings.Repeat("x", 37) + "...",
-			prepare: func(t *testing.T, db *sql.DB) {
-				insertSession(t, db, testSession{ID: "older", Directory: "/work/acme", Title: strings.Repeat("x", 37) + " old", Updated: 100})
-				insertSession(t, db, testSession{ID: "newer", Directory: "/work/acme", Title: strings.Repeat("x", 37) + " new", Updated: 200})
-			},
-			wantErr: opencodeshared.ErrNoTitleMatch,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			path := newTestDatabase(t)
-			db := openFixtureDatabase(t, path)
-			if tt.prepare != nil {
-				tt.prepare(t, db)
-			}
-			db.Close()
-
-			s := openStore(t, path)
-			defer s.Close()
-			if _, err := s.resolveTerminalTitle(context.Background(), tt.directory, tt.terminalTitle); !errors.Is(err, tt.wantErr) {
-				t.Fatalf("resolveTerminalTitle() error = %v, want %v", err, tt.wantErr)
-			}
-		})
+		t.Fatalf("ResolveTitle() = %q, want target", got)
 	}
 }
 
@@ -360,7 +272,7 @@ func TestOpenIsReadOnly(t *testing.T) {
 	path := newTestDatabase(t)
 	s := openStore(t, path)
 	defer s.Close()
-	if _, err := s.db.ExecContext(context.Background(), `INSERT INTO session_v2 (id, directory, title, time_updated) VALUES ('write', '/work', 'write', 1)`); err == nil {
+	if _, err := s.ExecContext(context.Background(), `INSERT INTO session_v2 (id, directory, title, time_updated) VALUES ('write', '/work', 'write', 1)`); err == nil {
 		t.Fatal("read-only store accepted a write")
 	}
 }
@@ -369,8 +281,8 @@ func TestOpenMissingStoreIsSemantic(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "not-written.db")
-	if _, err := open(context.Background(), path, ""); !errors.Is(err, ErrStoreNotReady) {
-		t.Fatalf("open() error = %v, want ErrStoreNotReady", err)
+	if _, err := open(context.Background(), path, ""); !errors.Is(err, sqlitestore.ErrMissing) {
+		t.Fatalf("open() error = %v, want sqlitestore.ErrMissing", err)
 	}
 }
 
@@ -382,15 +294,15 @@ func TestOpenUninitialisedStoreIsSemantic(t *testing.T) {
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := open(context.Background(), path, ""); !errors.Is(err, ErrStoreNotReady) {
-		t.Fatalf("open() error = %v, want ErrStoreNotReady", err)
+	if _, err := open(context.Background(), path, ""); !errors.Is(err, sqlitestore.ErrSchema) {
+		t.Fatalf("open() error = %v, want sqlitestore.ErrSchema", err)
 	}
 }
 
 func TestOpenDirectoryIsTransient(t *testing.T) {
 	t.Parallel()
 
-	if _, err := open(context.Background(), t.TempDir(), ""); err == nil || errors.Is(err, ErrStoreNotReady) {
+	if _, err := open(context.Background(), t.TempDir(), ""); err == nil || errors.Is(err, sqlitestore.ErrMissing) || errors.Is(err, sqlitestore.ErrSchema) {
 		t.Fatalf("open() error = %v, want transient database failure", err)
 	}
 }

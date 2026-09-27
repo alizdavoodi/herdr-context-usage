@@ -15,28 +15,17 @@ func New(home string) provider.Provider {
 
 type codexProvider struct{ home string }
 
-func (codexProvider) Kind() provider.Kind { return provider.Codex }
-
-func (codexProvider) JustCompacted() error { return ErrJustCompacted }
-
-// Resolve reads no process list: codex's working-directory tier tells its own
-// main thread apart by rollout metadata and writer locks, not by PID. Reading
-// is file-backed, so Cleanup is nil.
-func (p codexProvider) Resolve(_ context.Context, pane provider.Pane) (provider.Resolved, error) {
+// Measure reads no process list: codex's working-directory tier tells its own
+// main thread apart by rollout metadata and writer locks, not by PID.
+func (p codexProvider) Measure(_ context.Context, pane provider.Pane) (provider.Reading, error) {
 	resolved, err := resolve(sessionInput{
 		CodexHome:     p.home,
 		AgentSession:  pane.AgentSession,
 		ForegroundCWD: pane.ForegroundCWD,
 	})
 	if err != nil {
-		return provider.Resolved{}, err
+		return provider.Reading{}, err
 	}
-	path := resolved.Path
-	return provider.Resolved{
-		Mode: resolved.Mode,
-		Read: func(context.Context) (provider.Reading, error) {
-			value, err := readOccupancy(path)
-			return provider.Reading{Occupancy: value}, err
-		},
-	}, nil
+	value, err := readOccupancy(resolved.Path)
+	return provider.Reading{Mode: resolved.Mode, Occupancy: value}, err
 }

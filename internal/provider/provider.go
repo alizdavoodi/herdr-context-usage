@@ -35,14 +35,10 @@ type Process struct {
 	Argv  []string `json:"argv"`
 }
 
-type ProcessList struct {
-	Entries []Process
-	// Available keeps a failed lookup distinct from an observed empty list;
-	// only the latter is evidence that an opencode pane is running v1.
-	Available bool
-}
-
-func FromAgent(agent string, processes ProcessList) Kind {
+// FromAgent chooses a pane's kind from herdr's agent label. processes is read
+// only for opencode, whose label hosts both versions; NeedsProcessList says why
+// a list that could not be read must never reach here.
+func FromAgent(agent string, processes []Process) Kind {
 	switch strings.ToLower(strings.TrimSpace(agent)) {
 	case "claude":
 		return Claude
@@ -56,17 +52,14 @@ func FromAgent(agent string, processes ProcessList) Kind {
 	case "omp":
 		return Omp
 	// Hermes runs as python3.12, so its process names nothing; herdr's label is
-	// the only signal, and processKind deliberately does not learn it.
+	// the only signal, and Process.Kind deliberately does not learn it.
 	case "hermes":
 		return Hermes
 	case "opencode2":
 		return OpenCode2
 	case "opencode":
-		if !processes.Available {
-			return None
-		}
-		for _, process := range processes.Entries {
-			if processKind(process) == OpenCode2 {
+		for _, process := range processes {
+			if process.Kind() == OpenCode2 {
 				return OpenCode2
 			}
 		}
@@ -77,7 +70,11 @@ func FromAgent(agent string, processes ProcessList) Kind {
 
 // NeedsProcessList reports whether classifying an agent depends on its pane's
 // process list. Only opencode does: the one label hosts both v1 and v2, and
-// the process list is the only way to tell them apart.
+// the process list is the only way to tell them apart. An observed empty list
+// is evidence of v1, and a guess would either report nonsense or blank a live
+// value, so an opencode pane whose list could not be read must not be
+// classified at all: the caller skips it for the round and keeps its displayed
+// value.
 func NeedsProcessList(agent string) bool {
 	return strings.ToLower(strings.TrimSpace(agent)) == "opencode"
 }
@@ -85,7 +82,7 @@ func NeedsProcessList(agent string) bool {
 func ProcessIDs(processes []Process, kind Kind) []int {
 	ids := make([]int, 0, 1)
 	for _, process := range processes {
-		if processKind(process) == kind {
+		if process.Kind() == kind {
 			ids = append(ids, process.PID)
 		}
 	}
@@ -94,20 +91,16 @@ func ProcessIDs(processes []Process, kind Kind) []int {
 
 // Kind reports which agent a single process is, by the same basename rule
 // dispatch uses to choose a provider for the pane. Exported so a provider can
-// find its own entry in a pane's process list without restating that rule.
-func (p Process) Kind() Kind { return processKind(p) }
-
-func processKind(process Process) Kind {
-	name := strings.ToLower(strings.TrimPrefix(filepath.Base(process.Argv0), "."))
-	switch name {
+// find its own entry in a pane's process list without restating that rule. It
+// names only the kinds some caller asks about: opencode2, which tells the
+// opencode versions apart, and claude, whose process ids key its registry
+// tier.
+func (p Process) Kind() Kind {
+	switch strings.ToLower(strings.TrimPrefix(filepath.Base(p.Argv0), ".")) {
 	case "opencode2":
 		return OpenCode2
-	case "opencode":
-		return OpenCode
 	case "claude":
 		return Claude
-	case "codex":
-		return Codex
 	default:
 		return None
 	}

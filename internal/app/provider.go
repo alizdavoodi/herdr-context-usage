@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"strconv"
 
-	occupancyformat "github.com/alizdavoodi/herdr-context-usage/internal/format"
 	"github.com/alizdavoodi/herdr-context-usage/internal/herdr"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/claude"
@@ -20,32 +20,24 @@ import (
 )
 
 // Adding a provider here is what makes its kind measurable, and it is not
-// enough on its own: dispatch reaches this list only through provider.FromAgent,
+// enough on its own: dispatch reaches this map only through provider.FromAgent,
 // so a kind that function never returns stays unreachable however complete its
-// package is. internal/app/seam_test.go pins both halves.
+// package is. internal/app/seam_test.go pins both halves. Two providers cannot
+// claim one kind, because Go rejects a duplicate constant key in a map literal
+// and so the registry would not compile.
 //
-// Each provider is handed only its own fields of config, once, so no resolution
-// can read another provider's home — the silent mistake the separate pi and omp
-// fields exist to prevent.
-func registry(config Config) []provider.Provider {
-	return []provider.Provider{
-		claude.New(config.ClaudeHome),
-		codex.New(config.CodexHome),
-		opencode.New(config.OpenCodeDB, config.OpenCodeDataHome),
-		opencode2.New(config.OpenCode2DB, config.OpenCodeDataHome),
-		pi.New(config.PiHome),
-		omp.New(config.OmpHome),
-		hermes.New(config.HermesHome),
+// Each provider is handed only the config it reads, once; Config.PiCodingAgentDir
+// says why pi and omp share a field.
+func registry(config Config) map[provider.Kind]provider.Provider {
+	return map[provider.Kind]provider.Provider{
+		provider.Claude:    claude.New(config.ClaudeHome),
+		provider.Codex:     codex.New(config.CodexHome),
+		provider.OpenCode:  opencode.New(config.OpenCodeDB, config.OpenCodeDataHome),
+		provider.OpenCode2: opencode2.New(config.OpenCode2DB, config.OpenCodeDataHome),
+		provider.Pi:        pi.New(config.PiCodingAgentDir),
+		provider.Omp:       omp.New(config.PiCodingAgentDir),
+		provider.Hermes:    hermes.New(config.HermesHome),
 	}
-}
-
-func providerFor(kind provider.Kind, registered []provider.Provider) provider.Provider {
-	for _, p := range registered {
-		if p.Kind() == kind {
-			return p
-		}
-	}
-	return nil
 }
 
 // paneOf is the one place herdr's agent record becomes what a provider reads,
@@ -60,50 +52,59 @@ func paneOf(agent herdr.Agent, processes []provider.Process) provider.Pane {
 	}
 }
 
-// refreshOne is the shared skeleton: resolve, read, and on either failure let
-// handleUnknown decide whether to clear the pane. Each provider brings only
-// its own resolution and reading; the error classification, measurement, and
-// reporting are identical across every provider.
-func refreshOne(ctx context.Context, client Herdr, paneID string, pane provider.Pane, log io.Writer, p provider.Provider) error {
-	resolved, err := p.Resolve(ctx, pane)
-	if resolved.Cleanup != nil {
-		// A provider may open a store before its resolution fails; closing it
-		// here is the original defer-store.Close path, even on the error branch.
-		defer func() { _ = resolved.Cleanup() }()
-	}
+// refreshOne is the shared skeleton: measure, then report the reading or decide
+// whether a failed one clears the pane. Each provider brings only its own
+// resolution and reading; the error classification, measurement, and reporting
+// are identical across every provider.
+func refreshOne(ctx context.Context, client Herdr, paneID string, kind provider.Kind, pane provider.Pane, log io.Writer, p provider.Provider) error {
+	reading, err := p.Measure(ctx, pane)
 	// Every outcome below records the same shape and differs only in the state
-	// and in how much the reader got to observe first, so the record is built
+	// and in how much the provider got to observe first, so the record is built
 	// once here and handed on rather than passed down field by field.
 	measurement := Measurement{
-		PaneID: paneID, Provider: p.Kind(), ContextState: ContextUnknown,
-		ResolutionMode: resolutionMode(resolved.Mode),
+		PaneID: paneID, Provider: kind, ContextState: ContextUnknown,
+		ResolutionMode: resolutionMode(reading.Mode),
+		// A failed read can still have observed the schema version, and that is
+		// the case where knowing it matters most: a blank row caused by a format
+		// change is otherwise indistinguishable from any other unreadable
+		// transcript.
+		TranscriptVersion: reading.TranscriptVersion,
 	}
 	if err != nil {
-		return handleUnknown(ctx, client, log, p.States(), measurement, err)
-	}
-	if resolved.Read == nil {
-		// Refresh walks every pane, so a provider that resolves without
-		// supplying a reader would panic the whole sweep rather than spoil one
-		// row. Reporting it as unknown keeps the other panes measurable.
-		err := fmt.Errorf("provider %s resolved without a reader", p.Kind())
-		return handleUnknown(ctx, client, log, p.States(), measurement, err)
-	}
-	reading, err := resolved.Read(ctx)
-	// A failed read can still have observed the schema version, and that is the
-	// case where knowing it matters most: a blank row caused by a format change
-	// is otherwise indistinguishable from any other unreadable transcript.
-	measurement.TranscriptVersion = reading.TranscriptVersion
-	if err != nil {
-		measurement.ContextState = contextState(err, p.JustCompacted())
-		return handleUnknown(ctx, client, log, p.States(), measurement, err)
+		if errors.Is(err, provider.ErrJustCompacted) {
+			measurement.ContextState = ContextJustCompacted
+		}
+		measurement.Error = err.Error()
+		measurementErr := writeMeasurement(log, measurement)
+		if provider.IsSuperseded(err, p.Superseded()) {
+			return errors.Join(measurementErr, client.Clear(ctx, paneID))
+		}
+		// Anything undeclared leaves the displayed value alone. An answer such as
+		// codex's ErrFailedTurn leaves the previous reading standing as a valid
+		// lower bound, a transient one is a failure to read, and neither is
+		// evidence that the value belongs to a superseded session.
+		return measurementErr
 	}
 	measurement.ContextState = ContextMeasured
 	measurement.Occupancy = &reading.Occupancy
 	measurement.ModelID = reading.ModelID
 	measurement.OracleDisagreement = reading.OracleDisagreement
-	reportErr := client.Report(ctx, paneID, occupancyformat.Occupancy(reading.Occupancy), strconv.FormatInt(reading.Occupancy, 10))
+	reportErr := client.Report(ctx, paneID, formatOccupancy(reading.Occupancy), strconv.FormatInt(reading.Occupancy, 10))
 	measurementErr := writeMeasurement(log, measurement)
 	return errors.Join(measurementErr, reportErr)
+}
+
+// formatOccupancy keeps the sidebar compact while ctx_raw remains the exact machine value.
+func formatOccupancy(tokens int64) string {
+	switch {
+	case tokens < 1_000:
+		return fmt.Sprintf("%d", tokens)
+	case tokens < 999_500:
+		return fmt.Sprintf("%.0fk", float64(tokens)/1_000)
+	default:
+		millions := math.Round(float64(tokens)/100_000) / 10
+		return fmt.Sprintf("%.1fM", millions)
+	}
 }
 
 // resolutionMode is the one place an unresolved pane's mode becomes null. A

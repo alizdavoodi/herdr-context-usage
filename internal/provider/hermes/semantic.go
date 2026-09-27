@@ -2,21 +2,16 @@ package hermes
 
 import (
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
-	"github.com/alizdavoodi/herdr-context-usage/internal/report"
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider/sqlitestore"
 )
 
-// States declares what each of this provider's answers proves about the
-// occupancy already displayed: superseded answers clear it, stale-low answers
-// leave it standing as a lower bound, and anything undeclared is transient.
-func (hermesProvider) States() report.States {
-	return report.States{
-		Superseded: []error{
-			provider.ErrNoHome, ErrNoSession, ErrSessionEnded,
-			ErrStoreNotReady, ErrNoOccupancy, ErrJustCompacted,
-		},
-		// A turn in flight never surfaces as an error: until the call completes
-		// the anchor still holds the previous call's prompt, a valid lower bound
-		// that is reported as the reading itself.
-		StaleLow: nil,
+// Superseded lists this provider's answers that prove the displayed occupancy
+// wrong and clear it; anything left out preserves the value.
+func (hermesProvider) Superseded() []error {
+	return []error{
+		provider.ErrNoHome, ErrNoSession, ErrSessionEnded, ErrNoOccupancy, ErrJustCompacted,
+		// A database without sessions and messages is one Hermes has not
+		// initialised yet, the same lifecycle state as no file at all.
+		sqlitestore.ErrMissing, sqlitestore.ErrSchema,
 	}
 }

@@ -16,20 +16,18 @@ func New(home string) provider.Provider {
 
 type piProvider struct{ home string }
 
-func (piProvider) Kind() provider.Kind { return provider.Pi }
-
-func (piProvider) JustCompacted() error { return ErrJustCompacted }
-
-// Resolve reads only herdr's reported agent session from the pane; sessionInput
-// says why. Reading is file-backed, so Cleanup is nil.
-func (p piProvider) Resolve(_ context.Context, pane provider.Pane) (provider.Resolved, error) {
-	resolved, err := resolve(sessionInput{PiHome: p.home, AgentSession: pane.AgentSession})
+// Measure reads only herdr's reported agent session from the pane; resolve says
+// why.
+func (p piProvider) Measure(_ context.Context, pane provider.Pane) (provider.Reading, error) {
+	path, err := resolve(p.home, pane.AgentSession)
 	if err != nil {
-		return provider.Resolved{}, err
+		return provider.Reading{}, err
 	}
-	path := resolved.Path
-	return provider.Resolved{
-		Mode: resolved.Mode,
-		Read: func(context.Context) (provider.Reading, error) { return readOccupancy(path) },
-	}, nil
+	reading, err := readOccupancy(path)
+	// Always agent_session, because resolution has one source: herdr's reported
+	// agent session is the whole of the input, so resolve's branches differ only
+	// in how they read one value, and a second mode would name a stage that does
+	// not exist.
+	reading.Mode = provider.ResolutionAgentSession
+	return reading, err
 }

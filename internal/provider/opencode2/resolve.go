@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider/opencodeshared"
 )
 
 // New returns the opencode2 provider. explicitDB and dataHome are the values
@@ -16,31 +17,24 @@ func New(explicitDB, dataHome string) provider.Provider {
 
 type opencode2Provider struct{ db, dataHome string }
 
-func (opencode2Provider) Kind() provider.Kind { return provider.OpenCode2 }
-
-func (opencode2Provider) JustCompacted() error { return ErrJustCompacted }
-
-// Resolve correlates by the pane's directory and the TUI's terminal title,
+// Measure correlates by the pane's directory and the TUI's terminal title,
 // because herdr reports no agent session for an opencode2 pane: neither opencode
 // version sends herdr a session id, as the README records under "When an
 // opencode row never fills in".
-func (p opencode2Provider) Resolve(ctx context.Context, pane provider.Pane) (provider.Resolved, error) {
+func (p opencode2Provider) Measure(ctx context.Context, pane provider.Pane) (provider.Reading, error) {
 	s, err := open(ctx, p.db, p.dataHome)
 	if err != nil {
-		return provider.Resolved{}, err
+		return provider.Reading{}, err
 	}
-	id, err := s.resolveTerminalTitle(ctx, pane.ForegroundCWD, pane.TerminalTitle)
+	defer s.Close()
+	// Root sessions live in session_v2, and a v2 plugin route interpolates its
+	// plugin name into the same title shape v1 fills with a plugin id, so only a
+	// positive root-session match can produce a reading.
+	id, err := opencodeshared.ResolveTitle(ctx, s.DB, "session_v2", pane.ForegroundCWD, pane.TerminalTitle)
 	if err != nil {
-		// Hand the open store back and let the skeleton close it, matching
-		// opencode, whose two-stage resolution cannot close inline. One idiom
-		// for a failed resolution is what a new provider copies correctly.
-		return provider.Resolved{Cleanup: s.Close}, attributeMiniInterface(err, pane.Processes)
+		return provider.Reading{}, attributeMiniInterface(err, pane.Processes)
 	}
-	return provider.Resolved{
-		Mode:    provider.ResolutionTerminalTitle,
-		Cleanup: s.Close,
-		Read: func(ctx context.Context) (provider.Reading, error) {
-			return s.readOccupancy(ctx, id)
-		},
-	}, nil
+	reading, err := s.readOccupancy(ctx, id)
+	reading.Mode = provider.ResolutionTerminalTitle
+	return reading, err
 }

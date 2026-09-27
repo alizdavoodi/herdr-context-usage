@@ -10,8 +10,6 @@ import (
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/herdr"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
-	"github.com/alizdavoodi/herdr-context-usage/internal/report"
-	"golang.org/x/sync/errgroup"
 )
 
 type Herdr interface {
@@ -31,13 +29,13 @@ type Config struct {
 	// both opencode stores when no explicit database path is given, i.e.
 	// $XDG_DATA_HOME.
 	OpenCodeDataHome string
-	// The pi and omp homes are per-provider rather than shared even though both
-	// agents honour one override variable: a single field would point a pi pane
-	// at omp's store on any machine running both, and the two stores have the
-	// same layout below the home, so the mistake would be silent.
-	PiHome     string
-	OmpHome    string
-	HermesHome string
+	// PiCodingAgentDir is PI_CODING_AGENT_DIR. Both pi and omp honour that one
+	// variable, so one export redirects both agents. It is passed to each
+	// unresolved: an empty value is what lets each provider fall back to its
+	// own default home, which keeps an omp pane off pi's store on a machine
+	// running both.
+	PiCodingAgentDir string
+	HermesHome       string
 }
 
 type ContextState string
@@ -103,6 +101,7 @@ func Refresh(ctx context.Context, client Herdr, eventPaneID string, log io.Write
 		live[agent.PaneID] = struct{}{}
 	}
 
+	// errors.Join drops the nils that successful steps append.
 	var errMu sync.Mutex
 	var errs []error
 	appendErr := func(err error) {
@@ -110,60 +109,52 @@ func Refresh(ctx context.Context, client Herdr, eventPaneID string, log io.Write
 		defer errMu.Unlock()
 		errs = append(errs, err)
 	}
-	if err := sweepStaleMetadata(ctx, client, eventPaneID, live, log); err != nil {
-		appendErr(err)
-	}
+	appendErr(sweepStaleMetadata(ctx, client, eventPaneID, live, log))
 
 	providers := registry(config)
-	g, gctx := errgroup.WithContext(ctx)
-	g.SetLimit(refreshConcurrency)
+	var wg sync.WaitGroup
+	slots := make(chan struct{}, refreshConcurrency)
 	for _, agent := range agents {
-		g.Go(func() error {
-			processes, processErr := client.ProcessInfo(gctx, agent.PaneID)
-			kind := provider.FromAgent(agent.Agent, provider.ProcessList{Entries: processes, Available: processErr == nil})
+		slots <- struct{}{}
+		wg.Add(1)
+		go func() {
+			defer func() {
+				<-slots
+				wg.Done()
+			}()
+			processes, processErr := client.ProcessInfo(ctx, agent.PaneID)
 			if processErr != nil {
 				// The process list matters in two ways: opencode classification
 				// cannot happen without it, and every provider that uses
 				// process IDs as a resolution tier degrades to its other
 				// tiers. Either way the failure is round-local, so it becomes
 				// a diagnostic rather than an error that kills the run.
-				if err := writeMaintenanceDiagnostic(log, MaintenanceDiagnostic{Operation: "process_info", PaneID: agent.PaneID, Error: processErr.Error()}); err != nil {
-					appendErr(err)
-				}
-				// opencode hosts both v1 and v2 under one label and the
-				// process list is the only way to tell them apart. Guessing
-				// would either report nonsense or blank a live value, so the
-				// pane waits a round instead — with its value preserved.
+				appendErr(writeMaintenanceDiagnostic(log, MaintenanceDiagnostic{Operation: "process_info", PaneID: agent.PaneID, Error: processErr.Error()}))
 				if provider.NeedsProcessList(agent.Agent) {
-					return nil
+					return
 				}
 			}
+			kind := provider.FromAgent(agent.Agent, processes)
 			// The registry is the single authority on which kinds can be measured.
 			// Gating on it rather than on a parallel predicate means a kind nobody
 			// registered blanks its row instead of silently keeping a previous
 			// session's value, which is the safe direction for an unreadable pane.
-			p := providerFor(kind, providers)
+			p := providers[kind]
 			if p == nil {
 				if hasOccupancyToken(agent.Tokens) {
-					if err := client.Clear(gctx, agent.PaneID); err != nil {
+					if err := client.Clear(ctx, agent.PaneID); err != nil {
 						appendErr(fmt.Errorf("clear superseded metadata for %s: %w", agent.PaneID, err))
 					}
 				}
-				return nil
+				return
 			}
-			if err := refreshOne(gctx, client, agent.PaneID, paneOf(agent, processes), log, p); err != nil {
-				appendErr(err)
-			}
-			return nil
-		})
+			appendErr(refreshOne(ctx, client, agent.PaneID, kind, paneOf(agent, processes), log, p))
+		}()
 	}
-	// Every closure collects its own errors and returns nil, so Wait itself is
-	// nil even when the round's deadline kills stragglers mid-flight. Reading
-	// the parent context directly keeps a deadline-cut round from reporting
-	// success.
-	if err := g.Wait(); err != nil {
-		errs = append(errs, err)
-	}
+	wg.Wait()
+	// Every pane collects its own errors, and one the round's deadline cut
+	// short need not have produced any. Reading the context directly keeps a
+	// deadline-cut round from reporting success.
 	if err := ctx.Err(); err != nil {
 		errs = append(errs, err)
 	}
@@ -172,39 +163,31 @@ func Refresh(ctx context.Context, client Herdr, eventPaneID string, log io.Write
 }
 
 func sweepStaleMetadata(ctx context.Context, client Herdr, eventPaneID string, live map[string]struct{}, log io.Writer) error {
+	var stale []string
+	var errs []error
 	panes, err := client.ListPanes(ctx)
 	if err != nil {
-		var diagnosticErrs []error
-		if writeErr := writeMaintenanceDiagnostic(log, MaintenanceDiagnostic{Operation: "list_panes", Error: err.Error()}); writeErr != nil {
-			diagnosticErrs = append(diagnosticErrs, writeErr)
-		}
+		errs = append(errs, writeMaintenanceDiagnostic(log, MaintenanceDiagnostic{Operation: "list_panes", Error: err.Error()}))
 		// The event pane is still useful as a fallback when pane enumeration races.
 		if eventPaneID != "" {
-			if _, ok := live[eventPaneID]; !ok {
-				if clearErr := client.Clear(ctx, eventPaneID); clearErr != nil {
-					if writeErr := writeMaintenanceDiagnostic(log, MaintenanceDiagnostic{Operation: "clear_stale_metadata", PaneID: eventPaneID, Error: clearErr.Error()}); writeErr != nil {
-						diagnosticErrs = append(diagnosticErrs, writeErr)
-					}
-				}
-			}
+			stale = append(stale, eventPaneID)
 		}
-		return errors.Join(diagnosticErrs...)
 	}
-
-	var diagnosticErrs []error
 	for _, pane := range panes {
-		if _, ok := live[pane.PaneID]; ok || !hasOccupancyToken(pane.Tokens) {
-			continue
-		}
-		if clearErr := client.Clear(ctx, pane.PaneID); clearErr != nil {
-			// A later event retries the sweep; measurement delivery owns exit status.
-			if writeErr := writeMaintenanceDiagnostic(log, MaintenanceDiagnostic{Operation: "clear_stale_metadata", PaneID: pane.PaneID, Error: clearErr.Error()}); writeErr != nil {
-				diagnosticErrs = append(diagnosticErrs, writeErr)
-			}
-			continue
+		if hasOccupancyToken(pane.Tokens) {
+			stale = append(stale, pane.PaneID)
 		}
 	}
-	return errors.Join(diagnosticErrs...)
+	for _, paneID := range stale {
+		if _, ok := live[paneID]; ok {
+			continue
+		}
+		// A later event retries the sweep; measurement delivery owns exit status.
+		if err := client.Clear(ctx, paneID); err != nil {
+			errs = append(errs, writeMaintenanceDiagnostic(log, MaintenanceDiagnostic{Operation: "clear_stale_metadata", PaneID: paneID, Error: err.Error()}))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func hasOccupancyToken(tokens map[string]string) bool {
@@ -212,34 +195,6 @@ func hasOccupancyToken(tokens map[string]string) bool {
 	_, hasDisplay := tokens["ctx"]
 	_, hasRaw := tokens["ctx_raw"]
 	return hasDisplay || hasRaw
-}
-
-// handleUnknown is the one place a failed reading becomes a decision about the
-// pane, for every provider. Each provider brings its own states and its own
-// half-built record; only the classification is shared. refreshOne fills the
-// record in because how much a failed reading observed before giving up varies
-// per provider, and threading each of those fields through here as a parameter
-// is how this signature grew unreadable once already.
-func handleUnknown(ctx context.Context, client Herdr, log io.Writer, states report.States, measurement Measurement, err error) error {
-	measurement.Error = err.Error()
-	measurementErr := writeMeasurement(log, measurement)
-	if report.Classify(err, states) == report.Superseded {
-		return errors.Join(measurementErr, client.Clear(ctx, measurement.PaneID))
-	}
-	// Stale-low and transient answers both leave the displayed value alone: one
-	// is a valid lower bound, the other is a failure to read, and neither is
-	// evidence that the value belongs to a superseded session.
-	return measurementErr
-}
-
-// contextState maps a provider's own just-compacted answer onto the state herdr
-// sees. Each provider detects a compaction against its own store, in shapes
-// that have nothing in common; reporting it is what they share.
-func contextState(err, justCompacted error) ContextState {
-	if errors.Is(err, justCompacted) {
-		return ContextJustCompacted
-	}
-	return ContextUnknown
 }
 
 func writeMeasurement(writer io.Writer, measurement Measurement) error {

@@ -240,11 +240,11 @@ correlated at all. What it resolves *with* takes the same shape — a path used
 directly, an id matched against the transcript whose name ends with it under
 omp's own home, a non-unique match treated as unresolved — but the divergence
 is beneath that home, not the home itself. The directory derivation is omp's
-own, pi wrapping the whole absolute path where omp strips the home prefix, and
-the configured home is a separate field because one shared field would point an
-omp pane at pi's store on any machine running both. One exported
-`PI_CODING_AGENT_DIR` still redirects both agents; that override is the one
-thing they genuinely share, and
+own, pi wrapping the whole absolute path where omp strips the home prefix. The
+configured override reaches each provider unresolved, so leaving it unset keeps
+omp on its own default home rather than pointing an omp pane at pi's store on a
+machine running both. One exported `PI_CODING_AGENT_DIR` still redirects both
+agents; that override is the one thing they genuinely share, and
 [ADR-0006](adr/0006-two-providers-for-pi-and-omp.md) records the divergences
 that survive it. Observed against omp 17.3.5 and herdr 0.8.0; omp is not
 pinned.

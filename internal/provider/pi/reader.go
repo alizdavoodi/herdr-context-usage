@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
-	"github.com/alizdavoodi/herdr-context-usage/internal/provider/piompshared"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/transcript"
 )
 
@@ -19,7 +19,7 @@ const maxScanBytes int64 = 8 << 20
 
 var (
 	ErrNoOccupancy   = errors.New("pi transcript has no current context occupancy")
-	ErrJustCompacted = errors.New("pi agent session is just-compacted")
+	ErrJustCompacted = fmt.Errorf("pi %w", provider.ErrJustCompacted)
 )
 
 type sessionRecord struct {
@@ -100,9 +100,9 @@ func newestOccupancy(lines [][]byte, version *int) (provider.Reading, error) {
 		// Which three counts these are is pi's business — the shapes around them
 		// diverge from omp's even where the field names do not — while the sum
 		// itself is the only thing ADR-0006 found measured identical on both
-		// agents, so it is the only thing that lives in a shared package.
+		// agents, so it is the only thing shared.
 		usage := entry.Message.Usage
-		if occupancy, ok := piompshared.Occupancy(usage.Input, usage.CacheRead, usage.CacheWrite); ok {
+		if occupancy, ok := provider.Occupancy(usage.Input, usage.CacheRead, usage.CacheWrite); ok {
 			return provider.Reading{Occupancy: occupancy, TranscriptVersion: version}, nil
 		}
 	}

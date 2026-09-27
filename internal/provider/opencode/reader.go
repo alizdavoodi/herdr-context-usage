@@ -7,8 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/opencodeshared"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/sqlitestore"
 
@@ -34,9 +34,7 @@ type cacheCounts struct {
 	Write *int64 `json:"write"`
 }
 
-type store struct {
-	database *sql.DB
-}
+type store struct{ *sql.DB }
 
 func open(ctx context.Context, explicitPath, dataHome string) (*store, error) {
 	path, err := opencodeshared.DataPath(explicitPath, dataHome, "opencode.db")
@@ -45,48 +43,19 @@ func open(ctx context.Context, explicitPath, dataHome string) (*store, error) {
 	}
 	// opencode's schema is mid-migration: the v1 database also carries a stalled
 	// session_v2, so having session and message is what makes a file a v1 store.
-	database, err := sqlitestore.OpenReadOnly(ctx, path, "session", "message")
-	switch {
-	case errors.Is(err, sqlitestore.ErrMissing):
-		return nil, ErrStoreNotReady
-	case errors.Is(err, sqlitestore.ErrSchema):
-		return nil, ErrNoSchema
-	case err != nil:
+	db, err := sqlitestore.OpenReadOnly(ctx, path, "session", "message")
+	if err != nil {
 		return nil, err
 	}
-	return &store{database: database}, nil
-}
-
-func (s *store) Close() error {
-	return s.database.Close()
-}
-
-func (s *store) resolveTerminalTitle(ctx context.Context, directory, terminalTitle string) (string, error) {
-	return opencodeshared.ResolveTitle(ctx, directory, terminalTitle, s.sessionsByTitle)
-}
-
-// sessionsByTitle is this store's own half of title correlation. The v1 schema
-// keeps root sessions in `session`, and a v1 plugin route interpolates its
-// plugin id into the same title shape opencode2 fills with a plugin name, so
-// only a positive root-session match here can produce a reading.
-func (s *store) sessionsByTitle(ctx context.Context, directory string, title opencodeshared.Title) ([]string, error) {
-	comparison, args := title.Comparison()
-	rows, err := s.database.QueryContext(ctx,
-		`SELECT id FROM session WHERE directory = ? AND parent_id IS NULL AND `+comparison+` LIMIT 2`,
-		append([]any{directory}, args...)...)
-	if err != nil {
-		return nil, fmt.Errorf("resolve opencode session: %w", err)
-	}
-	defer rows.Close()
-	return opencodeshared.CollectIDs(rows)
+	return &store{DB: db}, nil
 }
 
 func (s *store) readOccupancy(ctx context.Context, sessionID string) (int64, error) {
-	if err := sessionExists(ctx, s.database, sessionID); err != nil {
+	if err := sessionExists(ctx, s.DB, sessionID); err != nil {
 		return 0, err
 	}
 
-	rows, err := s.database.QueryContext(ctx, `SELECT data FROM message WHERE session_id = ? ORDER BY time_created DESC, id DESC`, sessionID)
+	rows, err := s.QueryContext(ctx, `SELECT data FROM message WHERE session_id = ? ORDER BY time_created DESC, id DESC`, sessionID)
 	if err != nil {
 		return 0, fmt.Errorf("read opencode messages: %w", err)
 	}
@@ -135,14 +104,8 @@ func occupancy(message assistantMessage) (int64, error) {
 	if message.Time.Completed == nil || message.Tokens == nil || message.Tokens.Input == nil || message.Tokens.Cache == nil || message.Tokens.Cache.Read == nil || message.Tokens.Cache.Write == nil {
 		return 0, ErrNoOccupancy
 	}
-	if *message.Tokens.Input < 0 || *message.Tokens.Cache.Read < 0 || *message.Tokens.Cache.Write < 0 {
-		return 0, ErrNoOccupancy
-	}
-	if *message.Tokens.Input > math.MaxInt64-*message.Tokens.Cache.Read || *message.Tokens.Input+*message.Tokens.Cache.Read > math.MaxInt64-*message.Tokens.Cache.Write {
-		return 0, ErrNoOccupancy
-	}
-	occupancy := *message.Tokens.Input + *message.Tokens.Cache.Read + *message.Tokens.Cache.Write
-	if occupancy == 0 {
+	occupancy, ok := provider.Occupancy(*message.Tokens.Input, *message.Tokens.Cache.Read, *message.Tokens.Cache.Write)
+	if !ok {
 		return 0, ErrNoOccupancy
 	}
 	return occupancy, nil

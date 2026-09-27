@@ -7,7 +7,6 @@ import (
 	"fmt"
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
-	"github.com/alizdavoodi/herdr-context-usage/internal/provider/piompshared"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider/transcript"
 )
 
@@ -18,20 +17,9 @@ import (
 // scan independent of how long the agent session has run.
 const maxScanBytes int64 = 8 << 20
 
-// maxHeaderRecords bounds the search for the session record.
-//
-// It is not the first record. omp writes a fixed-width title record ahead of it
-// — padded so the title can be rewritten in place — which puts the session
-// record at line 2 on all five real transcripts. The most header records
-// observed ahead of a transcript's first message is 7: title, session, then a
-// run of model_change and thinking_level_change records. 16 is a little over
-// twice that, and exists so that a transcript carrying no session record cannot
-// turn the search into a scan of the whole bounded head.
-const maxHeaderRecords = 16
-
 var (
 	ErrNoOccupancy   = errors.New("omp transcript has no current context occupancy")
-	ErrJustCompacted = errors.New("omp agent session is just-compacted")
+	ErrJustCompacted = fmt.Errorf("omp %w", provider.ErrJustCompacted)
 )
 
 type sessionRecord struct {
@@ -40,7 +28,7 @@ type sessionRecord struct {
 }
 
 // transcriptEntry decodes only what the walk decides on, and the fields it
-// leaves out are the point. Each of the three below is a real field of a real
+// leaves out are the point. Each of the four below is a real field of a real
 // omp record, named here with the number that disqualified it so that a later
 // reader does not reintroduce one because its name looks right.
 //
@@ -50,23 +38,10 @@ type sessionRecord struct {
 // is the one to prefer, for a reason particular to codex, so neither provider's
 // rule may be copied to the other.
 //
-// omp's own log settles why that field is so inviting, and it was read once as
-// evidence rather than as an interface. Each turn logged an auto-compaction
-// decision carrying a contextWindow of 1,000,000, a thresholdTokens of 850,000
-// and a resolvedContextTokens — and 20 of the 31 distinct values of the last
-// coincided exactly with a transcript totalTokens while not one coincided with a
-// promptTokens, the compaction point among them at 134,693. So omp answers "when
-// should I compact" with the per-turn total and this plugin answers "how much is
-// resident now" with the prompt size: two questions, two numbers, and the
-// tempting field belongs to the other one.
-//
-// Those per-process logs rotate, and the ones behind that reading are already
-// gone from the machine, so unlike every other number in this file it cannot be
-// re-checked. Its transcript-side half can: tokensBefore and the previous turn's
-// totalTokens are both 134,693, which the fixtures pin. The reason to keep the
-// rest anyway is that it also establishes where omp's window limit lives — in
-// the log, not the transcript — so this reader could not read the limit at
-// runtime even if ADR-0001 had not declined to display it.
+// That field is inviting because omp's own auto-compaction decisions track the
+// per-turn total, which answers "when should I compact". This reader answers
+// "how much is resident now" with the prompt size: two questions, two numbers,
+// and the tempting field belongs to the other one.
 //
 // There is no tokensBefore field: omp's compaction record carries 134,693, which
 // is exactly that same per-turn total, and it describes the agent session before
@@ -158,8 +133,8 @@ func newestOccupancy(lines [][]byte, version *int) (provider.Reading, error) {
 			// aborted is the interesting one, because it is the case where
 			// "completed" does real work, and it is excluded by arithmetic rather
 			// than by a stopReason gate: the one aborted row sums to 0 and carries
-			// no contextSnapshot, so the all-zero rejection in piompshared drops
-			// it and the walk reaches the previous completed turn. omp 18.1.2
+			// no contextSnapshot, so the all-zero rejection in provider.Occupancy
+			// drops it and the walk reaches the previous completed turn. omp 18.1.2
 			// adds a fourth reason, error, and its two rows sum to 0 as well, so
 			// the same rejection covers it without this reader learning a new
 			// name. A gate on stopReason would instead have to be extended for
@@ -172,7 +147,7 @@ func newestOccupancy(lines [][]byte, version *int) (provider.Reading, error) {
 			continue
 		}
 		usage := entry.Message.Usage
-		occupancy, ok := piompshared.Occupancy(usage.Input, usage.CacheRead, usage.CacheWrite)
+		occupancy, ok := provider.Occupancy(usage.Input, usage.CacheRead, usage.CacheWrite)
 		if !ok {
 			continue
 		}
@@ -230,12 +205,10 @@ func oracleDisagreement(entry transcriptEntry, occupancy int64) string {
 // that took the first line and looked for a version would find none, and one
 // that accepted any version-shaped key there would report 1 for every omp agent
 // session. A head with no session record in it leaves the version nil and the
-// walk proceeds.
+// walk proceeds. The head is already bounded by transcript.Read, so the search
+// needs no bound of its own.
 func readVersion(head [][]byte) *int {
-	for i, line := range head {
-		if i >= maxHeaderRecords {
-			return nil
-		}
+	for _, line := range head {
 		var record sessionRecord
 		if json.Unmarshal(bytes.TrimSpace(line), &record) != nil {
 			continue

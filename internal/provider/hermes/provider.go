@@ -20,11 +20,7 @@ func New(home string) provider.Provider {
 
 type hermesProvider struct{ home string }
 
-func (hermesProvider) Kind() provider.Kind { return provider.Hermes }
-
-func (hermesProvider) JustCompacted() error { return ErrJustCompacted }
-
-// Resolve reads only herdr's reported agent session id, and nothing else the
+// Measure reads only herdr's reported agent session id, and nothing else the
 // pane offers. There is no working-directory, title, process or recency
 // fallback, and each would be wrong here rather than merely weak: a desktop
 // session records no directory at all, a delegated sub-agent runs in its
@@ -36,24 +32,21 @@ func (hermesProvider) JustCompacted() error { return ErrJustCompacted }
 // table, so a path names nothing this store can read and is refused. Both
 // refusals come before the home or the store is touched: they are answers about
 // the pane, and a failing store must not mask them.
-func (p hermesProvider) Resolve(ctx context.Context, pane provider.Pane) (provider.Resolved, error) {
+func (p hermesProvider) Measure(ctx context.Context, pane provider.Pane) (provider.Reading, error) {
 	id, ok := pane.AgentSession.ID()
 	if !ok {
-		return provider.Resolved{}, ErrNoSession
+		return provider.Reading{}, ErrNoSession
 	}
 	home, err := provider.Home(p.home, ".hermes")
 	if err != nil {
-		return provider.Resolved{}, err
+		return provider.Reading{}, err
 	}
 	s, err := open(ctx, filepath.Join(home, "state.db"))
 	if err != nil {
-		return provider.Resolved{Mode: provider.ResolutionAgentSession}, err
+		return provider.Reading{Mode: provider.ResolutionAgentSession}, err
 	}
-	return provider.Resolved{
-		Mode:    provider.ResolutionAgentSession,
-		Cleanup: s.Close,
-		Read: func(ctx context.Context) (provider.Reading, error) {
-			return s.readOccupancy(ctx, id)
-		},
-	}, nil
+	defer s.Close()
+	reading, err := s.readOccupancy(ctx, id)
+	reading.Mode = provider.ResolutionAgentSession
+	return reading, err
 }

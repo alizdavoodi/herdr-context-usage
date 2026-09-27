@@ -39,15 +39,12 @@ func TestResolveUsesAReportedPathDirectly(t *testing.T) {
 	// What a label and a value mean is provider.AgentSession's one rule, tested
 	// there; this case pins only that a path it reports reaches the reader.
 	reported := filepath.Join(t.TempDir(), repoSessionDir, repoTranscript)
-	got, err := resolve(sessionInput{
-		PiHome:       t.TempDir(),
-		AgentSession: &provider.AgentSession{Kind: "path", Value: reported},
-	})
+	got, err := resolve(t.TempDir(), &provider.AgentSession{Kind: "path", Value: reported})
 	if err != nil {
 		t.Fatalf("resolve() error = %v", err)
 	}
-	if got.Path != reported || got.Mode != provider.ResolutionAgentSession {
-		t.Fatalf("resolve() = %#v, want %q and agent_session mode", got, reported)
+	if got != reported {
+		t.Fatalf("resolve() = %q, want %q", got, reported)
 	}
 }
 
@@ -59,12 +56,12 @@ func TestResolveAPathWithoutAResolvableHome(t *testing.T) {
 	t.Setenv("HOME", "")
 
 	want := filepath.Join(t.TempDir(), "sessions", repoSessionDir, repoTranscript)
-	got, err := resolve(sessionInput{AgentSession: &provider.AgentSession{Kind: "path", Value: want}})
+	got, err := resolve("", &provider.AgentSession{Kind: "path", Value: want})
 	if err != nil {
 		t.Fatalf("resolve() error = %v, want the reported path used without a home", err)
 	}
-	if got.Path != want || got.Mode != provider.ResolutionAgentSession {
-		t.Fatalf("resolve() = %#v, want %q and agent_session mode", got, want)
+	if got != want {
+		t.Fatalf("resolve() = %q, want %q", got, want)
 	}
 }
 
@@ -80,15 +77,12 @@ func TestResolveMatchesAReportedIDToItsTranscript(t *testing.T) {
 		homeSessionDir: {homeTranscript},
 	})[repoTranscript]
 
-	got, err := resolve(sessionInput{
-		PiHome:       home,
-		AgentSession: &provider.AgentSession{Kind: "id", Value: repoSessionID},
-	})
+	got, err := resolve(home, &provider.AgentSession{Kind: "id", Value: repoSessionID})
 	if err != nil {
 		t.Fatalf("resolve() error = %v", err)
 	}
-	if got.Path != want || got.Mode != provider.ResolutionAgentSession {
-		t.Fatalf("resolve() = %#v, want %q and agent_session mode", got, want)
+	if got != want {
+		t.Fatalf("resolve() = %q, want %q", got, want)
 	}
 }
 
@@ -108,10 +102,7 @@ func TestResolveTreatsANonUniqueIDAsUnresolved(t *testing.T) {
 		homeSessionDir: {"2026-08-19T09-00-00-000Z_" + repoSessionID + ".jsonl"},
 	})
 
-	if _, err := resolve(sessionInput{
-		PiHome:       home,
-		AgentSession: &provider.AgentSession{Kind: "id", Value: repoSessionID},
-	}); !errors.Is(err, ErrNoSession) {
+	if _, err := resolve(home, &provider.AgentSession{Kind: "id", Value: repoSessionID}); !errors.Is(err, ErrNoSession) {
 		t.Fatalf("resolve() error = %v, want %v", err, ErrNoSession)
 	}
 }
@@ -157,10 +148,7 @@ func TestResolveRejectsUnmatchableIDs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if _, err := resolve(sessionInput{
-				PiHome:       home,
-				AgentSession: &provider.AgentSession{Kind: "id", Value: tt.value},
-			}); !errors.Is(err, ErrNoSession) {
+			if _, err := resolve(home, &provider.AgentSession{Kind: "id", Value: tt.value}); !errors.Is(err, ErrNoSession) {
 				t.Fatalf("resolve(%q) error = %v, want %v", tt.value, err, ErrNoSession)
 			}
 		})
@@ -178,19 +166,19 @@ func TestResolveWithoutAReportedAgentSession(t *testing.T) {
 	writeStore(t, home, map[string][]string{repoSessionDir: {repoTranscript}})
 
 	tests := []struct {
-		name  string
-		input sessionInput
+		name    string
+		session *provider.AgentSession
 	}{
-		{name: "no agent session at all", input: sessionInput{PiHome: home}},
-		{name: "an agent session with no value", input: sessionInput{PiHome: home, AgentSession: &provider.AgentSession{Kind: "id"}}},
-		{name: "a path kind with no value", input: sessionInput{PiHome: home, AgentSession: &provider.AgentSession{Kind: "path"}}},
+		{name: "no agent session at all", session: nil},
+		{name: "an agent session with no value", session: &provider.AgentSession{Kind: "id"}},
+		{name: "a path kind with no value", session: &provider.AgentSession{Kind: "path"}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if _, err := resolve(tt.input); !errors.Is(err, ErrNoSession) {
-				t.Fatalf("resolve(%#v) error = %v, want %v", tt.input, err, ErrNoSession)
+			if _, err := resolve(home, tt.session); !errors.Is(err, ErrNoSession) {
+				t.Fatalf("resolve(%#v) error = %v, want %v", tt.session, err, ErrNoSession)
 			}
 		})
 	}
@@ -205,12 +193,12 @@ func TestResolveDefaultsToPisOwnHome(t *testing.T) {
 	want := writeStore(t, filepath.Join(fromDefault, ".pi", "agent"), map[string][]string{repoSessionDir: {repoTranscript}})[repoTranscript]
 	t.Setenv("HOME", fromDefault)
 
-	got, err := resolve(sessionInput{AgentSession: &provider.AgentSession{Kind: "id", Value: repoSessionID}})
+	got, err := resolve("", &provider.AgentSession{Kind: "id", Value: repoSessionID})
 	if err != nil {
 		t.Fatalf("resolve() error = %v", err)
 	}
-	if got.Path != want {
-		t.Fatalf("resolve() = %q, want the default ~/.pi/agent home %q", got.Path, want)
+	if got != want {
+		t.Fatalf("resolve() = %q, want the default ~/.pi/agent home %q", got, want)
 	}
 }
 

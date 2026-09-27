@@ -2,25 +2,8 @@
 // needs and nothing in between: the head, where the agents that stamp a schema
 // version put it, and a bounded tail, where the newest completed turn is.
 //
-// It exists because claude, pi and omp had the same open-stat-seek-read-split
-// prologue written out three times. Two copies were left alone; the third is
-// what made the duplication worth removing, since a fix to the partial-line
-// drop would otherwise have to be found and made in three places.
-//
-// Migrating claude's reader was a deliberate widening of the omp provider's
-// scope, which had otherwise been to leave the four earlier providers alone, and
-// it is called out here because nothing else in the change would show it. The
-// narrower option — wiring only pi and omp to this package — reaches every one
-// of the omp provider's requirements and leaves two copies instead of one. It
-// was declined because the duplicated block is byte-identical in all three and
-// the whole reason to extract at the third copy is that the count stops
-// growing. What makes the wider option safe to take is that it changes no
-// behaviour, and that was measured rather than argued: both migrated readers
-// were run against their pre-extraction versions over every real transcript on
-// the machine this was built on — 186 claude and 8 pi and omp — comparing
-// occupancy, error text and schema version, with no divergence on any of them.
-// One claude transcript is 12.2 MB, past the 8 MiB tail bound, so the
-// partial-first-line drop is covered rather than merely inherited.
+// claude, pi and omp share the open-stat-seek-read-split prologue, so the
+// partial-line handling lives in one place.
 //
 // What may live here is only what decodes nothing. This package hands back
 // bytes and never looks inside a record, which is what keeps it clear of
@@ -68,11 +51,7 @@ type Scan struct {
 // a parameter, a branch, and a way for a provider to silently lose its version
 // by forgetting to ask. For a transcript below the tail bound the two ranges
 // overlap, so its first 64 KiB is read twice — roughly a 1% overhead on the
-// common case, paid to keep one code path. Addressing both ends with ReadAt
-// instead would drop the seek and its error branch; it is left alone because it
-// would also invalidate the transcript-by-transcript differential that is the
-// evidence this extraction changed no behaviour, which is worth more than the
-// 1%.
+// common case, paid to keep one code path.
 //
 // A head that was read survives a tail read that fails, so the Scan is
 // meaningful alongside a non-nil error and callers must not discard it there.

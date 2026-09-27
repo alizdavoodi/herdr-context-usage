@@ -4,28 +4,19 @@ import (
 	"io/fs"
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
-	"github.com/alizdavoodi/herdr-context-usage/internal/report"
 )
 
-// States declares what each of this provider's answers proves about the
-// occupancy already displayed: superseded answers clear it, stale-low answers
-// leave it standing as a lower bound, and anything undeclared is transient.
-func (claudeProvider) States() report.States {
-	return report.States{
-		Superseded: []error{
-			ErrNoSession,
-			provider.ErrNoHome,
-			ErrNoOccupancy,
-			ErrJustCompacted,
-			// resolve hands back a transcript path rather than a file, so a missing
-			// file is this provider's evidence that the session is gone or has not
-			// been written yet. report used to special-case it for everybody, which
-			// hid the fact that it is provider semantics.
-			fs.ErrNotExist,
-		},
-		// Claude never surfaces a turn in flight as an error: readOccupancy walks
-		// back across the zero-usage rows a failed turn leaves behind and reports
-		// the previous reading itself.
-		StaleLow: nil,
+// Superseded lists this provider's answers that prove the displayed occupancy
+// wrong and clear it; anything left out preserves the value.
+func (claudeProvider) Superseded() []error {
+	return []error{
+		ErrNoSession,
+		provider.ErrNoHome,
+		ErrNoOccupancy,
+		ErrJustCompacted,
+		// resolve hands back a transcript path rather than a file, so a missing
+		// file is this provider's evidence that the session is gone or has not
+		// been written yet.
+		fs.ErrNotExist,
 	}
 }

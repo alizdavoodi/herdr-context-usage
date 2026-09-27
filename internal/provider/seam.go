@@ -2,8 +2,8 @@ package provider
 
 import (
 	"context"
-
-	"github.com/alizdavoodi/herdr-context-usage/internal/report"
+	"errors"
+	"slices"
 )
 
 // ResolutionMode names which method identified the agent session for a pane
@@ -34,12 +34,18 @@ type Pane struct {
 	Processes []Process
 }
 
-// Reading is what a provider's reader observed. TranscriptVersion is the schema
+// Reading is what one measurement observed. TranscriptVersion is the schema
 // version the store stamped on the session it was read from, nil for a provider
 // whose store carries none. A reader may populate it alongside a non-nil error —
 // a just-compacted transcript was read successfully right up to the compaction
 // record — so the refresh skeleton in app records it on the failure path too.
 type Reading struct {
+	// Mode is the zero value until a resolution stage succeeds. app is the one
+	// place that turns that into the null the measurement record must carry, so
+	// no provider allocates a pointer to say it resolved nothing. A failed
+	// measurement still carries the mode of the stage that succeeded before it
+	// failed.
+	Mode              ResolutionMode
 	Occupancy         int64
 	ModelID           string
 	TranscriptVersion *int
@@ -50,27 +56,30 @@ type Reading struct {
 	OracleDisagreement string
 }
 
-// Resolved carries one provider's session resolution: a closure that reads a
-// Reading from the resolved handle, the resolution mode, and an optional
-// cleanup for any store the resolution opened. A file-backed provider leaves
-// Cleanup nil; a store-backed provider sets it to store.Close so the skeleton
-// in app can defer it, even when resolution fails after the store opened.
-//
-// Mode is the zero value until a resolution stage succeeds. app is the one
-// place that turns that into the null the measurement record must carry, so no
-// provider has to allocate a pointer to say it resolved nothing.
-type Resolved struct {
-	Read    func(context.Context) (Reading, error)
-	Mode    ResolutionMode
-	Cleanup func() error
-}
+// ErrJustCompacted is the state every provider reports in the interval after a
+// compaction. Each provider wraps it, so the text names the agent while app
+// recognises the state with one errors.Is.
+var ErrJustCompacted = errors.New("agent session is just-compacted")
 
 // Provider contributes the parts of a refresh that are specific to one agent
 // kind. The skeleton in app owns error classification, measurement and
 // reporting, which are identical across every provider.
 type Provider interface {
-	Kind() Kind
-	States() report.States
-	JustCompacted() error
-	Resolve(ctx context.Context, pane Pane) (Resolved, error)
+	// Superseded lists this provider's answers that IsSuperseded treats as
+	// proof the displayed value is wrong.
+	Superseded() []error
+	// Measure resolves the pane's agent session and reads its occupancy in one
+	// call. A store-backed provider closes its own store before returning. An
+	// unknown reading is an error, so that every successful numeric reading,
+	// including zero, stays valid.
+	Measure(ctx context.Context, pane Pane) (Reading, error)
+}
+
+// IsSuperseded decides what a failed measurement proves about the value already
+// displayed for a pane. A declared answer proves it wrong, so the pane is
+// cleared. Anything undeclared — a permission or I/O failure, a turn that
+// recorded nothing — says nothing about the session and preserves it, so a new
+// error defaults to keeping a value rather than blanking a pane.
+func IsSuperseded(err error, declared []error) bool {
+	return slices.ContainsFunc(declared, func(state error) bool { return errors.Is(err, state) })
 }

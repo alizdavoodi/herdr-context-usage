@@ -8,12 +8,14 @@ import (
 	"io"
 	"os"
 	"strings"
+
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 )
 
 var (
 	ErrNoOccupancy   = errors.New("codex rollout has no current context occupancy")
 	ErrFailedTurn    = errors.New("codex turn recorded no context occupancy")
-	ErrJustCompacted = errors.New("codex agent session is just-compacted")
+	ErrJustCompacted = fmt.Errorf("codex %w", provider.ErrJustCompacted)
 )
 
 type rolloutEntry struct {
@@ -57,7 +59,7 @@ func readOccupancy(path string) (int64, error) {
 					if _, ok := occupancy(latest); ok {
 						justCompacted = false
 					}
-				} else if isCompaction(entry) {
+				} else if strings.EqualFold(entry.Type, "compacted") || strings.EqualFold(entry.Payload.Type, "compacted") {
 					justCompacted = true
 				}
 			}
@@ -82,13 +84,14 @@ func readOccupancy(path string) (int64, error) {
 		return value, nil
 	}
 	// An all-zero usage row outside a compaction is a turn that recorded
-	// nothing, not an empty window. The other three providers walk back to the
+	// nothing, not an empty window. The other providers walk back to the
 	// previous reading here; codex reads only the newest row, so it says so
-	// instead and the value already on the pane stands as the lower bound. No
-	// rollout in the local corpus has produced this row — 0 of 7,143 usage
-	// events — which is why it needs its own name: one error covering both this
-	// and "nothing recorded yet" makes the difference between clearing and
-	// preserving invisible.
+	// instead, and leaving this answer out of Superseded is what lets the value
+	// already on the pane stand: occupancy only rises within a turn, so the
+	// previous reading is a valid lower bound. No rollout in the local corpus
+	// has produced this row — 0 of 7,143 usage events — which is why it needs
+	// its own name: one error covering both this and "nothing recorded yet"
+	// makes the difference between clearing and preserving invisible.
 	return 0, ErrFailedTurn
 }
 
@@ -108,12 +111,4 @@ func occupancy(usage *tokenUsage) (int64, bool) {
 		return *usage.InputTokens, true
 	}
 	return 0, false
-}
-
-func isCompaction(entry rolloutEntry) bool {
-	return isCompactionType(entry.Type) || isCompactionType(entry.Payload.Type)
-}
-
-func isCompactionType(kind string) bool {
-	return strings.EqualFold(kind, "compacted")
 }

@@ -43,10 +43,10 @@ compatibility signal and is not one — the field sets already differ at that
 version, so gating on it would reject a harmless bump while accepting a breaking
 change within one.
 
-Each provider declares its own `States()`, and the seam test derives its
-list from the provider registry rather than a hand-written one, so both are
-checked for the superseded and stale-low contradiction without a second list to
-keep in step.
+Each provider declares its own `Superseded()`, and the seam test derives its
+list from the provider registry rather than a hand-written one, so a newly
+registered provider is checked for declaring a superseded answer without a
+second list to keep in step.
 
 Neither pi nor omp is ours, and `nix run github:numtide/llm-agents.nix` pins
 neither, so both float on whatever the flake resolves to. Every measurement

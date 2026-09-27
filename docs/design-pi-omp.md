@@ -122,8 +122,10 @@ override applies to both. The two agents derive their directory names
 differently: pi wraps the whole absolute path, omp strips the home prefix. Each
 provider therefore owns its own derivation.
 
-Configuration gains an independent home for each provider. One shared field
-would point a pi pane at omp's store on any machine running both.
+Configuration carries the one override and hands it to each provider
+unresolved, so an unset override leaves each on its own default home. Resolving
+it once, to either agent's default, would point a pi pane at omp's store on any
+machine running both.
 
 ### Context occupancy
 
@@ -282,9 +284,12 @@ from the provider registry: every provider is a value of the
 `provider.Provider` interface the provider root declares, and the registry
 builds one of each from the plugin's configuration. The registry-derived
 property tests therefore cover both new providers automatically: that each
-declares a superseded answer, that none declares one answer both superseded
-and merely behind, that each declares a just-compacted sentinel, and that no
-two providers claim one agent kind.
+declares a superseded answer, that one of those answers wraps the shared
+just-compacted sentinel, and that each registered kind is reachable from its
+agent label and is not the kind every unrecognised label dispatches to. Nothing
+tests for an answer declared both superseded and merely behind, or for two
+providers claiming one kind: there is one list of superseded answers, and the
+compiler rejects a duplicate kind in the registry.
 
 ## Out of Scope
 

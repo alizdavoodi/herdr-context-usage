@@ -1,6 +1,9 @@
-package piompshared
+package provider
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 // Each case names the real record it came from, because the value of these
 // fixtures is that both agents produced them independently: the same three
@@ -67,6 +70,12 @@ func TestOccupancySumsTheThreeAddends(t *testing.T) {
 			// either store is negative. Without the guard this sums to 116,098 —
 			// smaller than the truth, entirely plausible, and wrong.
 			name: "a negative count yields no number", input: 132_098, cacheRead: -16_000, cacheWrite: 0,
+			want: 0, wantOK: false,
+		},
+		{
+			// Constructed: without the guard, math.MaxInt64 + 1 wraps to a
+			// negative sum that would be reported as a reading.
+			name: "a sum that overflows yields no number", input: math.MaxInt64, cacheRead: 1, cacheWrite: 0,
 			want: 0, wantOK: false,
 		},
 	}

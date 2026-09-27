@@ -112,7 +112,7 @@ func TestRefreshReportsOmpOccupancyFromAReportedPath(t *testing.T) {
 		reports: make(map[string][2]string),
 	}
 
-	if err := Refresh(context.Background(), fake, "", &log, Config{OmpHome: home}); err != nil {
+	if err := Refresh(context.Background(), fake, "", &log, Config{PiCodingAgentDir: home}); err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
 	if got := fake.reports["w1:p1"]; got != [2]string{"132k", "132098"} {
@@ -160,7 +160,7 @@ func TestRefreshResolvesOmpSessionFromAReportedID(t *testing.T) {
 		reports: make(map[string][2]string),
 	}
 
-	if err := Refresh(context.Background(), fake, "", &log, Config{OmpHome: home}); err != nil {
+	if err := Refresh(context.Background(), fake, "", &log, Config{PiCodingAgentDir: home}); err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
 	if got := fake.reports["w1:p1"]; got != [2]string{"132k", "132098"} {
@@ -209,7 +209,7 @@ func TestRefreshClearsOmpRowWhenAnIDDoesNotResolveUniquely(t *testing.T) {
 				reports: make(map[string][2]string),
 			}
 
-			if err := Refresh(context.Background(), fake, "", &log, Config{OmpHome: home}); err != nil {
+			if err := Refresh(context.Background(), fake, "", &log, Config{PiCodingAgentDir: home}); err != nil {
 				t.Fatalf("Refresh() error = %v", err)
 			}
 			if !slices.Equal(fake.clears, []string{"w1:p1"}) || len(fake.reports) != 0 {
@@ -225,10 +225,11 @@ func TestRefreshClearsOmpRowWhenAnIDDoesNotResolveUniquely(t *testing.T) {
 }
 
 // A pane whose agent has not reported an agent session at all is the case the
-// documented integration precondition produces, and on omp that precondition
-// bites harder than on pi: omp ships no screen-detection manifest, so before its
-// integration is installed the pane is not labelled an agent at all. Whatever
-// the cause, the row must blank rather than keep what the pane last showed.
+// documented integration precondition produces. herdr labels an omp pane an
+// agent from its process name whether or not omp's integration is installed,
+// as herdr 0.8.0 does with omp 18.1.4, so without the integration the pane
+// reaches this plugin with no agent session to resolve. Whatever the cause, the
+// row must blank rather than keep what the pane last showed.
 func TestRefreshClearsOmpRowWhenNoAgentSessionIsReported(t *testing.T) {
 	t.Parallel()
 
@@ -238,7 +239,7 @@ func TestRefreshClearsOmpRowWhenNoAgentSessionIsReported(t *testing.T) {
 		reports: make(map[string][2]string),
 	}
 
-	if err := Refresh(context.Background(), fake, "", &log, Config{OmpHome: t.TempDir()}); err != nil {
+	if err := Refresh(context.Background(), fake, "", &log, Config{PiCodingAgentDir: t.TempDir()}); err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
 	if !slices.Equal(fake.clears, []string{"w1:p1"}) || len(fake.reports) != 0 {
@@ -267,7 +268,7 @@ func TestRefreshClearsOmpOccupancyAtTheCompactionBoundary(t *testing.T) {
 		reports: make(map[string][2]string),
 	}
 
-	if err := Refresh(context.Background(), fake, "", &log, Config{OmpHome: home}); err != nil {
+	if err := Refresh(context.Background(), fake, "", &log, Config{PiCodingAgentDir: home}); err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
 	if !slices.Equal(fake.clears, []string{"w1:p1"}) || len(fake.reports) != 0 {
@@ -276,6 +277,10 @@ func TestRefreshClearsOmpOccupancyAtTheCompactionBoundary(t *testing.T) {
 	got := log.String()
 	if !strings.Contains(got, `"context_state":"just_compacted"`) {
 		t.Fatalf("measurement = %q, want just_compacted", got)
+	}
+	// Resolution succeeded before the read failed, so its mode is still recorded.
+	if !strings.Contains(got, `"resolution_mode":"agent_session"`) {
+		t.Fatalf("measurement = %q, want the resolution mode kept on the failed read", got)
 	}
 	// Occupancy and the version arrive from one struct, so hoisting the occupancy
 	// assignment above the error check in refreshOne would compile and would
@@ -319,7 +324,7 @@ func TestRefreshReportsOmpOccupancyOnTheTurnAfterACompaction(t *testing.T) {
 		reports: make(map[string][2]string),
 	}
 
-	if err := Refresh(context.Background(), fake, "", &log, Config{OmpHome: home}); err != nil {
+	if err := Refresh(context.Background(), fake, "", &log, Config{PiCodingAgentDir: home}); err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
 	if got := fake.reports["w1:p1"]; got != [2]string{"41k", "40710"} {
@@ -354,7 +359,7 @@ func TestRefreshPreservesOmpValueOnATransientReadFailure(t *testing.T) {
 		reports: make(map[string][2]string),
 	}
 
-	if err := Refresh(context.Background(), fake, "", nil, Config{OmpHome: home}); err != nil {
+	if err := Refresh(context.Background(), fake, "", nil, Config{PiCodingAgentDir: home}); err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
 	if len(fake.clears) != 0 || len(fake.reports) != 0 {
@@ -377,7 +382,7 @@ func TestRefreshClearsOmpRowWhenNoAssistantTurnHasCompleted(t *testing.T) {
 		reports: make(map[string][2]string),
 	}
 
-	if err := Refresh(context.Background(), fake, "", &log, Config{OmpHome: home}); err != nil {
+	if err := Refresh(context.Background(), fake, "", &log, Config{PiCodingAgentDir: home}); err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
 	if !slices.Equal(fake.clears, []string{"w1:p1"}) || len(fake.reports) != 0 {
@@ -444,7 +449,7 @@ func TestRefreshRecordsOmpOracleDisagreementAndStillReportsTheSum(t *testing.T) 
 				reports: make(map[string][2]string),
 			}
 
-			if err := Refresh(context.Background(), fake, "", &log, Config{OmpHome: home}); err != nil {
+			if err := Refresh(context.Background(), fake, "", &log, Config{PiCodingAgentDir: home}); err != nil {
 				t.Fatalf("Refresh() error = %v", err)
 			}
 			if got := fake.reports["w1:p1"]; got != tt.want {
@@ -477,11 +482,9 @@ func TestRefreshRecordsOmpOracleDisagreementAndStillReportsTheSum(t *testing.T) 
 	}
 }
 
-// A pi pane and an omp pane in the same round must each be measured against
-// their own agent. The two stores have the same layout below the home and both
-// stamp version 3, so a provider reaching for the wrong home would report a
-// number rather than fail — which is the whole reason the homes are two
-// configuration fields rather than one.
+// A pi pane and an omp pane in one round are each read by their own provider,
+// which report different numbers for their own transcripts. Both panes report
+// absolute paths, so neither provider consults a home.
 func TestRefreshMeasuresPiAndOmpPanesAgainstTheirOwnStores(t *testing.T) {
 	t.Parallel()
 
@@ -500,7 +503,7 @@ func TestRefreshMeasuresPiAndOmpPanesAgainstTheirOwnStores(t *testing.T) {
 		reports: make(map[string][2]string),
 	}
 
-	if err := Refresh(context.Background(), fake, "", &log, Config{PiHome: piHome, OmpHome: ompHome}); err != nil {
+	if err := Refresh(context.Background(), fake, "", &log, Config{}); err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
 	if got := fake.reports["w1:p1"]; got != [2]string{"28k", "27905"} {
@@ -532,17 +535,14 @@ func oracleDisagreementIn(t *testing.T, log string) string {
 	return ""
 }
 
-// The defect this closes: an agent home that cannot be resolved at all left the
-// pane displaying its last occupancy for as long as it lived. Omp classified
-// the failure nowhere, so Classify fell to its transient default and preserved
-// a number that was correct once and stays plausible forever — the exact shape
-// the three-way classification exists to prevent.
+// An agent home that cannot be resolved at all must blank the row. Left
+// undeclared, the answer would be preserved as any undeclared answer is, and the
+// pane would keep a number that was correct once and stays plausible forever,
+// for as long as it lived.
 //
-// Measured against omp 17.3.5 and herdr 0.8.0 before this sentinel existed: the
-// record written was context_state "unknown", occupancy null, resolution_mode
-// null, error "find home directory: $HOME is not defined" — the bare wrapping
-// this sentinel replaced — and clears was empty, so the pane kept 132,098 from
-// its previous round.
+// Measured against omp 17.3.5 and herdr 0.8.0 with the failure undeclared: the
+// record read context_state "unknown", occupancy null and resolution_mode null,
+// and clears was empty, so the pane kept 132,098 from its previous round.
 //
 // Sets the environment, so it cannot run in parallel. Unsetting HOME defeats
 // os.UserHomeDir only on unix; Windows reads USERPROFILE. A pane reporting a path

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider/sqlitestore"
 )
 
 // Both tests point the provider at a store that has never been written, so
@@ -25,12 +26,12 @@ func TestResolveAcceptsOnlyNativeSessionID(t *testing.T) {
 		{Kind: "id", Value: "ses_current"},
 		{Value: "ses_current"},
 	} {
-		resolved, err := New(unwritten, "").Resolve(context.Background(), provider.Pane{AgentSession: &session})
-		if !errors.Is(err, ErrStoreNotReady) {
-			t.Fatalf("Resolve(%#v) error = %v, want ErrStoreNotReady", session, err)
+		reading, err := New(unwritten, "").Measure(context.Background(), provider.Pane{AgentSession: &session})
+		if !errors.Is(err, sqlitestore.ErrMissing) {
+			t.Fatalf("Measure(%#v) error = %v, want sqlitestore.ErrMissing", session, err)
 		}
-		if resolved.Mode != provider.ResolutionAgentSession {
-			t.Fatalf("Resolve(%#v) mode = %q, want agent_session kept past the open failure", session, resolved.Mode)
+		if reading.Mode != provider.ResolutionAgentSession {
+			t.Fatalf("Measure(%#v) mode = %q, want agent_session kept past the open failure", session, reading.Mode)
 		}
 	}
 }
@@ -45,12 +46,12 @@ func TestResolveDoesNotGuessFromDirectoryOrPath(t *testing.T) {
 		{Value: "/work/project"},
 		{Kind: "id"},
 	} {
-		resolved, err := New(unwritten, "").Resolve(context.Background(), provider.Pane{AgentSession: session})
-		if !errors.Is(err, ErrStoreNotReady) {
-			t.Fatalf("Resolve(%#v) error = %v, want ErrStoreNotReady", session, err)
+		reading, err := New(unwritten, "").Measure(context.Background(), provider.Pane{AgentSession: session})
+		if !errors.Is(err, sqlitestore.ErrMissing) {
+			t.Fatalf("Measure(%#v) error = %v, want sqlitestore.ErrMissing", session, err)
 		}
-		if resolved.Mode != "" {
-			t.Fatalf("Resolve(%#v) mode = %q, want none: no stage resolved a session", session, resolved.Mode)
+		if reading.Mode != "" {
+			t.Fatalf("Measure(%#v) mode = %q, want none: no stage resolved a session", session, reading.Mode)
 		}
 	}
 }

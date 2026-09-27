@@ -102,11 +102,15 @@ func TestRefreshClearsSupersededHermesValues(t *testing.T) {
 	t.Parallel()
 
 	reported := &provider.AgentSession{Kind: "id", Value: hermesSessionID}
+	// The read fails after the reported id was accepted in every case that sets
+	// wantMode, so the record still names that stage.
+	const acceptedID = `"resolution_mode":"agent_session"`
 	tests := []struct {
 		name      string
 		session   *provider.AgentSession
 		home      func(*testing.T) string
 		wantState string
+		wantMode  string
 	}{
 		{
 			name:    "no agent session reported",
@@ -116,15 +120,17 @@ func TestRefreshClearsSupersededHermesValues(t *testing.T) {
 		{
 			// A desktop pane keeps reporting a session it closed days ago, and its
 			// anchor is still a real number for that closed session.
-			name:    "reported session has ended",
-			session: reported,
-			home:    func(t *testing.T) string { return newAppHermesHome(t, hermesAnchor, "cli_close", false) },
+			name:     "reported session has ended",
+			session:  reported,
+			home:     func(t *testing.T) string { return newAppHermesHome(t, hermesAnchor, "cli_close", false) },
+			wantMode: acceptedID,
 		},
 		{
 			name:      "compacted in place",
 			session:   reported,
 			home:      func(t *testing.T) string { return newAppHermesHome(t, `{}`, "", true) },
 			wantState: `"context_state":"just_compacted"`,
+			wantMode:  acceptedID,
 		},
 		{
 			// The anchor clear Hermes runs after compacting is a separate write that
@@ -133,12 +139,14 @@ func TestRefreshClearsSupersededHermesValues(t *testing.T) {
 			session:   reported,
 			home:      func(t *testing.T) string { return newAppHermesHome(t, hermesAnchor, "", true) },
 			wantState: `"context_state":"just_compacted"`,
+			wantMode:  acceptedID,
 		},
 		{
 			name:      "rotated by compaction",
 			session:   reported,
 			home:      func(t *testing.T) string { return newAppHermesHome(t, hermesAnchor, "compression", false) },
 			wantState: `"context_state":"just_compacted"`,
+			wantMode:  acceptedID,
 		},
 		{
 			name:    "store not written yet",
@@ -162,6 +170,9 @@ func TestRefreshClearsSupersededHermesValues(t *testing.T) {
 			}
 			if tt.wantState != "" && !strings.Contains(log.String(), tt.wantState) {
 				t.Fatalf("measurement = %s, want %s", log.String(), tt.wantState)
+			}
+			if tt.wantMode != "" && !strings.Contains(log.String(), tt.wantMode) {
+				t.Fatalf("measurement = %s, want %s kept on the failed read", log.String(), tt.wantMode)
 			}
 		})
 	}

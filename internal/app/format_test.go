@@ -1,4 +1,4 @@
-package format
+package app
 
 import (
 	"encoding/json"
@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestOccupancy(t *testing.T) {
+func TestFormatOccupancy(t *testing.T) {
 	t.Parallel()
 
 	var tests []struct {
@@ -25,8 +25,8 @@ func TestOccupancy(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.Name, func(t *testing.T) {
 			t.Parallel()
-			if got := Occupancy(tt.In); got != tt.Want {
-				t.Fatalf("Occupancy(%d) = %q, want %q", tt.In, got, tt.Want)
+			if got := formatOccupancy(tt.In); got != tt.Want {
+				t.Fatalf("formatOccupancy(%d) = %q, want %q", tt.In, got, tt.Want)
 			}
 		})
 	}
