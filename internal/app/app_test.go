@@ -135,7 +135,9 @@ func TestRefreshFansOutAndClearsEventPaneAfterAgentExit(t *testing.T) {
 		reports: make(map[string][2]string),
 	}
 
-	if err := Refresh(context.Background(), fake, "w1:exited", nil, Config{ClaudeHome: root}); err != nil {
+	// The codex pane resolves against root, which holds no live rollout, so its
+	// stale value is superseded whatever the host's own ~/.codex contains.
+	if err := Refresh(context.Background(), fake, "w1:exited", nil, Config{ClaudeHome: root, CodexHome: root}); err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
 	if len(fake.processCalls) != 2 {
@@ -144,8 +146,8 @@ func TestRefreshFansOutAndClearsEventPaneAfterAgentExit(t *testing.T) {
 	if got := fake.reports["w1:p1"]; got != [2]string{"92k", "92481"} {
 		t.Fatalf("claude report = %v", got)
 	}
-	if _, ok := fake.reports["w1:p2"]; ok {
-		t.Fatal("codex must remain unimplemented")
+	if got, ok := fake.reports["w1:p2"]; ok {
+		t.Fatalf("codex report = %v, want no report for a pane with no live rollout", got)
 	}
 	wantClears := []string{"w1:exited", "w1:also-exited", "w1:p2"}
 	if !slices.Equal(fake.clears, wantClears) {
@@ -827,7 +829,10 @@ func TestRefreshDoesNotClaimOpenCode2AsV1(t *testing.T) {
 		reports:   make(map[string][2]string),
 	}
 
-	if err := Refresh(context.Background(), fake, "", nil, Config{OpenCodeDB: filepath.Join(dataDir, "opencode.db")}); err != nil {
+	// OpenCode2DB names a store that does not exist, so the opencode2 side reads
+	// nothing on the host either.
+	config := Config{OpenCodeDB: filepath.Join(dataDir, "opencode.db"), OpenCode2DB: filepath.Join(dataDir, "opencode2.db")}
+	if err := Refresh(context.Background(), fake, "", nil, config); err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
 	if len(fake.reports) != 0 {
