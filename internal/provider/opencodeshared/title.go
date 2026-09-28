@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"unicode/utf16"
 	"unicode/utf8"
 )
 
@@ -19,14 +20,17 @@ const (
 	titlePrefix   = "OC | "
 	untitledTitle = "OpenCode"
 
-	// A session title longer than 40 characters is written as
-	// slice(0,37)+"...", so 40 is the longest a session title can be on the
+	// A session title longer than 40 characters is written as slice(0,37) plus
+	// a truncation mark, so 40 is the longest a session title can be on the
 	// wire. Read from the TUI of opencode 1.18.18 and opencode2
 	// 0.0.0-next-17444, which agree on the format, the limit and the three
 	// title forms; only the interpolated field differs, which each provider notes
-	// where it names its sessions table.
+	// where it names its sessions table. opencode 1.18.32 and opencode2 2.0.18
+	// keep all of that and change only the mark.
 	maxSessionTitle = 40
-	truncationMark  = "..."
+	// truncatedTitle is the length the TUI cuts to, in the UTF-16 units its
+	// slice counts, which is the only length a mark follows.
+	truncatedTitle = 37
 
 	// opencode reads this from its own environment. We read it from ours, which
 	// is the same environment whenever herdr was started from a shell that
@@ -35,6 +39,13 @@ const (
 	// else; opencode2 0.0.0-next-17444 does not read this variable at all.
 	disableTitleEnv = "OPENCODE_DISABLE_TERMINAL_TITLE"
 )
+
+// truncationMarks are both marks a TUI has shortened a title with: three dots
+// in opencode 1.18.18 and opencode2 0.0.0-next-17444, and U+2026 by opencode
+// 1.18.32 and opencode2 2.0.18, the earliest builds checked. A mark
+// the parser does not know makes the title read as whole, and a whole title
+// that was shortened matches no session.
+var truncationMarks = []string{"...", "…"}
 
 var (
 	// ErrUntitled is the TUI showing its bare name: its home screen, or a
@@ -84,11 +95,23 @@ func parseTitle(terminalTitle string) (parsedTitle, error) {
 		}
 		return parsedTitle{}, ErrTitleUnavailable
 	}
-	if prefix, truncated := strings.CutSuffix(text, truncationMark); truncated {
-		if prefix == "" {
+	for _, mark := range truncationMarks {
+		prefix, marked := strings.CutSuffix(text, mark)
+		if marked && prefix == "" {
 			return parsedTitle{}, ErrTitleUnavailable
 		}
-		return parsedTitle{Text: prefix, Truncated: true}, nil
+		// A mark after any other length is the title's own text: a short title
+		// read as a prefix is ambiguous beside every title it begins, and a long
+		// plugin name read as one would slip past the plugin guard below.
+		if marked && len(utf16.Encode([]rune(prefix))) == truncatedTitle {
+			// A cut through an astral character leaves half of it, which arrives
+			// as U+FFFD, so the 37th character is unknown and any match on it a
+			// guess.
+			if strings.HasSuffix(prefix, "�") {
+				return parsedTitle{}, ErrNoTitleMatch
+			}
+			return parsedTitle{Text: prefix, Truncated: true}, nil
+		}
 	}
 	// Only a session title is ever shortened, so a title too long to have
 	// survived shortening is a plugin's. Counted in runes because the TUI counts

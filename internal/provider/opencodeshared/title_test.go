@@ -16,7 +16,8 @@ import (
 // characters plus an ellipsis, which is the only form this plugin ever sees.
 const realLongTitle = "Fix Codex review findings with failing/passing tests"
 
-// realTruncatedTitle is what the TUI writes for it: slice(0,37) plus "...".
+// realTruncatedTitle is what the TUI writes for it, before the truncation mark:
+// slice(0,37).
 var realTruncatedTitle = realLongTitle[:37]
 
 func TestParseTitleRecognisesEveryForm(t *testing.T) {
@@ -39,6 +40,45 @@ func TestParseTitleRecognisesEveryForm(t *testing.T) {
 			name:          "truncated session title",
 			terminalTitle: "OC | " + realTruncatedTitle + "...",
 			want:          parsedTitle{Text: realTruncatedTitle, Truncated: true},
+		},
+		{
+			// opencode 1.18.32 and opencode2 2.0.18 shorten with one U+2026
+			// where earlier builds wrote three dots. Read as a whole title, it matches no session at all:
+			// 23 of the live store's 110 root sessions are long enough.
+			name:          "truncated session title with a unicode ellipsis",
+			terminalTitle: "OC | " + realTruncatedTitle + "…",
+			want:          parsedTitle{Text: realTruncatedTitle, Truncated: true},
+		},
+		{
+			// The TUI marks only what it cut at 37 UTF-16 units, so a short
+			// title that ends in an ellipsis is the whole title. Read as a
+			// prefix, it would be ambiguous beside any longer title it begins.
+			name:          "short session title ending in an ellipsis is whole",
+			terminalTitle: "OC | Investigate…",
+			want:          parsedTitle{Text: "Investigate…"},
+		},
+		{
+			// A plugin name is never shortened, so read as truncated this one
+			// would slip past the plugin guard and prefix-match a session.
+			name:          "long plugin title ending in an ellipsis is a plugin",
+			terminalTitle: "OC | Plugin dashboard showing context occupancy details…",
+			wantErr:       ErrPluginTitle,
+		},
+		{
+			// An astral character is two UTF-16 units, so the TUI's 37 units
+			// here are 36 runes; counting runes would read this as whole.
+			name:          "truncated title with an astral character",
+			terminalTitle: "OC | 🚀" + realTruncatedTitle[:35] + "…",
+			want:          parsedTitle{Text: "🚀" + realTruncatedTitle[:35], Truncated: true},
+		},
+		{
+			// A cut through an astral character leaves half of it, which arrives
+			// as U+FFFD. The 37th character is then unknown, and compared as a
+			// literal U+FFFD it would match the one stored title holding one there
+			// rather than the session on screen.
+			name:          "cut through an astral character is ambiguous",
+			terminalTitle: "OC | " + realTruncatedTitle[:36] + "�…",
+			wantErr:       ErrNoTitleMatch,
 		},
 		{
 			// Both TUIs write the bare application name on their home screen and
@@ -86,6 +126,9 @@ func TestParseTitleRecognisesEveryForm(t *testing.T) {
 		{name: "no title at all", terminalTitle: "", wantErr: ErrTitleUnavailable},
 		{name: "prefix with nothing after it", terminalTitle: "OC | ", wantErr: ErrTitleUnavailable},
 		{name: "nothing but a truncation mark", terminalTitle: "OC | ...", wantErr: ErrTitleUnavailable},
+		// An empty prefix would match every root session in the directory, and
+		// the sole one in it would be reported as this pane's.
+		{name: "nothing but a unicode truncation mark", terminalTitle: "OC | …", wantErr: ErrTitleUnavailable},
 	}
 
 	for _, tt := range tests {

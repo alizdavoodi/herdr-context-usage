@@ -69,7 +69,7 @@ Every measurement records its resolution mode, so a wrong attribution is
 diagnosable rather than mysterious.
 
 Roughly 10% of `opencode2` sessions are untitled and render a bare `OpenCode`
-title. Those panes show nothing. A blank row is the correct output here: with
+title. Without a reported agent session those panes show nothing. A blank row is the correct output here: with
 14 sessions sharing a single repository directory, a guess is far more likely to
 be wrong than right, and a confident wrong number destroys trust in every other
 row.
@@ -92,6 +92,15 @@ The only complete fixes are a discriminator herdr does not expose or a native
 `agent_session`, which retires the fallback. The fallback remains worthwhile:
 without it these providers cannot report sessions when no integration supplies
 an agent session.
+
+For `opencode2` that native `agent_session` now exists. Herdr 0.9.1's opencode
+integration (v12) reports the root of the session an opencode2 pane's TUI has
+selected, and that is read ahead of the title once it is confirmed to be a
+root session in the store. It was needed sooner than expected: opencode2 2.0.18
+(and opencode 1.18.32) switched the truncation mark from `...` to `…`, and
+until the parser learnt it, every session titled over 40 characters (23 of 110
+opencode2 root sessions here) resolved to nothing. A fallback depends on a wire format
+the agent can change in any release, which a native id does not.
 
 A user who has not installed the herdr integration for pi or omp meets the
 precondition recorded above as a permanently blank row, with nothing anywhere
