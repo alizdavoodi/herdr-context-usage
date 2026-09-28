@@ -151,9 +151,12 @@ func TestReportAndClearUseOneStableSource(t *testing.T) {
 		t.Fatalf("Clear() error = %v", err)
 	}
 
+	// The source is spelled out rather than read from SourceID: herdr consumes a
+	// source slot permanently and clears tokens only per source, so a renamed
+	// source would strand every pane's existing ctx tokens.
 	want := []recordedCall{
-		{name: "herdr", args: []string{"pane", "report-metadata", "w1:p1", "--source", SourceID, "--token", "ctx=92k", "--token", "ctx_raw=92481"}},
-		{name: "herdr", args: []string{"pane", "report-metadata", "w1:p1", "--source", SourceID, "--clear-token", "ctx", "--clear-token", "ctx_raw"}},
+		{name: "herdr", args: []string{"pane", "report-metadata", "w1:p1", "--source", "herdr-context-usage", "--token", "ctx=92k", "--token", "ctx_raw=92481"}},
+		{name: "herdr", args: []string{"pane", "report-metadata", "w1:p1", "--source", "herdr-context-usage", "--clear-token", "ctx", "--clear-token", "ctx_raw"}},
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
