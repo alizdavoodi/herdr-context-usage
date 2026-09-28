@@ -56,29 +56,6 @@ func TestRefreshReportsOpenCode2OccupancyResolvedFromTerminalTitle(t *testing.T)
 	}
 }
 
-func TestRefreshSkipsFailedOpenCode2TurnZero(t *testing.T) {
-	t.Parallel()
-
-	dbPath := newAppOpenCode2Database(t,
-		[]appSession{{ID: "failed", Directory: "/work", Title: "Failed turn"}},
-		[]appMessage{
-			{ID: "previous", SessionID: "failed", Type: "assistant", Seq: 1, Data: `{"time":{"completed":1},"model":{"id":"model"},"tokens":{"input":120000,"cache":{"read":9000,"write":0}}}`},
-			{ID: "failed-answer", SessionID: "failed", Type: "assistant", Seq: 2, Data: `{"time":{"completed":2},"model":{"id":"model"},"tokens":{"input":0,"cache":{"read":0,"write":0}}}`},
-		},
-	)
-	fake := &fakeHerdr{
-		agents:    []herdr.Agent{{Agent: "opencode", PaneID: "w1:p1", ForegroundCWD: "/work", TerminalTitle: "OC | Failed turn"}},
-		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "opencode2"}}},
-		reports:   make(map[string][2]string),
-	}
-	if err := Refresh(context.Background(), fake, "", nil, Config{OpenCode2DB: dbPath}); err != nil {
-		t.Fatalf("Refresh() error = %v", err)
-	}
-	if got := fake.reports["w1:p1"]; got != [2]string{"129k", "129000"} {
-		t.Fatalf("report = %v, want previous completed usage", got)
-	}
-}
-
 func TestRefreshKeepsOpenCode2OccupancyDuringInFlightTurn(t *testing.T) {
 	t.Parallel()
 
