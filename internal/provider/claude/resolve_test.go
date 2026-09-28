@@ -196,6 +196,16 @@ func TestResolveRejectsIncompleteInputs(t *testing.T) {
 	t.Parallel()
 
 	home := t.TempDir()
+	// An empty cwd cleans to ".", which encodes to "-", the project directory
+	// claude files a session started in / under. The bait there is what an
+	// unguarded empty cwd would resolve to.
+	bait := filepath.Join(home, "projects", "-", "root.jsonl")
+	if err := os.MkdirAll(filepath.Dir(bait), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bait, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	tests := []sessionInput{
 		{ClaudeHome: home},
 		{ClaudeHome: home, AgentSession: &provider.AgentSession{Kind: "id", Value: "session"}},

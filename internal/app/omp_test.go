@@ -63,23 +63,6 @@ const (
 	ompSessionID      = "01a01485-4504-7000-ae6b-ace797eca8f5"
 )
 
-// writeOmpTranscript lays a transcript out the way omp does, under
-// <home>/sessions/<stripped cwd>/<start timestamp>_<session id>.jsonl, and hands
-// back its path so a case can report it either as a path or as an id.
-func writeOmpTranscript(t *testing.T, home, sessionDir, name string, records ...string) string {
-	t.Helper()
-
-	dir := filepath.Join(home, "sessions", sessionDir)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(dir, name)
-	if err := os.WriteFile(path, []byte(strings.Join(records, "\n")+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
-
 func ompAgent(session *provider.AgentSession, tokens map[string]string) []herdr.Agent {
 	return []herdr.Agent{{
 		Agent: "omp", PaneID: "w1:p1",
@@ -104,7 +87,7 @@ func TestRefreshReportsOmpOccupancyFromAReportedPath(t *testing.T) {
 	t.Parallel()
 
 	home := t.TempDir()
-	path := writeOmpTranscript(t, home, ompSessionDir, ompTranscriptName,
+	path := writeSessionTranscript(t, home, ompSessionDir, ompTranscriptName,
 		ompTitleRecord, ompSessionRecord, ompUserRecord, ompNewestTurn)
 	var log bytes.Buffer
 	fake := &fakeHerdr{
@@ -152,7 +135,7 @@ func TestRefreshResolvesOmpSessionFromAReportedID(t *testing.T) {
 	t.Parallel()
 
 	home := t.TempDir()
-	writeOmpTranscript(t, home, "-projects-github.com-alizdavoodi-herdr-context-usage-docs", ompTranscriptName,
+	writeSessionTranscript(t, home, "-projects-github.com-alizdavoodi-herdr-context-usage-docs", ompTranscriptName,
 		ompTitleRecord, ompSessionRecord, ompUserRecord, ompNewestTurn)
 	var log bytes.Buffer
 	fake := &fakeHerdr{
@@ -188,9 +171,9 @@ func TestRefreshClearsOmpRowWhenAnIDDoesNotResolveUniquely(t *testing.T) {
 		{
 			name: "two transcripts match the id",
 			setUp: func(t *testing.T, home string) {
-				writeOmpTranscript(t, home, ompSessionDir, ompTranscriptName,
+				writeSessionTranscript(t, home, ompSessionDir, ompTranscriptName,
 					ompTitleRecord, ompSessionRecord, ompNewestTurn)
-				writeOmpTranscript(t, home, "-projects-github.com-alizdavoodi-herdr-context-usage-docs",
+				writeSessionTranscript(t, home, "-projects-github.com-alizdavoodi-herdr-context-usage-docs",
 					"2026-08-19T09-00-00-000Z_"+ompSessionID+".jsonl",
 					ompTitleRecord, ompSessionRecord, ompPostCompaction)
 			},
@@ -259,7 +242,7 @@ func TestRefreshClearsOmpOccupancyAtTheCompactionBoundary(t *testing.T) {
 	t.Parallel()
 
 	home := t.TempDir()
-	path := writeOmpTranscript(t, home, ompSessionDir, ompTranscriptName,
+	path := writeSessionTranscript(t, home, ompSessionDir, ompTranscriptName,
 		ompTitleRecord, ompSessionRecord, ompUserRecord, ompNewestTurn, ompCustomRecord, ompCompaction)
 	var log bytes.Buffer
 	fake := &fakeHerdr{
@@ -315,7 +298,7 @@ func TestRefreshReportsOmpOccupancyOnTheTurnAfterACompaction(t *testing.T) {
 	t.Parallel()
 
 	home := t.TempDir()
-	path := writeOmpTranscript(t, home, ompSessionDir, ompTranscriptName,
+	path := writeSessionTranscript(t, home, ompSessionDir, ompTranscriptName,
 		ompTitleRecord, ompSessionRecord, ompUserRecord, ompNewestTurn, ompCustomRecord,
 		ompCompaction, ompUserRecord, ompPostCompaction)
 	var log bytes.Buffer
@@ -373,7 +356,7 @@ func TestRefreshClearsOmpRowWhenNoAssistantTurnHasCompleted(t *testing.T) {
 	t.Parallel()
 
 	home := t.TempDir()
-	path := writeOmpTranscript(t, home, ompSessionDir, ompTranscriptName,
+	path := writeSessionTranscript(t, home, ompSessionDir, ompTranscriptName,
 		ompTitleRecord, ompSessionRecord, ompUserRecord)
 	var log bytes.Buffer
 	fake := &fakeHerdr{
@@ -441,7 +424,7 @@ func TestRefreshRecordsOmpOracleDisagreementAndStillReportsTheSum(t *testing.T) 
 			t.Parallel()
 
 			home := t.TempDir()
-			path := writeOmpTranscript(t, home, ompSessionDir, ompTranscriptName,
+			path := writeSessionTranscript(t, home, ompSessionDir, ompTranscriptName,
 				ompTitleRecord, ompSessionRecord, ompUserRecord, tt.turn)
 			var log bytes.Buffer
 			fake := &fakeHerdr{
@@ -489,9 +472,9 @@ func TestRefreshMeasuresPiAndOmpPanesAgainstTheirOwnStores(t *testing.T) {
 	t.Parallel()
 
 	piHome, ompHome := t.TempDir(), t.TempDir()
-	piPath := writePiTranscript(t, piHome, piSessionDir, piTranscriptName,
+	piPath := writeSessionTranscript(t, piHome, piSessionDir, piTranscriptName,
 		piSessionRecord, piUserRecord, piNewestTurn)
-	ompPath := writeOmpTranscript(t, ompHome, ompSessionDir, ompTranscriptName,
+	ompPath := writeSessionTranscript(t, ompHome, ompSessionDir, ompTranscriptName,
 		ompTitleRecord, ompSessionRecord, ompUserRecord, ompNewestTurn)
 
 	var log bytes.Buffer

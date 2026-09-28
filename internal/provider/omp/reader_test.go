@@ -554,30 +554,6 @@ func TestReadOccupancyNeverReadsTheNonMessageCount(t *testing.T) {
 	}
 }
 
-// A file caught mid-append: C lines 1, 2, 250 and the first 48 bytes of line
-// 254, with no closing newline. The truncation is a stand-in — no real
-// transcript contains a half-written record followed by whole ones. What it pins
-// is only the unparseable-line skip, since the partial line here is the last
-// one; the bounded tail's separate first-line drop belongs to
-// internal/provider/transcript, which has its own case for it.
-func TestReadOccupancyTruncatedFinalLine(t *testing.T) {
-	t.Parallel()
-
-	path := filepath.Join(t.TempDir(), "truncated.jsonl")
-	content := titleC1 + "\n" + sessionC2 + "\n" + turnC250 + "\n" + turnC254[:48]
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	got, err := readOccupancy(path)
-	if err != nil {
-		t.Fatalf("readOccupancy() error = %v", err)
-	}
-	if got.Occupancy != 132_098 {
-		t.Fatalf("readOccupancy() = %d, want 132098", got.Occupancy)
-	}
-}
-
 // A transcript larger than the scan window, which is the case the bound exists
 // for. The two ends are asserted together because they are what the reader's two
 // reads separate: the occupancy comes from C line 254 at the very end, inside

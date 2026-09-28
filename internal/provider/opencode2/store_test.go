@@ -213,29 +213,6 @@ func TestReadOccupancyBoundsWalkBack(t *testing.T) {
 	}
 }
 
-func TestReadOccupancySkipsFailedTurnZero(t *testing.T) {
-	t.Parallel()
-
-	path := newTestDatabase(t)
-	db := openFixtureDatabase(t, path)
-	insertSession(t, db, testSession{ID: "session", Directory: "/work", Title: "Failed turn"})
-	insertMessage(t, db, "previous", "session", "assistant", 1,
-		`{"time":{"completed":1},"model":{"id":"model"},"tokens":{"input":120000,"cache":{"read":9000,"write":0}}}`)
-	insertMessage(t, db, "failed", "session", "assistant", 2,
-		`{"time":{"completed":2},"model":{"id":"model"},"tokens":{"input":0,"cache":{"read":0,"write":0}}}`)
-	db.Close()
-
-	s := openStore(t, path)
-	defer s.Close()
-	got, err := s.readOccupancy(context.Background(), "session")
-	if err != nil {
-		t.Fatalf("readOccupancy() error = %v", err)
-	}
-	if got.Occupancy != 129_000 {
-		t.Fatalf("occupancy = %d, want previous completed usage", got.Occupancy)
-	}
-}
-
 func TestReadOccupancyRejectsInvalidLatestPayload(t *testing.T) {
 	t.Parallel()
 

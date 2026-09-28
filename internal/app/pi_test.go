@@ -55,10 +55,11 @@ const (
 	piSessionID      = "01a014de-020a-70b2-bc8e-b6a70ed3e784"
 )
 
-// writePiTranscript lays a transcript out the way pi does, under
-// <home>/sessions/<wrapped cwd>/<start timestamp>_<session id>.jsonl, and hands
-// back its path so a case can report it either as a path or as an id.
-func writePiTranscript(t *testing.T, home, sessionDir, name string, records ...string) string {
+// writeSessionTranscript lays a transcript out the way pi and omp both do, under
+// <home>/sessions/<directory>/<start timestamp>_<session id>.jsonl, and hands
+// back its path so a case can report it either as a path or as an id. Each
+// agent derives <directory> from its cwd differently, so the caller passes it.
+func writeSessionTranscript(t *testing.T, home, sessionDir, name string, records ...string) string {
 	t.Helper()
 
 	dir := filepath.Join(home, "sessions", sessionDir)
@@ -90,7 +91,7 @@ func TestRefreshReportsPiOccupancyFromAReportedPath(t *testing.T) {
 	t.Parallel()
 
 	home := t.TempDir()
-	path := writePiTranscript(t, home, piSessionDir, piTranscriptName,
+	path := writeSessionTranscript(t, home, piSessionDir, piTranscriptName,
 		piSessionRecord, piUserRecord, piFirstTurn, piToolResult, piNewestTurn)
 	var log bytes.Buffer
 	fake := &fakeHerdr{
@@ -138,7 +139,7 @@ func TestRefreshResolvesPiSessionFromAReportedID(t *testing.T) {
 	t.Parallel()
 
 	home := t.TempDir()
-	writePiTranscript(t, home, "--Users-alirezadavoodi--", piTranscriptName,
+	writeSessionTranscript(t, home, "--Users-alirezadavoodi--", piTranscriptName,
 		piSessionRecord, piUserRecord, piNewestTurn)
 	var log bytes.Buffer
 	fake := &fakeHerdr{
@@ -174,9 +175,9 @@ func TestRefreshClearsPiRowWhenAnIDDoesNotResolveUniquely(t *testing.T) {
 		{
 			name: "two transcripts match the id",
 			setUp: func(t *testing.T, home string) {
-				writePiTranscript(t, home, piSessionDir, piTranscriptName,
+				writeSessionTranscript(t, home, piSessionDir, piTranscriptName,
 					piSessionRecord, piNewestTurn)
-				writePiTranscript(t, home, "--Users-alirezadavoodi--",
+				writeSessionTranscript(t, home, "--Users-alirezadavoodi--",
 					"2026-08-16T20-45-15-107Z_"+piSessionID+".jsonl",
 					piSessionRecord, piFirstTurn)
 			},
@@ -201,7 +202,7 @@ func TestRefreshClearsPiRowWhenAnIDDoesNotResolveUniquely(t *testing.T) {
 			if !slices.Equal(fake.clears, []string{"w1:p1"}) || len(fake.reports) != 0 {
 				t.Fatalf("clears = %v, reports = %v; want an unresolved session blanked", fake.clears, fake.reports)
 			}
-			if got := log.String(); !strings.Contains(got, "agent session") {
+			if got := log.String(); !strings.Contains(got, "pi agent session cannot be resolved") {
 				t.Fatalf("measurement = %q, want the blank reason to name the unresolved session", got)
 			}
 		})
@@ -245,7 +246,7 @@ func TestRefreshClearsPiOccupancyAtTheCompactionBoundary(t *testing.T) {
 	t.Parallel()
 
 	home := t.TempDir()
-	path := writePiTranscript(t, home, piSessionDir, piTranscriptName,
+	path := writeSessionTranscript(t, home, piSessionDir, piTranscriptName,
 		piSessionRecord, piUserRecord, piNewestTurn, piCompaction)
 	var log bytes.Buffer
 	fake := &fakeHerdr{
@@ -308,7 +309,7 @@ func TestRefreshReportsPiOccupancyOnTheTurnAfterACompaction(t *testing.T) {
 	t.Parallel()
 
 	home := t.TempDir()
-	path := writePiTranscript(t, home, piSessionDir, piTranscriptName,
+	path := writeSessionTranscript(t, home, piSessionDir, piTranscriptName,
 		piSessionRecord, piUserRecord, piNewestTurn, piCompaction, piUserRecord, piPostCompaction)
 	var log bytes.Buffer
 	fake := &fakeHerdr{
@@ -365,7 +366,7 @@ func TestRefreshClearsPiRowWhenNoAssistantTurnHasCompleted(t *testing.T) {
 	t.Parallel()
 
 	home := t.TempDir()
-	path := writePiTranscript(t, home, piSessionDir, piTranscriptName,
+	path := writeSessionTranscript(t, home, piSessionDir, piTranscriptName,
 		piSessionRecord, piUserRecord)
 	var log bytes.Buffer
 	fake := &fakeHerdr{

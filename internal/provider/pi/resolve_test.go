@@ -131,15 +131,14 @@ func TestResolveRejectsUnmatchableIDs(t *testing.T) {
 			name:  "a session directory name is not a session id",
 			value: repoSessionDir,
 		},
-		// A value carrying a glob metacharacter or a path separator is not a
-		// session id — a real one is a UUID — so it is refused before it can widen
-		// the pattern or escape the store.
+		// A value carrying a glob metacharacter is not a session id — a real one
+		// is a UUID — so it is refused before it can widen the pattern. The
+		// separator and escape refusals are pinned beside provider.SessionTranscript
+		// by ids that would resolve without them.
 		{name: "star", value: "*"},
 		{name: "star inside an id", value: "01a014de-020a-70b2-bc8e-b6a70ed3*"},
 		{name: "question mark", value: "01a014de-020a-70b2-bc8e-b6a70ed3e78?"},
 		{name: "character class", value: "01a014de-020a-70b2-bc8e-b6a70ed3e78[0-9]"},
-		{name: "escape", value: `01a014de\020a`},
-		{name: "path separator", value: "../" + repoSessionDir + "/" + repoTranscript},
 		// Labelled an id, even the absolute path of a real transcript is not
 		// read as one: the agent said it was an id.
 		{name: "an absolute path", value: filepath.Join(home, "sessions", repoSessionDir, repoTranscript)},
