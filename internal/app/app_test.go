@@ -58,32 +58,6 @@ func TestRefreshReturnsListError(t *testing.T) {
 	}
 }
 
-func TestRefreshDoesNotFailSuccessfulMeasurementsWhenPaneListFails(t *testing.T) {
-	t.Parallel()
-
-	home := t.TempDir()
-	transcript := filepath.Join(home, "session.jsonl")
-	entry := `{"type":"assistant","message":{"usage":{"input_tokens":840,"cache_read_input_tokens":90000,"cache_creation_input_tokens":1641}}}` + "\n"
-	if err := os.WriteFile(transcript, []byte(entry), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	fake := &fakeHerdr{
-		agents:      []herdr.Agent{{Agent: "claude", PaneID: "w1:p1", AgentSession: &provider.AgentSession{Kind: "path", Value: transcript}}},
-		paneListErr: errors.New("pane list failed"),
-		processes:   map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "claude"}}},
-		reports:     make(map[string][2]string),
-	}
-	if err := Refresh(context.Background(), fake, "w1:exited", nil, Config{ClaudeHome: home}); err != nil {
-		t.Fatalf("Refresh() error = %v, want successful measurement", err)
-	}
-	if !slices.Equal(fake.clears, []string{"w1:exited"}) {
-		t.Fatalf("clears = %v, want event-pane fallback", fake.clears)
-	}
-	if got := fake.reports["w1:p1"]; got != [2]string{"92k", "92481"} {
-		t.Fatalf("report = %v, want successful measurement", got)
-	}
-}
-
 // The methods below are called from parallel pane refreshes inside Refresh;
 // the mutex mirrors the production client, whose calls are independent
 // subprocess spawns.
@@ -512,11 +486,16 @@ func TestRefreshReportsPaneListFailureWithoutMaskingMeasurement(t *testing.T) {
 		processes:   map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "claude"}}},
 		reports:     make(map[string][2]string),
 	}
-	if err := Refresh(context.Background(), fake, "", &log, Config{ClaudeHome: home}); err != nil {
+	if err := Refresh(context.Background(), fake, "w1:exited", &log, Config{ClaudeHome: home}); err != nil {
 		t.Fatalf("Refresh() error = %v, want successful measurement", err)
 	}
 	if got := log.String(); !strings.Contains(got, `"type":"maintenance"`) || !strings.Contains(got, `"type":"measurement"`) || !strings.Contains(got, `"operation":"list_panes"`) || !strings.Contains(got, `"error":"pane list failed"`) {
 		t.Fatalf("diagnostic = %s, want pane-list failure", got)
+	}
+	// The exited pane is cleared as the fallback even though another pane is
+	// live, which is the ordinary case: one agent exits beside its neighbours.
+	if !slices.Equal(fake.clears, []string{"w1:exited"}) {
+		t.Fatalf("clears = %v, want event-pane fallback", fake.clears)
 	}
 	if got := fake.reports["w1:p1"]; got != [2]string{"92k", "92481"} {
 		t.Fatalf("report = %v, want successful measurement", got)
