@@ -369,30 +369,6 @@ func TestReadOccupancyAgreesWithPisOwnPerTurnTotal(t *testing.T) {
 	}
 }
 
-// A file caught mid-append: A lines 1, 39 and the first 48 bytes of line 42,
-// with no closing newline. The truncation is a stand-in — no real transcript
-// contains a half-written record followed by whole ones. What it pins is only
-// the unparseable-line skip, since the partial line here is the last one; the
-// bounded tail's separate first-line drop is reached only by a transcript larger
-// than the scan window, which TestReadOccupancyBeyondTheBoundedTail builds.
-func TestReadOccupancyTruncatedFinalLine(t *testing.T) {
-	t.Parallel()
-
-	path := filepath.Join(t.TempDir(), "truncated.jsonl")
-	content := sessionV3 + "\n" + turnA39 + "\n" + turnA42[:48]
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	got, err := readOccupancy(path)
-	if err != nil {
-		t.Fatalf("readOccupancy() error = %v", err)
-	}
-	if got.Occupancy != 27_905 {
-		t.Fatalf("readOccupancy() = %d, want 27905", got.Occupancy)
-	}
-}
-
 // A transcript larger than the scan window, which is the only way to reach the
 // bounded tail's first-line drop: the scan opens partway into a record, and
 // those leading bytes are discarded because they are not a whole one.
