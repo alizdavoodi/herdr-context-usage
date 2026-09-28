@@ -78,8 +78,9 @@ so it cannot tell you a model's headroom or how close the occupancy is to that
 limit. Use the absolute `ctx_raw` count instead of inventing a percentage.
 
 An `opencode` pane can be blank permanently rather than temporarily. Both
-opencode versions are correlated to a session through the terminal title their
-TUI sets, and that title is their only correlation signal: opencode v1 stops
+opencode versions read the session Herdr's opencode integration reports, when
+it reports one. Otherwise a pane is correlated through the terminal title its
+TUI sets, and that title is its only correlation signal: opencode v1 stops
 setting it when `OPENCODE_DISABLE_TERMINAL_TITLE` is `true` or `1`, either
 version stops when the TUI's own `Disable terminal title` command has been
 used, and `opencode2 mini` never sets it at all. A pane in that state reports no

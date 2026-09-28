@@ -206,7 +206,10 @@ produced it.
    - `opencode2` — match the pane's `terminal_title`. Its TUI sets the title to
      `OC | <session title>`, stock behaviour from the binary itself, and herdr
      surfaces OSC titles in `terminal_title`. Prefix-match, because titles over
-     40 characters are truncated to `slice(0,37)+"..."`.
+     40 characters are truncated to `slice(0,37)+"..."`, or `slice(0,37)+"…"`
+     from opencode 1.18.32 and opencode2 2.0.18. Since herdr 0.9.1's opencode
+     integration (v12), an opencode2 pane usually reaches step 1 instead, and
+     this is the fallback for panes without it.
 
 Verified end to end against a live opencode2 pane inside herdr: the pane
 reported `terminal_title: "OC | Probe test response"`, and stripping the prefix
@@ -363,7 +366,8 @@ surveyed ships one, and herdr's own agent skill says nothing about tokens.
 2. **opencode2 may never report `working`**, so its rows depend on the
    refresh-everything fan-out rather than its own events.
 3. **Untitled opencode2 sessions cannot be resolved** — roughly 10% render a bare
-   `OpenCode` title. Those panes stay blank by design.
+   `OpenCode` title. Those panes stay blank by design unless Herdr reports
+   their session.
 4. **opencode's schema is mid-migration.** The v1 database contains both
    `session`/`message` and a stalled `session_v2`. Version-probe; do not pin.
 5. ~~Unverified: that herdr surfaces the opencode2 OSC title in

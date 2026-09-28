@@ -91,7 +91,8 @@ does not mean zero. Examples include:
 - an agent restarted in place and its new session has not completed a turn;
 - an agent kind whose provider is marked `In progress` in the
   [coverage table](#agent-kinds-and-provider-coverage);
-- an untitled `opencode` session, whose pane cannot be correlated safely;
+- an untitled `opencode` session without a Herdr-reported session, whose pane
+  cannot be correlated safely;
 - an `opencode` pane whose terminal title has been turned off — see
   [when an opencode row never fills in](#when-an-opencode-row-never-fills-in);
 - an agent home that cannot be found at all, because `HOME` is unset and no
@@ -122,7 +123,7 @@ provider guesses by newest-file or newest-session recency.
 | Implemented | `claude` | `~/.claude/projects/<dir>/<session>.jsonl`; `input_tokens + cache_read_input_tokens + cache_creation_input_tokens` | Herdr's reported `agent_session`, then an exact process-registry match, then a sole transcript under `foreground_cwd` |
 | Implemented | `codex` | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`; `total_tokens`, falling back to `input_tokens` | Herdr's reported `agent_session`, then the sole active TUI main thread under `foreground_cwd` |
 | Implemented | `opencode` (v1) | `~/.local/share/opencode/opencode.db`, `session` plus `message`; newest completed assistant `input + cache.read + cache.write` | Herdr's reported `agent_session`, then the pane directory plus its `OC \| <session title>` terminal title |
-| Implemented | `opencode2` | `~/.local/share/opencode/opencode2.db`, `session_v2` plus `session_message`; newest completed assistant `input + cache.read + cache.write` | Pane directory plus its `OC \| <session title>` terminal title; untitled sessions remain blank |
+| Implemented | `opencode2` | `~/.local/share/opencode/opencode2.db`, `session_v2` plus `session_message`; newest completed assistant `input + cache.read + cache.write` | Herdr's reported `agent_session`, then the pane directory plus its `OC \| <session title>` terminal title; untitled sessions remain blank without the former |
 | Implemented | `pi` | `~/.pi/agent/sessions/<wrapped-cwd>/<start-timestamp>_<session-id>.jsonl`; newest completed assistant `input + cacheRead + cacheWrite`; home overridable with `PI_CODING_AGENT_DIR` | Herdr's reported `agent_session` only — a path used directly, an id matched to the sole transcript whose name ends with it, non-unique treated as unresolved; no directory or recency fallback, so pi's Herdr integration is a precondition |
 | Implemented | `omp` | `~/.omp/agent/sessions/<stripped-cwd>/<start-timestamp>_<session-id>.jsonl`; newest completed assistant `input + cacheRead + cacheWrite`, cross-checked against the turn's own `contextSnapshot.promptTokens`; home overridable with `PI_CODING_AGENT_DIR`, the same variable that redirects pi | Herdr's reported `agent_session` only — a path used directly, an id matched to the sole transcript whose name ends with it, non-unique treated as unresolved; no directory or recency fallback, so omp's Herdr integration is a precondition for the row filling in. Herdr labels the pane an `omp` agent from its own process either way, so a missing integration shows as a blank row rather than an absent one |
 | Implemented | `hermes` | `<home>/state.db` (`HERMES_HOME` overrides `~/.hermes`); `sessions.model_config._usage_anchor.prompt_tokens`, the latest main-loop call's input + cache read + cache write | Herdr's reported `agent_session` id only; no fallback, so Hermes's Herdr integration is a precondition |
@@ -134,10 +135,22 @@ dispatch also checks the foreground process name to choose the right provider.
 
 ### When an opencode row never fills in
 
-Neither opencode version reports a session id to Herdr, so both correlate a
-pane to a session through the terminal title its TUI sets: `OC | <session
-title>`. That title is the only signal available, which makes four things
-worth knowing before concluding the plugin is broken.
+Both opencode versions read the session Herdr's opencode integration reports
+for a pane, when it reports one; `herdr integration status` shows whether the
+integration is installed. From Herdr 0.9.1 (integration v12) it reports the
+session an opencode2 pane has selected. Without a reported session, a pane is
+correlated to a session through the terminal title its TUI sets: `OC |
+<session title>`. That title is then the only signal available, which makes
+four things worth knowing before concluding the plugin is broken.
+
+**An opencode2 pane on its home screen keeps the last session's value.** The
+integration reports a session when the TUI selects one and reports nothing when
+it leaves for the home screen, so Herdr keeps the last session it was told
+about, and the row keeps describing it until the next session is selected or
+created. This is documented rather than defended: the home screen's title is
+the same bare `OpenCode` an untitled session shows, so the title cannot tell the
+two apart, and blanking on it would blank every untitled session the reported
+id now resolves.
 
 **`OPENCODE_DISABLE_TERMINAL_TITLE` turns correlation off entirely.** opencode
 v1 reads it and, when it is set to `true` or `1`, never writes a terminal

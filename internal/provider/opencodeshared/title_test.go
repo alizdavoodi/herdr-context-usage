@@ -16,7 +16,8 @@ import (
 // characters plus an ellipsis, which is the only form this plugin ever sees.
 const realLongTitle = "Fix Codex review findings with failing/passing tests"
 
-// realTruncatedTitle is what the TUI writes for it: slice(0,37) plus "...".
+// realTruncatedTitle is what the TUI writes for it, before the truncation mark:
+// slice(0,37).
 var realTruncatedTitle = realLongTitle[:37]
 
 func TestParseTitleRecognisesEveryForm(t *testing.T) {
@@ -38,6 +39,14 @@ func TestParseTitleRecognisesEveryForm(t *testing.T) {
 		{
 			name:          "truncated session title",
 			terminalTitle: "OC | " + realTruncatedTitle + "...",
+			want:          parsedTitle{Text: realTruncatedTitle, Truncated: true},
+		},
+		{
+			// opencode 1.18.32 and opencode2 2.0.18 shorten with one U+2026
+			// where earlier builds wrote three dots. Read as a whole title, it matches no session at all:
+			// 23 of the live store's 110 root sessions are long enough.
+			name:          "truncated session title with a unicode ellipsis",
+			terminalTitle: "OC | " + realTruncatedTitle + "…",
 			want:          parsedTitle{Text: realTruncatedTitle, Truncated: true},
 		},
 		{
@@ -86,6 +95,9 @@ func TestParseTitleRecognisesEveryForm(t *testing.T) {
 		{name: "no title at all", terminalTitle: "", wantErr: ErrTitleUnavailable},
 		{name: "prefix with nothing after it", terminalTitle: "OC | ", wantErr: ErrTitleUnavailable},
 		{name: "nothing but a truncation mark", terminalTitle: "OC | ...", wantErr: ErrTitleUnavailable},
+		// An empty prefix would match every root session in the directory, and
+		// the sole one in it would be reported as this pane's.
+		{name: "nothing but a unicode truncation mark", terminalTitle: "OC | …", wantErr: ErrTitleUnavailable},
 	}
 
 	for _, tt := range tests {

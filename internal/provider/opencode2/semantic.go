@@ -15,7 +15,7 @@ import (
 // here would be a bug.
 func (opencode2Provider) Superseded() []error {
 	return []error{
-		provider.ErrNoHome, ErrNoOccupancy, ErrJustCompacted,
+		ErrNoSession, provider.ErrNoHome, ErrNoOccupancy, ErrJustCompacted,
 		// A database without session_v2 and session_message is one opencode2 has
 		// not initialised yet, the same lifecycle state as no file at all.
 		sqlitestore.ErrMissing, sqlitestore.ErrSchema,

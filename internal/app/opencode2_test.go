@@ -56,6 +56,46 @@ func TestRefreshReportsOpenCode2OccupancyResolvedFromTerminalTitle(t *testing.T)
 	}
 }
 
+// herdr 0.9.1's opencode integration (v12) reports the root session an
+// opencode2 pane's TUI has selected, as it did for two live panes, each with
+// kind "id"; ses_f187740abffeM9akf27Rp4llEF is one of them. The title here names a
+// different real session, so a provider still correlating by title reports the
+// wrong number and the wrong mode.
+func TestRefreshResolvesOpenCode2FromTheReportedAgentSessionAheadOfTheTitle(t *testing.T) {
+	t.Parallel()
+
+	dbPath := newAppOpenCode2Database(t,
+		[]appSession{
+			{ID: "ses_f187740abffeM9akf27Rp4llEF", Directory: "/work/acme", Title: "Fix handoff issues and request agent review"},
+			{ID: "ses_other", Directory: "/work/acme", Title: "Probe test response"},
+		},
+		[]appMessage{
+			{ID: "reported", SessionID: "ses_f187740abffeM9akf27Rp4llEF", Type: "assistant", Seq: 1, Data: `{"time":{"completed":1},"model":{"id":"deepseek-v4-pro"},"tokens":{"input":2445,"cache":{"read":14848,"write":5}}}`},
+			{ID: "titled", SessionID: "ses_other", Type: "assistant", Seq: 2, Data: `{"time":{"completed":2},"model":{"id":"deepseek-v4-pro"},"tokens":{"input":1,"cache":{"read":0,"write":0}}}`},
+		},
+	)
+	var log bytes.Buffer
+	fake := &fakeHerdr{
+		agents: []herdr.Agent{{
+			Agent: "opencode", PaneID: "w1:p1", ForegroundCWD: "/work/acme",
+			TerminalTitle: "OC | Probe test response",
+			AgentSession:  &provider.AgentSession{Kind: "id", Value: "ses_f187740abffeM9akf27Rp4llEF"},
+		}},
+		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "opencode2"}}},
+		reports:   make(map[string][2]string),
+	}
+
+	if err := Refresh(context.Background(), fake, "", &log, Config{OpenCode2DB: dbPath}); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+	if got := fake.reports["w1:p1"]; got != [2]string{"17k", "17298"} {
+		t.Fatalf("report = %v, want the reported session's occupancy", got)
+	}
+	if !strings.Contains(log.String(), `"resolution_mode":"agent_session"`) {
+		t.Fatalf("measurement = %s, want agent_session resolution", log.String())
+	}
+}
+
 func TestRefreshKeepsOpenCode2OccupancyDuringInFlightTurn(t *testing.T) {
 	t.Parallel()
 
@@ -126,6 +166,7 @@ func TestRefreshClearsSupersededOpenCode2Values(t *testing.T) {
 	tests := []struct {
 		name          string
 		terminalTitle string
+		agentSession  *provider.AgentSession
 		database      func(*testing.T) string
 	}{
 		{
@@ -156,6 +197,19 @@ func TestRefreshClearsSupersededOpenCode2Values(t *testing.T) {
 				return filepath.Join(t.TempDir(), "opencode2.db")
 			},
 		},
+		{
+			// A sub-agent's session is never the main thread, and this one has a
+			// reading, so only the plugin's own root check keeps it off the row.
+			name:          "reported session is a sub-agent's",
+			terminalTitle: "OC | Parent",
+			agentSession:  &provider.AgentSession{Kind: "id", Value: "child"},
+			database: func(t *testing.T) string {
+				return newAppOpenCode2Database(t,
+					[]appSession{{ID: "parent", Directory: "/work", Title: "Parent"}, {ID: "child", Directory: "/work", Title: "Explore", ParentID: "parent"}},
+					[]appMessage{{ID: "answer", SessionID: "child", Type: "assistant", Seq: 1, Data: `{"time":{"completed":1},"model":{"id":"model"},"tokens":{"input":2445,"cache":{"read":14848,"write":5}}}`}},
+				)
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -164,7 +218,7 @@ func TestRefreshClearsSupersededOpenCode2Values(t *testing.T) {
 			fake := &fakeHerdr{
 				agents: []herdr.Agent{{
 					Agent: "opencode", PaneID: "w1:p1", ForegroundCWD: "/work",
-					TerminalTitle: tt.terminalTitle, Tokens: map[string]string{"ctx_raw": "92481"},
+					TerminalTitle: tt.terminalTitle, AgentSession: tt.agentSession, Tokens: map[string]string{"ctx_raw": "92481"},
 				}},
 				processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "opencode2"}}},
 				reports:   make(map[string][2]string),
@@ -255,6 +309,7 @@ type appSession struct {
 	ID        string
 	Directory string
 	Title     string
+	ParentID  string
 }
 
 type appMessage struct {
@@ -282,7 +337,11 @@ func newAppOpenCode2Database(t *testing.T, sessions []appSession, messages []app
 		}
 	}
 	for _, session := range sessions {
-		if _, err := db.Exec(`INSERT INTO session_v2 (id, directory, title, time_updated) VALUES (?, ?, ?, 1)`, session.ID, session.Directory, session.Title); err != nil {
+		var parent any
+		if session.ParentID != "" {
+			parent = session.ParentID
+		}
+		if _, err := db.Exec(`INSERT INTO session_v2 (id, directory, title, parent_id, time_updated) VALUES (?, ?, ?, ?, 1)`, session.ID, session.Directory, session.Title, parent); err != nil {
 			t.Fatal(err)
 		}
 	}
