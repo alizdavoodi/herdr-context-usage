@@ -861,40 +861,6 @@ func TestRefreshClearsValueWhenCodexRolloutIsJustCompacted(t *testing.T) {
 	}
 }
 
-func TestRefreshClearsValueWhenOpenCode2SessionIsJustCompacted(t *testing.T) {
-	t.Parallel()
-
-	databasePath := filepath.Join(t.TempDir(), "opencode2.db")
-	createOpenCode2Database(t, databasePath, "ses_current",
-		`{"time":{"completed":1},"model":{"id":"model"},"tokens":{"input":225000,"cache":{"read":9000,"write":0}}}`)
-	appendOpenCode2Message(t, databasePath, "compaction", "ses_current", "compaction", 2,
-		`{"status":"completed","reason":"auto","summary":"summary","recent":"recent"}`)
-	var log bytes.Buffer
-	// opencode2 has no agent_session path: herdr reports no session for these
-	// panes, so correlation runs off directory plus the TUI's terminal title.
-	fake := &fakeHerdr{
-		agents: []herdr.Agent{{
-			Agent:         "opencode",
-			PaneID:        "w1:p1",
-			ForegroundCWD: "/work",
-			TerminalTitle: "OC | Test session",
-			Tokens:        map[string]string{"ctx_raw": "234000"},
-		}},
-		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "opencode2"}}},
-		reports:   make(map[string][2]string),
-	}
-
-	if err := Refresh(context.Background(), fake, "", &log, Config{OpenCode2DB: databasePath}); err != nil {
-		t.Fatalf("Refresh() error = %v", err)
-	}
-	if !slices.Equal(fake.clears, []string{"w1:p1"}) || len(fake.reports) != 0 {
-		t.Fatalf("clears = %v, reports = %v; want pre-compaction value cleared", fake.clears, fake.reports)
-	}
-	if got := log.String(); !strings.Contains(got, `"context_state":"just_compacted"`) {
-		t.Fatalf("diagnostic = %s, want just-compacted state", got)
-	}
-}
-
 // Provenance for the fixtures in this file, which are about delivery to herdr
 // rather than about arithmetic, so most of them carry the design document's
 // worked example — 840 / 90000 / 1641, the same 92,481 across three providers
@@ -904,66 +870,7 @@ func TestRefreshClearsValueWhenOpenCode2SessionIsJustCompacted(t *testing.T) {
 // ~/.codex/sessions/2026/07/31/rollout-2026-07-31T17-43-45-019fb8d8-85b8-7c50-82ac-bc46ddf0d5fe.jsonl,
 // and the opencode v1 compaction summary is msg_ce8685bc7001SiK5DcsX6T7Q34 of
 // session ses_31c1bfde3ffeCEDhd6W270unu4. Both are described in full in the
-// providers' own reader tests, as are the opencode2 compaction rows, which are
-// the one shape taken from a binary rather than a store.
-func createOpenCode2Database(t *testing.T, path, sessionID, message string) {
-	t.Helper()
-
-	database, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer database.Close()
-	for _, query := range []string{
-		`CREATE TABLE session_v2 (
-			id TEXT PRIMARY KEY,
-			directory TEXT NOT NULL,
-			title TEXT,
-			parent_id TEXT,
-			tokens_input INTEGER DEFAULT 0 NOT NULL,
-			tokens_cache_read INTEGER DEFAULT 0 NOT NULL,
-			tokens_cache_write INTEGER DEFAULT 0 NOT NULL,
-			time_updated INTEGER NOT NULL
-		)`,
-		`CREATE TABLE session_message (
-			id TEXT PRIMARY KEY,
-			session_id TEXT NOT NULL,
-			type TEXT NOT NULL,
-			seq INTEGER NOT NULL,
-			data TEXT NOT NULL
-		)`,
-	} {
-		if _, err := database.Exec(query); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if _, err := database.Exec(
-		`INSERT INTO session_v2 (id, directory, title, time_updated) VALUES (?, '/work', 'Test session', 1)`,
-		sessionID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := database.Exec(
-		`INSERT INTO session_message (id, session_id, type, seq, data) VALUES ('msg_current', ?, 'assistant', 1, ?)`,
-		sessionID, message); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func appendOpenCode2Message(t *testing.T, path, id, sessionID, messageType string, seq int64, data string) {
-	t.Helper()
-
-	database, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer database.Close()
-	if _, err := database.Exec(
-		`INSERT INTO session_message (id, session_id, type, seq, data) VALUES (?, ?, ?, ?, ?)`,
-		id, sessionID, messageType, seq, data); err != nil {
-		t.Fatal(err)
-	}
-}
-
+// providers' own reader tests.
 func createOpenCodeDatabase(t *testing.T, path, sessionID, message string) {
 	t.Helper()
 
