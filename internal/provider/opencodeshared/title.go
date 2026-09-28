@@ -104,6 +104,12 @@ func parseTitle(terminalTitle string) (parsedTitle, error) {
 		// read as a prefix is ambiguous beside every title it begins, and a long
 		// plugin name read as one would slip past the plugin guard below.
 		if marked && len(utf16.Encode([]rune(prefix))) == truncatedTitle {
+			// A cut through an astral character leaves half of it, which arrives
+			// as U+FFFD, so the 37th character is unknown and any match on it a
+			// guess.
+			if strings.HasSuffix(prefix, "�") {
+				return parsedTitle{}, ErrNoTitleMatch
+			}
 			return parsedTitle{Text: prefix, Truncated: true}, nil
 		}
 	}

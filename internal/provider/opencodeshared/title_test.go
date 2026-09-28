@@ -72,6 +72,15 @@ func TestParseTitleRecognisesEveryForm(t *testing.T) {
 			want:          parsedTitle{Text: "🚀" + realTruncatedTitle[:35], Truncated: true},
 		},
 		{
+			// A cut through an astral character leaves half of it, which arrives
+			// as U+FFFD. The 37th character is then unknown, and compared as a
+			// literal U+FFFD it would match the one stored title holding one there
+			// rather than the session on screen.
+			name:          "cut through an astral character is ambiguous",
+			terminalTitle: "OC | " + realTruncatedTitle[:36] + "�…",
+			wantErr:       ErrNoTitleMatch,
+		},
+		{
 			// Both TUIs write the bare application name on their home screen and
 			// for a session with no title; roughly 10% of sessions are untitled.
 			name:          "home screen or untitled session",
