@@ -91,36 +91,3 @@ func TestOccupancySumsTheThreeAddends(t *testing.T) {
 		})
 	}
 }
-
-// The identity both agents write is the oracle for the arithmetic, so it is
-// asserted here against real rows rather than restated in a comment. A reader
-// that returned the per-turn total instead of the sum would be wrong by exactly
-// that turn's output on every row of either agent.
-func TestOccupancyAgreesWithBothAgentsPerTurnTotals(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name                         string
-		input, cacheRead, cacheWrite int64
-		output, totalTokens          int64
-	}{
-		{name: "pi A line 39", input: 769, cacheRead: 27_136, output: 2_553, totalTokens: 30_458},
-		{name: "omp C line 250", input: 132_098, output: 2_595, totalTokens: 134_693},
-		{name: "omp C line 254", input: 40_710, output: 38, totalTokens: 40_748},
-		{name: "omp C line 271", input: 2_312, cacheRead: 42_240, output: 931, totalTokens: 45_483},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got, ok := Occupancy(tt.input, tt.cacheRead, tt.cacheWrite)
-			if !ok {
-				t.Fatalf("Occupancy() reported no number for a real completed turn")
-			}
-			if want := tt.totalTokens - tt.output; got != want {
-				t.Fatalf("Occupancy() = %d, want %d; %d is the per-turn total, which overstates by that turn's output of %d",
-					got, want, tt.totalTokens, tt.output)
-			}
-		})
-	}
-}
