@@ -202,7 +202,7 @@ func TestRefreshClearsPiRowWhenAnIDDoesNotResolveUniquely(t *testing.T) {
 			if !slices.Equal(fake.clears, []string{"w1:p1"}) || len(fake.reports) != 0 {
 				t.Fatalf("clears = %v, reports = %v; want an unresolved session blanked", fake.clears, fake.reports)
 			}
-			if got := log.String(); !strings.Contains(got, "agent session") {
+			if got := log.String(); !strings.Contains(got, "pi agent session cannot be resolved") {
 				t.Fatalf("measurement = %q, want the blank reason to name the unresolved session", got)
 			}
 		})
