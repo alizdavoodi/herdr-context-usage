@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"unicode/utf16"
 	"unicode/utf8"
 )
 
@@ -27,6 +28,9 @@ const (
 	// where it names its sessions table. opencode 1.18.32 and opencode2 2.0.18
 	// keep all of that and change only the mark.
 	maxSessionTitle = 40
+	// truncatedTitle is the length the TUI cuts to, in the UTF-16 units its
+	// slice counts, which is the only length a mark follows.
+	truncatedTitle = 37
 
 	// opencode reads this from its own environment. We read it from ours, which
 	// is the same environment whenever herdr was started from a shell that
@@ -92,10 +96,14 @@ func parseTitle(terminalTitle string) (parsedTitle, error) {
 		return parsedTitle{}, ErrTitleUnavailable
 	}
 	for _, mark := range truncationMarks {
-		if prefix, truncated := strings.CutSuffix(text, mark); truncated {
-			if prefix == "" {
-				return parsedTitle{}, ErrTitleUnavailable
-			}
+		prefix, marked := strings.CutSuffix(text, mark)
+		if marked && prefix == "" {
+			return parsedTitle{}, ErrTitleUnavailable
+		}
+		// A mark after any other length is the title's own text: a short title
+		// read as a prefix is ambiguous beside every title it begins, and a long
+		// plugin name read as one would slip past the plugin guard below.
+		if marked && len(utf16.Encode([]rune(prefix))) == truncatedTitle {
 			return parsedTitle{Text: prefix, Truncated: true}, nil
 		}
 	}

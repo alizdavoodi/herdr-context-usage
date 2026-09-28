@@ -50,6 +50,28 @@ func TestParseTitleRecognisesEveryForm(t *testing.T) {
 			want:          parsedTitle{Text: realTruncatedTitle, Truncated: true},
 		},
 		{
+			// The TUI marks only what it cut at 37 UTF-16 units, so a short
+			// title that ends in an ellipsis is the whole title. Read as a
+			// prefix, it would be ambiguous beside any longer title it begins.
+			name:          "short session title ending in an ellipsis is whole",
+			terminalTitle: "OC | Investigate…",
+			want:          parsedTitle{Text: "Investigate…"},
+		},
+		{
+			// A plugin name is never shortened, so read as truncated this one
+			// would slip past the plugin guard and prefix-match a session.
+			name:          "long plugin title ending in an ellipsis is a plugin",
+			terminalTitle: "OC | Plugin dashboard showing context occupancy details…",
+			wantErr:       ErrPluginTitle,
+		},
+		{
+			// An astral character is two UTF-16 units, so the TUI's 37 units
+			// here are 36 runes; counting runes would read this as whole.
+			name:          "truncated title with an astral character",
+			terminalTitle: "OC | 🚀" + realTruncatedTitle[:35] + "…",
+			want:          parsedTitle{Text: "🚀" + realTruncatedTitle[:35], Truncated: true},
+		},
+		{
 			// Both TUIs write the bare application name on their home screen and
 			// for a session with no title; roughly 10% of sessions are untitled.
 			name:          "home screen or untitled session",
