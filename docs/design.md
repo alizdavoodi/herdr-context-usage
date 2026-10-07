@@ -280,6 +280,17 @@ process-list order is not meaningful. An unavailable process list leaves the
 provider undetermined rather than defaulting to `opencode`; a successfully
 observed empty list selects `opencode`.
 
+`argv0` is not reported on every platform. herdr 0.9.3's Linux process detection
+builds its `ForegroundProcess` with the field unset while populating `argv`
+from `/proc/<pid>/cmdline`, so on Linux the field is absent from the wire for
+every process — observed as `argv0: null` for every pane, zsh included. macOS
+fills both from the same `KERN_PROCARGS2` buffer. The basename compared is
+therefore argv[0] under either name: herdr's `argv0` field first, and the
+first element of `argv` when that field is absent. The same fallback keys
+claude's process-registry tier, which reads the basename too. Without it every
+opencode pane on Linux classifies as v1 and blanks, because the v1 provider
+cannot resolve a v2 session id in the v1 store.
+
 ### Reporting
 
 Two metadata tokens per pane, one stable source id for the plugin's whole
@@ -375,7 +386,9 @@ surveyed ships one, and herdr's own agent skill says nothing about tokens.
    `OpenCode` on the home screen, `OC | <session title>` on a session, and
    `pane process-info` reporting `argv0: "opencode2"` while herdr's `agent`
    field reads `opencode`, confirming both the title channel and the version
-   discriminator.
+   discriminator. The argv0 verification was macOS-only: on Linux, herdr 0.9.3
+   reports no `argv0` for any process, and classification there rests on the
+   argv fallback described above.
 6. ~~Unverified: whether herdr clears source-scoped tokens when an agent is
    released.~~ **Verified against Herdr 0.8.0:** a temporary pane was given a
    synthetic `claude` agent, one ordinary metadata token, and one token scoped

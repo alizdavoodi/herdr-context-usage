@@ -95,8 +95,20 @@ func ProcessIDs(processes []Process, kind Kind) []int {
 // names only the kinds some caller asks about: opencode2, which tells the
 // opencode versions apart, and claude, whose process ids key its registry
 // tier.
+//
+// The basename is argv[0], named two ways on the wire: herdr's own argv0 field,
+// and the first element of the argv list. On macOS both come from the same
+// KERN_PROCARGS2 buffer and agree. herdr 0.9.3's Linux process detection
+// writes no argv0 at all — its ForegroundProcess is built with the field None
+// while argv is populated from /proc — so the first argv element is read as
+// the fallback there. A reported argv0 wins, so the fallback cannot override
+// an explicit name with a different one.
 func (p Process) Kind() Kind {
-	switch strings.ToLower(strings.TrimPrefix(filepath.Base(p.Argv0), ".")) {
+	name := p.Argv0
+	if name == "" && len(p.Argv) > 0 {
+		name = p.Argv[0]
+	}
+	switch strings.ToLower(strings.TrimPrefix(filepath.Base(name), ".")) {
 	case "opencode2":
 		return OpenCode2
 	case "claude":

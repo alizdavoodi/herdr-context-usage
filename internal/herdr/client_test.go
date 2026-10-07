@@ -128,15 +128,42 @@ func TestListPanes(t *testing.T) {
 func TestProcessInfo(t *testing.T) {
 	t.Parallel()
 
-	runner := &fakeRunner{responses: [][]byte{[]byte(`{"result":{"process_info":{"foreground_processes":[{"pid":42,"argv0":"claude","argv":["claude"]}]}}}`)}}
-	client := NewClient("herdr", runner)
-	processes, err := client.ProcessInfo(context.Background(), "w1:p1")
-	if err != nil {
-		t.Fatalf("ProcessInfo() error = %v", err)
-	}
-	if len(processes) != 1 || processes[0].PID != 42 || processes[0].Argv0 != "claude" {
-		t.Fatalf("ProcessInfo() = %#v", processes)
-	}
+	t.Run("reported argv0", func(t *testing.T) {
+		t.Parallel()
+		runner := &fakeRunner{responses: [][]byte{[]byte(`{"result":{"process_info":{"foreground_processes":[{"pid":42,"argv0":"claude","argv":["claude"]}]}}}`)}}
+		client := NewClient("herdr", runner)
+		processes, err := client.ProcessInfo(context.Background(), "w1:p1")
+		if err != nil {
+			t.Fatalf("ProcessInfo() error = %v", err)
+		}
+		if len(processes) != 1 || processes[0].PID != 42 || processes[0].Argv0 != "claude" {
+			t.Fatalf("ProcessInfo() = %#v", processes)
+		}
+	})
+
+	// herdr 0.9.3 on Linux reports no argv0 for any foreground process: the
+	// field is absent from the wire (skip_serializing_if = Option::is_none)
+	// while argv, name and cmdline are present. This is the process-info
+	// capture of a live opencode2 pane on that host, the case classification
+	// falls back to argv for.
+	t.Run("herdr on linux omits argv0 entirely", func(t *testing.T) {
+		t.Parallel()
+		runner := &fakeRunner{responses: [][]byte{[]byte(`{"result":{"process_info":{"foreground_process_group_id":2158461,"foreground_processes":[{"pid":2158461,"name":".opencode2-wrap","argv":["/nix/store/mf1zmrwz1dp6zv0v9sqp79cwfjbw97xh-opencode2-2.0.24/bin/opencode2"],"cmdline":"/nix/store/mf1zmrwz1dp6zv0v9sqp79cwfjbw97xh-opencode2-2.0.24/bin/opencode2","cwd":"/home/user/work"}]}}}`)}}
+		client := NewClient("herdr", runner)
+		processes, err := client.ProcessInfo(context.Background(), "w1:p1")
+		if err != nil {
+			t.Fatalf("ProcessInfo() error = %v", err)
+		}
+		if len(processes) != 1 {
+			t.Fatalf("ProcessInfo() = %#v, want one process", processes)
+		}
+		if processes[0].Argv0 != "" {
+			t.Fatalf("argv0 = %q, want empty: the field was absent on the wire", processes[0].Argv0)
+		}
+		if len(processes[0].Argv) != 1 || processes[0].Argv[0] != "/nix/store/mf1zmrwz1dp6zv0v9sqp79cwfjbw97xh-opencode2-2.0.24/bin/opencode2" {
+			t.Fatalf("argv = %#v, want the /proc cmdline argv", processes[0].Argv)
+		}
+	})
 }
 
 func TestReportAndClearUseOneStableSource(t *testing.T) {
