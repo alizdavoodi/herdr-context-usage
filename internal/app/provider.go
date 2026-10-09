@@ -79,7 +79,9 @@ func refreshOne(ctx context.Context, client Herdr, paneID string, kind provider.
 		if provider.IsSuperseded(err, p.Superseded()) {
 			return errors.Join(measurementErr, client.Clear(ctx, paneID, seq))
 		}
-		// Anything undeclared leaves the displayed value alone. An answer such as
+		// A shared lifecycle outcome (no session, no home, no occupancy,
+		// just-compacted) or a declared provider-specific answer clears the row;
+		// anything else leaves the displayed value alone. An answer such as
 		// codex's ErrFailedTurn leaves the previous reading standing as a valid
 		// lower bound, a transient one is a failure to read, and neither is
 		// evidence that the value belongs to a superseded session.

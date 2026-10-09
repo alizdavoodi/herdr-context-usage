@@ -43,10 +43,13 @@ compatibility signal and is not one — the field sets already differ at that
 version, so gating on it would reject a harmless bump while accepting a breaking
 change within one.
 
-Each provider declares its own `Superseded()`, and the seam test derives its
-list from the provider registry rather than a hand-written one, so a newly
-registered provider is checked for declaring a superseded answer without a
-second list to keep in step.
+Each provider declares its own additional superseding outcomes through
+`Superseded()`, while the shared lifecycle outcomes — no session, no home, no
+occupancy and just-compacted — are classified once in `provider.IsSuperseded`.
+The seam test derives its list of providers from the registry rather than a
+hand-written one, so a newly registered provider is reached without a second
+list to keep in step, and the Measure, root and refresh tests cover the shared
+contract end to end.
 
 Neither pi nor omp is ours, and `nix run github:numtide/llm-agents.nix` pins
 neither, so both float on whatever the flake resolves to. Every measurement

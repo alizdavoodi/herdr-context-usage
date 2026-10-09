@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
@@ -17,7 +16,7 @@ import (
 const occupancyScanLimit = 256
 
 var (
-	ErrNoOccupancy   = errors.New("opencode2 agent session has no current context occupancy")
+	ErrNoOccupancy   = fmt.Errorf("opencode2 %w", provider.ErrNoOccupancy)
 	ErrJustCompacted = fmt.Errorf("opencode2 %w", provider.ErrJustCompacted)
 )
 

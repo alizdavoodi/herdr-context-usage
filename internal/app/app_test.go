@@ -359,14 +359,20 @@ func TestRefreshReportsASuccessfulReadingAndRecordsItMeasured(t *testing.T) {
 	}
 }
 
-// A failed reading is classified by the provider's own declaration alone: a
-// declared answer clears the pane, anything else keeps the value standing, and
-// either way the record carries whatever the provider observed before failing.
+// A failed reading is classified by the shared lifecycle roots plus the
+// provider's own extra declarations: a shared root or a declared extra clears
+// the pane, anything else keeps the value standing, and either way the record
+// carries whatever the provider observed before failing.
 func TestRefreshRecordsAFailedReadingAndClearsOnlyWhatTheProviderDeclares(t *testing.T) {
 	t.Parallel()
 
 	version := 3
 	undeclared := errors.New("permission denied")
+	// Each shared outcome is wrapped once more, so the skeleton has to see
+	// through an error chain, and each arrives with no provider extras at all.
+	noSession := fmt.Errorf("resolve: %w", provider.ErrNoSession)
+	noHome := fmt.Errorf("home: %w", provider.ErrNoHome)
+	noOccupancy := fmt.Errorf("read: %w", provider.ErrNoOccupancy)
 	compacted := fmt.Errorf("transcript: %w", provider.ErrJustCompacted)
 	for _, test := range []struct {
 		name       string
@@ -378,7 +384,7 @@ func TestRefreshRecordsAFailedReadingAndClearsOnlyWhatTheProviderDeclares(t *tes
 		wantMode   provider.ResolutionMode
 	}{
 		{
-			name:       "a declared answer clears",
+			name:       "a declared extra clears",
 			err:        fmt.Errorf("resolve: %w", errSuperseded),
 			superseded: []error{errSuperseded},
 			wantClear:  true,
@@ -393,13 +399,30 @@ func TestRefreshRecordsAFailedReadingAndClearsOnlyWhatTheProviderDeclares(t *tes
 			wantMode:   provider.ResolutionAgentSession,
 		},
 		{
-			name:       "a just-compacted answer is recorded as such",
-			reading:    provider.Reading{Mode: provider.ResolutionTerminalTitle, TranscriptVersion: &version},
-			err:        compacted,
-			superseded: []error{provider.ErrJustCompacted},
-			wantClear:  true,
-			wantState:  ContextJustCompacted,
-			wantMode:   provider.ResolutionTerminalTitle,
+			name:      "a shared no-session outcome clears with no extras",
+			err:       noSession,
+			wantClear: true,
+			wantState: ContextUnknown,
+		},
+		{
+			name:      "a shared no-home outcome clears with no extras",
+			err:       noHome,
+			wantClear: true,
+			wantState: ContextUnknown,
+		},
+		{
+			name:      "a shared no-occupancy outcome clears with no extras",
+			err:       noOccupancy,
+			wantClear: true,
+			wantState: ContextUnknown,
+		},
+		{
+			name:      "a shared just-compacted outcome is recorded as such with no extras",
+			reading:   provider.Reading{Mode: provider.ResolutionTerminalTitle, TranscriptVersion: &version},
+			err:       compacted,
+			wantClear: true,
+			wantState: ContextJustCompacted,
+			wantMode:  provider.ResolutionTerminalTitle,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

@@ -13,7 +13,10 @@ import (
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 )
 
-var ErrNoSession = errors.New("codex agent session cannot be resolved")
+// ErrNoSession wraps the shared root so this provider keeps its own identity
+// while IsSuperseded classifies it without a declaration. The working-directory
+// tier wraps it again with the main-thread reason it found.
+var ErrNoSession = fmt.Errorf("codex %w", provider.ErrNoSession)
 
 type sessionInput struct {
 	CodexHome     string

@@ -2,7 +2,6 @@ package claude
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,7 +11,9 @@ import (
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 )
 
-var ErrNoSession = errors.New("claude agent session cannot be resolved")
+// ErrNoSession wraps the shared root so this provider keeps its own identity
+// while IsSuperseded classifies it without a declaration.
+var ErrNoSession = fmt.Errorf("claude %w", provider.ErrNoSession)
 
 type sessionInput struct {
 	ClaudeHome    string

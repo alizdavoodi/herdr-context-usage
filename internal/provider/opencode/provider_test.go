@@ -35,6 +35,7 @@ func TestMeasureReadsTheResolvedSessionAndClassifiesWhatItFinds(t *testing.T) {
 		pane     provider.Pane
 		want     provider.Reading
 		wantErr  error
+		wantRoot error
 		// justCompacted and clears are what the round records and does with a
 		// failure; both are asserted on every case, success included.
 		justCompacted bool
@@ -60,6 +61,7 @@ func TestMeasureReadsTheResolvedSessionAndClassifiesWhatItFinds(t *testing.T) {
 			pane:     reported,
 			want:     provider.Reading{Mode: provider.ResolutionAgentSession},
 			wantErr:  ErrNoOccupancy,
+			wantRoot: provider.ErrNoOccupancy,
 			clears:   true,
 		},
 		{
@@ -96,6 +98,7 @@ func TestMeasureReadsTheResolvedSessionAndClassifiesWhatItFinds(t *testing.T) {
 			pane:          reported,
 			want:          provider.Reading{Mode: provider.ResolutionAgentSession},
 			wantErr:       ErrJustCompacted,
+			wantRoot:      provider.ErrJustCompacted,
 			justCompacted: true,
 			clears:        true,
 		},
@@ -132,6 +135,9 @@ func TestMeasureReadsTheResolvedSessionAndClassifiesWhatItFinds(t *testing.T) {
 			if clears := provider.IsSuperseded(err, p.Superseded()); clears != tt.clears {
 				t.Fatalf("superseded = %t, want %t", clears, tt.clears)
 			}
+			if tt.wantRoot != nil && !errors.Is(err, tt.wantRoot) {
+				t.Fatalf("Measure() error = %v, want it to wrap the shared root %v", err, tt.wantRoot)
+			}
 		})
 	}
 }
@@ -159,6 +165,9 @@ func TestMeasureRefusesAReportedIDThatIsNotARootSession(t *testing.T) {
 			got, err := p.Measure(context.Background(), provider.Pane{AgentSession: &provider.AgentSession{Kind: "id", Value: tt.reported}})
 			if !errors.Is(err, opencodeshared.ErrNoRootSession) {
 				t.Fatalf("Measure() error = %v, want ErrNoRootSession", err)
+			}
+			if !errors.Is(err, provider.ErrNoSession) {
+				t.Fatalf("Measure() error = %v, want it to wrap the shared no-session root", err)
 			}
 			if want := (provider.Reading{Mode: provider.ResolutionAgentSession}); got != want {
 				t.Fatalf("Measure() = %+v, want %+v", got, want)

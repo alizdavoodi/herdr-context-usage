@@ -14,9 +14,10 @@ import (
 // each provider.
 //
 // It is permanent for the life of the process, not momentary: there is nowhere
-// to look and every later refresh reads the same way. Every provider therefore
-// declares it superseded, so the displayed occupancy clears; an undeclared
-// answer would preserve it, standing as if it were current.
+// to look and every later refresh reads the same way. IsSuperseded recognizes it
+// as one of the shared lifecycle outcomes, so the displayed occupancy clears for
+// every provider without each one declaring it; an undeclared answer would
+// preserve it, standing as if it were current.
 var ErrNoHome = errors.New("agent home cannot be resolved")
 
 // Home returns explicit when it is set, and otherwise defaultRel joined under

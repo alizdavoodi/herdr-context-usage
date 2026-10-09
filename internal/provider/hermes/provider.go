@@ -2,13 +2,15 @@ package hermes
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"path/filepath"
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 )
 
-var ErrNoSession = errors.New("hermes agent session cannot be resolved")
+// ErrNoSession wraps the shared root so this provider keeps its own identity
+// while IsSuperseded classifies it without a declaration.
+var ErrNoSession = fmt.Errorf("hermes %w", provider.ErrNoSession)
 
 // New returns the hermes provider. home is the value main read from
 // HERMES_HOME, empty for the default under the user's home directory; it is

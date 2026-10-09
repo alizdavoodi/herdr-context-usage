@@ -1,14 +1,15 @@
 package omp
 
 import (
-	"errors"
 	"fmt"
 	"path/filepath"
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 )
 
-var ErrNoSession = errors.New("omp agent session cannot be resolved")
+// ErrNoSession wraps the shared root so this provider keeps its own identity
+// while IsSuperseded classifies it without a declaration.
+var ErrNoSession = fmt.Errorf("omp %w", provider.ErrNoSession)
 
 // resolve turns herdr's reported agent session into a transcript path.
 //

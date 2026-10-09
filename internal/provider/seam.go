@@ -56,6 +56,22 @@ type Reading struct {
 	OracleDisagreement string
 }
 
+// The four shared lifecycle outcomes — ErrNoSession, ErrNoHome (declared beside
+// the shared Home helper in home.go), ErrNoOccupancy and ErrJustCompacted — are
+// facts about the agent session itself rather than about one provider's store
+// or format, so they supersede for every provider and are recognized once in
+// IsSuperseded. Each provider wraps them with its own name, so the text names
+// the agent while app recognizes the outcome with one errors.Is.
+
+// ErrNoSession means there is no agent session this plugin can attribute to the
+// pane, whatever the reason a provider gives.
+var ErrNoSession = errors.New("agent session cannot be resolved")
+
+// ErrNoOccupancy means the pane's agent session is known but has produced no
+// reading yet, the state a freshly created session sits in before its first
+// turn.
+var ErrNoOccupancy = errors.New("agent session has no current context occupancy")
+
 // ErrJustCompacted is the state every provider reports in the interval after a
 // compaction. Each provider wraps it, so the text names the agent while app
 // recognises the state with one errors.Is.
@@ -65,8 +81,8 @@ var ErrJustCompacted = errors.New("agent session is just-compacted")
 // kind. The skeleton in app owns error classification, measurement and
 // reporting, which are identical across every provider.
 type Provider interface {
-	// Superseded lists this provider's answers that IsSuperseded treats as
-	// proof the displayed value is wrong.
+	// Superseded lists this provider's answers, beyond the shared lifecycle
+	// outcomes, that IsSuperseded treats as proof the displayed value is wrong.
 	Superseded() []error
 	// Measure resolves the pane's agent session and reads its occupancy in one
 	// call. A store-backed provider closes its own store before returning. An
@@ -76,10 +92,21 @@ type Provider interface {
 }
 
 // IsSuperseded decides what a failed measurement proves about the value already
-// displayed for a pane. A declared answer proves it wrong, so the pane is
-// cleared. Anything undeclared — a permission or I/O failure, a turn that
-// recorded nothing — says nothing about the session and preserves it, so a new
-// error defaults to keeping a value rather than blanking a pane.
+// displayed for a pane. The four shared lifecycle outcomes always supersede:
+// no session, no home, no occupancy and just-compacted are facts about the
+// session, not about one provider's format, and clearing on them needs no
+// provider declaration. Beyond those, a declared provider-specific answer
+// proves the value wrong, so the pane is cleared. Anything undeclared — a
+// permission or I/O failure, a turn that recorded nothing — says nothing about
+// the session and preserves it, so a new error defaults to keeping a value
+// rather than blanking a pane.
 func IsSuperseded(err error, declared []error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, ErrNoSession) || errors.Is(err, ErrNoHome) ||
+		errors.Is(err, ErrNoOccupancy) || errors.Is(err, ErrJustCompacted) {
+		return true
+	}
 	return slices.ContainsFunc(declared, func(state error) bool { return errors.Is(err, state) })
 }

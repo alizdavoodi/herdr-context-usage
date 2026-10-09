@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	ErrNoOccupancy   = errors.New("hermes agent session has no current context occupancy")
+	ErrNoOccupancy   = fmt.Errorf("hermes %w", provider.ErrNoOccupancy)
 	ErrJustCompacted = fmt.Errorf("hermes %w", provider.ErrJustCompacted)
 	// ErrSessionEnded is a reported session Hermes has since closed. Every
 	// resume path clears ended_at again, so a closed row is not the session

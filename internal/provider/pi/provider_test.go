@@ -27,6 +27,7 @@ func TestMeasure(t *testing.T) {
 		setUp func(t *testing.T, home string) *provider.AgentSession
 		// wantErr is the sentinel the failure must carry, nil for a measurement.
 		wantErr           error
+		wantRoot          error
 		wantCleared       bool
 		wantJustCompacted bool
 		want              int64
@@ -67,6 +68,7 @@ func TestMeasure(t *testing.T) {
 				return &provider.AgentSession{Kind: "id", Value: repoSessionID}
 			},
 			wantErr:     ErrNoSession,
+			wantRoot:    provider.ErrNoSession,
 			wantCleared: true,
 		},
 		{
@@ -81,6 +83,7 @@ func TestMeasure(t *testing.T) {
 				return &provider.AgentSession{Kind: "id", Value: repoSessionID}
 			},
 			wantErr:     ErrNoSession,
+			wantRoot:    provider.ErrNoSession,
 			wantCleared: true,
 		},
 		{
@@ -90,6 +93,7 @@ func TestMeasure(t *testing.T) {
 			name:        "no reported agent session clears the row with no mode",
 			setUp:       func(*testing.T, string) *provider.AgentSession { return nil },
 			wantErr:     ErrNoSession,
+			wantRoot:    provider.ErrNoSession,
 			wantCleared: true,
 		},
 		{
@@ -104,6 +108,7 @@ func TestMeasure(t *testing.T) {
 				return &provider.AgentSession{Kind: "path", Value: writeTranscript(t, sessionV3, turnA39, compactionA40)}
 			},
 			wantErr:           ErrJustCompacted,
+			wantRoot:          provider.ErrJustCompacted,
 			wantCleared:       true,
 			wantJustCompacted: true,
 			wantMode:          provider.ResolutionAgentSession,
@@ -131,6 +136,7 @@ func TestMeasure(t *testing.T) {
 				return &provider.AgentSession{Kind: "path", Value: writeTranscript(t, sessionV3, userA41)}
 			},
 			wantErr:     ErrNoOccupancy,
+			wantRoot:    provider.ErrNoOccupancy,
 			wantCleared: true,
 			wantMode:    provider.ResolutionAgentSession,
 			wantVersion: intPtr(3),
@@ -149,6 +155,9 @@ func TestMeasure(t *testing.T) {
 			}
 			if cleared := provider.IsSuperseded(err, p.Superseded()); cleared != tt.wantCleared {
 				t.Fatalf("IsSuperseded() = %t, want %t", cleared, tt.wantCleared)
+			}
+			if tt.wantRoot != nil && !errors.Is(err, tt.wantRoot) {
+				t.Fatalf("Measure() error = %v, want it to wrap the shared root %v", err, tt.wantRoot)
 			}
 			if justCompacted := errors.Is(err, provider.ErrJustCompacted); justCompacted != tt.wantJustCompacted {
 				t.Fatalf("errors.Is(err, provider.ErrJustCompacted) = %t, want %t", justCompacted, tt.wantJustCompacted)
@@ -183,10 +192,11 @@ func TestMeasureKeepsTheRowOnATransientReadFailure(t *testing.T) {
 	}
 }
 
-// An agent home that cannot be resolved must clear the row. Left undeclared,
+// An agent home that cannot be resolved must clear the row. Left unclassified,
 // the pane would keep a number that was correct once and stays plausible for as
 // long as the pane lives: measured against pi 0.84.2 and herdr 0.8.0 with the
-// answer left out of Superseded, the pane kept 27,905 from its previous round.
+// answer left out of the classification, the pane kept 27,905 from its previous
+// round.
 //
 // It must also stay distinguishable from an unresolved agent session, because
 // the fixes differ: export a home, against install the integration.

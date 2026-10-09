@@ -50,6 +50,7 @@ func TestMeasureResolvesThroughTheLadderAndClassifiesWhatItFinds(t *testing.T) {
 		pane     provider.Pane
 		want     provider.Reading
 		wantErr  error
+		wantRoot error
 		// justCompacted and clears are what the round records and does with a
 		// failure; both are asserted on every case, success included.
 		justCompacted bool
@@ -93,6 +94,7 @@ func TestMeasureResolvesThroughTheLadderAndClassifiesWhatItFinds(t *testing.T) {
 			pane:     reported("child"),
 			want:     provider.Reading{Mode: provider.ResolutionAgentSession},
 			wantErr:  opencodeshared.ErrNoRootSession,
+			wantRoot: provider.ErrNoSession,
 			clears:   true,
 		},
 		{
@@ -102,6 +104,7 @@ func TestMeasureResolvesThroughTheLadderAndClassifiesWhatItFinds(t *testing.T) {
 			pane:     reported("ses_deleted"),
 			want:     provider.Reading{Mode: provider.ResolutionAgentSession},
 			wantErr:  opencodeshared.ErrNoRootSession,
+			wantRoot: provider.ErrNoSession,
 			clears:   true,
 		},
 		{
@@ -127,6 +130,7 @@ func TestMeasureResolvesThroughTheLadderAndClassifiesWhatItFinds(t *testing.T) {
 			pane:          titled("OC | Probe test response"),
 			want:          provider.Reading{Mode: provider.ResolutionTerminalTitle},
 			wantErr:       ErrJustCompacted,
+			wantRoot:      provider.ErrJustCompacted,
 			justCompacted: true,
 			clears:        true,
 		},
@@ -136,6 +140,7 @@ func TestMeasureResolvesThroughTheLadderAndClassifiesWhatItFinds(t *testing.T) {
 			pane:     titled("OC | Probe test response"),
 			want:     provider.Reading{Mode: provider.ResolutionTerminalTitle},
 			wantErr:  ErrNoOccupancy,
+			wantRoot: provider.ErrNoOccupancy,
 			clears:   true,
 		},
 		{
@@ -195,7 +200,10 @@ func TestMeasureResolvesThroughTheLadderAndClassifiesWhatItFinds(t *testing.T) {
 			}
 			db.Close()
 
-			assertMeasurement(t, New(path, ""), tt.pane, tt.want, tt.wantErr, tt.justCompacted, tt.clears)
+			err := assertMeasurement(t, New(path, ""), tt.pane, tt.want, tt.wantErr, tt.justCompacted, tt.clears)
+			if tt.wantRoot != nil && !errors.Is(err, tt.wantRoot) {
+				t.Fatalf("Measure() error = %v, want it to wrap the shared root %v", err, tt.wantRoot)
+			}
 		})
 	}
 }

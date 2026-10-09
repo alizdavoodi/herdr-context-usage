@@ -3,7 +3,6 @@ package omp
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
@@ -18,7 +17,7 @@ import (
 const maxScanBytes int64 = 8 << 20
 
 var (
-	ErrNoOccupancy   = errors.New("omp transcript has no current context occupancy")
+	ErrNoOccupancy   = fmt.Errorf("omp %w", provider.ErrNoOccupancy)
 	ErrJustCompacted = fmt.Errorf("omp %w", provider.ErrJustCompacted)
 )
 

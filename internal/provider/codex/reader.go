@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	ErrNoOccupancy   = errors.New("codex rollout has no current context occupancy")
+	ErrNoOccupancy   = fmt.Errorf("codex %w", provider.ErrNoOccupancy)
 	ErrFailedTurn    = errors.New("codex turn recorded no context occupancy")
 	ErrJustCompacted = fmt.Errorf("codex %w", provider.ErrJustCompacted)
 )

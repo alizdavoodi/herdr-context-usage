@@ -79,7 +79,10 @@ var (
 	// is never the main thread. Both prove the displayed value belongs to no
 	// session this pane is showing, so it supersedes rather than reading as a
 	// session yet to finish a turn.
-	ErrNoRootSession = errors.New("opencode agent session is not a root session in the store")
+	//
+	// It wraps provider.ErrNoSession: the outcome is the shared one, and the
+	// explanation after the root is what keeps a blank row diagnosable.
+	ErrNoRootSession = fmt.Errorf("%w: opencode agent session is not a root session in the store", provider.ErrNoSession)
 )
 
 // parsedTitle is a pane's terminal title, once it has been established that it

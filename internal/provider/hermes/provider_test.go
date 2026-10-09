@@ -45,6 +45,7 @@ func TestMeasureClearsOnlyWhatProvesTheDisplayedValueWrong(t *testing.T) {
 		home    func(*testing.T) string
 		// wantErr nil accepts any error, for a failure no sentinel names.
 		wantErr           error
+		wantRoot          error
 		wantMode          provider.ResolutionMode
 		wantSuperseded    bool
 		wantJustCompacted bool
@@ -53,6 +54,7 @@ func TestMeasureClearsOnlyWhatProvesTheDisplayedValueWrong(t *testing.T) {
 			name:           "no agent session reported",
 			home:           func(t *testing.T) string { return homeOf(t, fixtureSession{ID: openID, Config: anchor("29452")}) },
 			wantErr:        ErrNoSession,
+			wantRoot:       provider.ErrNoSession,
 			wantSuperseded: true,
 		},
 		{
@@ -72,6 +74,7 @@ func TestMeasureClearsOnlyWhatProvesTheDisplayedValueWrong(t *testing.T) {
 			session:           reported,
 			home:              func(t *testing.T) string { return homeOf(t, fixtureSession{ID: openID, Config: `{}`, Compacted: true}) },
 			wantErr:           ErrJustCompacted,
+			wantRoot:          provider.ErrJustCompacted,
 			wantMode:          provider.ResolutionAgentSession,
 			wantSuperseded:    true,
 			wantJustCompacted: true,
@@ -85,6 +88,7 @@ func TestMeasureClearsOnlyWhatProvesTheDisplayedValueWrong(t *testing.T) {
 				return homeOf(t, fixtureSession{ID: openID, Config: anchor("29452"), Active: 3, Compacted: true})
 			},
 			wantErr:           ErrJustCompacted,
+			wantRoot:          provider.ErrJustCompacted,
 			wantMode:          provider.ResolutionAgentSession,
 			wantSuperseded:    true,
 			wantJustCompacted: true,
@@ -96,9 +100,21 @@ func TestMeasureClearsOnlyWhatProvesTheDisplayedValueWrong(t *testing.T) {
 				return homeOf(t, fixtureSession{ID: openID, Config: anchor("29452"), Ended: true, EndReason: "compression"})
 			},
 			wantErr:           ErrJustCompacted,
+			wantRoot:          provider.ErrJustCompacted,
 			wantMode:          provider.ResolutionAgentSession,
 			wantSuperseded:    true,
 			wantJustCompacted: true,
+		},
+		{
+			// The session row exists but has not been priced yet: no anchor and no
+			// compaction marker, which is the shared no-occupancy outcome.
+			name:           "session has produced no reading",
+			session:        reported,
+			home:           func(t *testing.T) string { return homeOf(t, fixtureSession{ID: openID, Config: `{}`}) },
+			wantErr:        ErrNoOccupancy,
+			wantRoot:       provider.ErrNoOccupancy,
+			wantMode:       provider.ResolutionAgentSession,
+			wantSuperseded: true,
 		},
 		{
 			name:           "store not written yet",
@@ -138,6 +154,9 @@ func TestMeasureClearsOnlyWhatProvesTheDisplayedValueWrong(t *testing.T) {
 			}
 			if superseded := provider.IsSuperseded(err, p.Superseded()); superseded != tt.wantSuperseded {
 				t.Fatalf("IsSuperseded(%v) = %v, want %v", err, superseded, tt.wantSuperseded)
+			}
+			if tt.wantRoot != nil && !errors.Is(err, tt.wantRoot) {
+				t.Fatalf("Measure() error = %v, want it to wrap the shared root %v", err, tt.wantRoot)
 			}
 			if justCompacted := errors.Is(err, provider.ErrJustCompacted); justCompacted != tt.wantJustCompacted {
 				t.Fatalf("errors.Is(%v, ErrJustCompacted) = %v, want %v", err, justCompacted, tt.wantJustCompacted)

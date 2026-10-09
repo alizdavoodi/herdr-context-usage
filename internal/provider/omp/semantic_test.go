@@ -46,7 +46,7 @@ func TestSupersededClassifiesEveryAnswer(t *testing.T) {
 
 // An unresolvable agent home is a permanent fact about the host, not a
 // momentary failure: with no $HOME and no configured home there is nowhere to
-// look, and every later refresh reads the same way. Left undeclared it would
+// look, and every later refresh reads the same way. Left unclassified it would
 // freeze the displayed occupancy for the life of the pane, which presents a
 // superseded number as current.
 //

@@ -32,6 +32,7 @@ func TestMeasure(t *testing.T) {
 		pane           provider.Pane
 		want           provider.Reading
 		wantErr        error
+		wantRoot       error
 		wantSuperseded bool
 		wantCompacted  bool
 	}{
@@ -53,6 +54,7 @@ func TestMeasure(t *testing.T) {
 				Processes:     []provider.Process{{PID: 42, Argv0: "claude"}},
 			},
 			wantErr:        ErrNoSession,
+			wantRoot:       provider.ErrNoSession,
 			wantSuperseded: true,
 		},
 		{
@@ -62,6 +64,7 @@ func TestMeasure(t *testing.T) {
 			pane:           provider.Pane{AgentSession: reported("just-compacted.jsonl")},
 			want:           provider.Reading{Mode: provider.ResolutionAgentSession},
 			wantErr:        ErrJustCompacted,
+			wantRoot:       provider.ErrJustCompacted,
 			wantSuperseded: true,
 			wantCompacted:  true,
 		},
@@ -72,6 +75,7 @@ func TestMeasure(t *testing.T) {
 			pane:           provider.Pane{AgentSession: reported("zero-only.jsonl")},
 			want:           provider.Reading{Mode: provider.ResolutionAgentSession},
 			wantErr:        ErrNoOccupancy,
+			wantRoot:       provider.ErrNoOccupancy,
 			wantSuperseded: true,
 		},
 		{
@@ -104,6 +108,9 @@ func TestMeasure(t *testing.T) {
 			}
 			if superseded := provider.IsSuperseded(err, p.Superseded()); superseded != tt.wantSuperseded {
 				t.Fatalf("IsSuperseded(%v) = %t, want %t", err, superseded, tt.wantSuperseded)
+			}
+			if tt.wantRoot != nil && !errors.Is(err, tt.wantRoot) {
+				t.Fatalf("Measure() error = %v, want it to wrap the shared root %v", err, tt.wantRoot)
 			}
 			if compacted := errors.Is(err, provider.ErrJustCompacted); compacted != tt.wantCompacted {
 				t.Fatalf("errors.Is(%v, ErrJustCompacted) = %t, want %t", err, compacted, tt.wantCompacted)
