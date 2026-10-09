@@ -17,10 +17,6 @@ import (
 const occupancyScanLimit = 256
 
 var (
-	// ErrNoSession is a reported session id that names no root session in the
-	// store: one it never held, or a sub-agent's, which is never the main
-	// thread. Without it the pane would read as a session yet to finish a turn.
-	ErrNoSession     = errors.New("opencode2 agent session cannot be resolved")
 	ErrNoOccupancy   = errors.New("opencode2 agent session has no current context occupancy")
 	ErrJustCompacted = fmt.Errorf("opencode2 %w", provider.ErrJustCompacted)
 )
@@ -53,20 +49,6 @@ func open(ctx context.Context, explicitPath, dataHome string) (*store, error) {
 		return nil, err
 	}
 	return &store{DB: db}, nil
-}
-
-// requireRootSession keeps the main-thread guarantee in this plugin rather than
-// in whichever integration reported the id.
-func (s *store) requireRootSession(ctx context.Context, sessionID string) error {
-	var found int
-	err := s.QueryRowContext(ctx, `SELECT 1 FROM session_v2 WHERE id = ? AND parent_id IS NULL`, sessionID).Scan(&found)
-	if errors.Is(err, sql.ErrNoRows) {
-		return ErrNoSession
-	}
-	if err != nil {
-		return fmt.Errorf("resolve opencode2 session: %w", err)
-	}
-	return nil
 }
 
 func (s *store) readOccupancy(ctx context.Context, sessionID string) (provider.Reading, error) {

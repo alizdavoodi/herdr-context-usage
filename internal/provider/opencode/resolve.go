@@ -22,12 +22,12 @@ type opencodeProvider struct{ db, dataHome string }
 // than a file per session, so a reported path names nothing this provider can
 // read and is refused.
 //
-// The store opens between the two stages because the title fallback and the
-// reading both query it. The mode stays unresolved until a stage succeeds, so
-// a store that fails to open after a refused id records no mode, while one
-// after an accepted id keeps agent_session.
+// The store opens before either stage because the root-session check, the
+// title fallback and the reading all query it. A reported id fixes the mode at
+// agent_session whether or not the store opens or confirms it; only a pane
+// without one leaves the mode unresolved until the title matches.
 func (p opencodeProvider) Measure(ctx context.Context, pane provider.Pane) (provider.Reading, error) {
-	id, reported := pane.AgentSession.ID()
+	_, reported := pane.AgentSession.ID()
 	var reading provider.Reading
 	if reported {
 		reading.Mode = provider.ResolutionAgentSession
@@ -37,15 +37,15 @@ func (p opencodeProvider) Measure(ctx context.Context, pane provider.Pane) (prov
 		return reading, err
 	}
 	defer s.Close()
-	if !reported {
-		// Root sessions live in session, and a v1 plugin route interpolates its
-		// plugin id into the same title shape opencode2 fills with a plugin name,
-		// so only a positive root-session match can produce a reading.
-		id, err = opencodeshared.ResolveTitle(ctx, s.DB, "session", pane.ForegroundCWD, pane.TerminalTitle)
-		if err != nil {
-			return provider.Reading{}, err
-		}
-		reading.Mode = provider.ResolutionTerminalTitle
+	// Root sessions live in session. ResolveRoot holds both tiers to a root
+	// session: a reported sub-agent id is never the main thread, and a v1 plugin
+	// route interpolates its plugin id into the same title shape opencode2 fills
+	// with a plugin name, so only a positive root-session match can produce a
+	// reading.
+	var id string
+	id, reading.Mode, err = opencodeshared.ResolveRoot(ctx, s.DB, "session", pane)
+	if err != nil {
+		return reading, err
 	}
 	reading.Occupancy, err = s.readOccupancy(ctx, id)
 	return reading, err

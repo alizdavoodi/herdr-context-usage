@@ -36,6 +36,7 @@ func TestSupersededClassifiesEveryAnswer(t *testing.T) {
 		{name: "mini interface", err: ErrMiniInterface, want: true},
 		{name: "plugin route title", err: opencodeshared.ErrPluginTitle, want: true},
 		{name: "title matches no single session", err: opencodeshared.ErrNoTitleMatch, want: true},
+		{name: "reported id is not a root session", err: opencodeshared.ErrNoRootSession, want: true},
 		{
 			// sqlitestore turns a missing database into ErrMissing, so a raw
 			// missing-file error here would mean the store taxonomy was bypassed.

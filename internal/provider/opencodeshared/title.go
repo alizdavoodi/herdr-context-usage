@@ -1,8 +1,9 @@
 // Package opencodeshared holds what the two opencode providers genuinely have
 // in common: where their stores live, the terminal-title format, what makes a
-// title unusable, and the query that turns a title into a root session,
-// parameterised by the table each store keeps root sessions in. Their message
-// queries stay in each provider, because the two stores have different schemas.
+// title unusable, and the queries that turn a reported id or a title into a
+// root session, parameterised by the table each store keeps root sessions in.
+// Their message queries stay in each provider, because the two stores have
+// different schemas.
 package opencodeshared
 
 import (
@@ -14,6 +15,8 @@ import (
 	"strings"
 	"unicode/utf16"
 	"unicode/utf8"
+
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
 )
 
 const (
@@ -70,6 +73,13 @@ var (
 	// session answers to. Ambiguity lands here too: with 14 sessions sharing one
 	// repository directory, a guess is far more likely to be wrong than right.
 	ErrNoTitleMatch = errors.New("opencode terminal title matches no single agent session")
+
+	// ErrNoRootSession is a reported session id that names no root session in
+	// the store. Either the store never held it, or it is a sub-agent's, which
+	// is never the main thread. Both prove the displayed value belongs to no
+	// session this pane is showing, so it supersedes rather than reading as a
+	// session yet to finish a turn.
+	ErrNoRootSession = errors.New("opencode agent session is not a root session in the store")
 )
 
 // parsedTitle is a pane's terminal title, once it has been established that it
@@ -164,6 +174,34 @@ func ResolveTitle(ctx context.Context, db *sql.DB, table, directory, terminalTit
 		return "", ErrNoTitleMatch
 	}
 	return ids[0], nil
+}
+
+// ResolveRoot turns a pane into a verified root session id from table and the
+// mode that found it. It is the one place both opencode providers hold the
+// main-thread guarantee, rather than trusting whichever integration reported
+// the id. A reported path names nothing in a database, so it falls through to
+// the title tier, as an absent report does.
+func ResolveRoot(ctx context.Context, db *sql.DB, table string, pane provider.Pane) (string, provider.ResolutionMode, error) {
+	if id, reported := pane.AgentSession.ID(); reported {
+		// table is spliced in on the same terms as in ResolveTitle: it only
+		// ever comes from the providers' own constants, never from input.
+		var found int
+		err := db.QueryRowContext(ctx, `SELECT 1 FROM `+table+` WHERE id = ? AND parent_id IS NULL`, id).Scan(&found)
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", provider.ResolutionAgentSession, ErrNoRootSession
+		}
+		if err != nil {
+			// A transient failure is not evidence about the session, so it
+			// stays undeclared and keeps the displayed value.
+			return "", provider.ResolutionAgentSession, fmt.Errorf("resolve opencode session: %w", err)
+		}
+		return id, provider.ResolutionAgentSession, nil
+	}
+	id, err := ResolveTitle(ctx, db, table, pane.ForegroundCWD, pane.TerminalTitle)
+	if err != nil {
+		return "", "", err
+	}
+	return id, provider.ResolutionTerminalTitle, nil
 }
 
 // titleDisabled reports whether this process inherited the variable that turns

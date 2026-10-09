@@ -26,12 +26,18 @@ func TestResolveAcceptsOnlyNativeSessionID(t *testing.T) {
 		{Kind: "id", Value: "ses_current"},
 		{Value: "ses_current"},
 	} {
-		reading, err := New(unwritten, "").Measure(context.Background(), provider.Pane{AgentSession: &session})
+		p := New(unwritten, "")
+		reading, err := p.Measure(context.Background(), provider.Pane{AgentSession: &session})
 		if !errors.Is(err, sqlitestore.ErrMissing) {
 			t.Fatalf("Measure(%#v) error = %v, want sqlitestore.ErrMissing", session, err)
 		}
 		if reading.Mode != provider.ResolutionAgentSession {
 			t.Fatalf("Measure(%#v) mode = %q, want agent_session kept past the open failure", session, reading.Mode)
+		}
+		// A store opencode has not written yet holds no session, so whatever the
+		// row shows is stale.
+		if !provider.IsSuperseded(err, p.Superseded()) {
+			t.Fatalf("Measure(%#v) error = %v kept the displayed value, want it cleared", session, err)
 		}
 	}
 }

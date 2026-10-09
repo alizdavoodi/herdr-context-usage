@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -325,5 +327,81 @@ func TestResolveTitleReportsAQueryFailureAsItself(t *testing.T) {
 	_, err := ResolveTitle(context.Background(), db, "no_such_table", "/work", "OC | Probe test response")
 	if err == nil || errors.Is(err, ErrNoTitleMatch) || !strings.Contains(err.Error(), "resolve opencode session") {
 		t.Fatalf("ResolveTitle() error = %v, want the query failure itself", err)
+	}
+}
+
+// A reported id is trusted only as far as the store confirms it names a root
+// session; anything else is either a session the pane never showed or a
+// sub-agent's, and neither is the main thread. Every pane that does not report
+// an id falls back to the title, a reported path included, because a path names
+// nothing in a database.
+func TestResolveRootVerifiesAReportedIDAndOtherwiseReadsTheTitle(t *testing.T) {
+	t.Parallel()
+
+	sessions := []session{
+		{id: "ses_root", directory: "/work", title: "Probe test response"},
+		{id: "ses_child", directory: "/work", title: "Sub-agent task", parent: "ses_root"},
+	}
+	titled := provider.Pane{ForegroundCWD: "/work", TerminalTitle: "OC | Probe test response"}
+	reporting := func(kind, value string) provider.Pane {
+		pane := titled
+		pane.AgentSession = &provider.AgentSession{Kind: kind, Value: value}
+		return pane
+	}
+
+	tests := []struct {
+		name     string
+		pane     provider.Pane
+		want     string
+		wantMode provider.ResolutionMode
+		wantErr  error
+	}{
+		{name: "a reported root id", pane: reporting("id", "ses_root"), want: "ses_root", wantMode: provider.ResolutionAgentSession},
+		{
+			// The title would resolve to the root, so only refusing the reported
+			// id outright keeps the child's session from standing in for it.
+			name:     "a reported child id",
+			pane:     reporting("id", "ses_child"),
+			wantMode: provider.ResolutionAgentSession,
+			wantErr:  ErrNoRootSession,
+		},
+		{name: "a reported missing id", pane: reporting("id", "ses_gone"), wantMode: provider.ResolutionAgentSession, wantErr: ErrNoRootSession},
+		{name: "no report falls back to the title", pane: titled, want: "ses_root", wantMode: provider.ResolutionTerminalTitle},
+		{name: "a reported path falls through to the title", pane: reporting("path", "/work/session.jsonl"), want: "ses_root", wantMode: provider.ResolutionTerminalTitle},
+		{
+			// A failed title leaves the mode unresolved: no stage succeeded.
+			name:    "a title that resolves nothing",
+			pane:    provider.Pane{ForegroundCWD: "/work", TerminalTitle: "zsh"},
+			wantErr: ErrTitleUnavailable,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, mode, err := ResolveRoot(context.Background(), sessionsDB(t, sessions...), "sessions", tt.pane)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("ResolveRoot() error = %v, want %v", err, tt.wantErr)
+			}
+			if got != tt.want || mode != tt.wantMode {
+				t.Fatalf("ResolveRoot() = (%q, %q), want (%q, %q)", got, mode, tt.want, tt.wantMode)
+			}
+		})
+	}
+}
+
+// A failing lookup of a reported id is a failure to look, so it must surface as
+// itself and keep the displayed value, never become the sentinel that clears it.
+func TestResolveRootReportsAQueryFailureAsItself(t *testing.T) {
+	t.Parallel()
+
+	db := sessionsDB(t, session{id: "ses_root", directory: "/work"})
+	pane := provider.Pane{AgentSession: &provider.AgentSession{Kind: "id", Value: "ses_root"}}
+	_, mode, err := ResolveRoot(context.Background(), db, "no_such_table", pane)
+	if err == nil || errors.Is(err, ErrNoRootSession) || !strings.Contains(err.Error(), "resolve opencode session") {
+		t.Fatalf("ResolveRoot() error = %v, want the query failure itself", err)
+	}
+	if mode != provider.ResolutionAgentSession {
+		t.Fatalf("ResolveRoot() mode = %q, want agent_session kept on a failed lookup", mode)
 	}
 }

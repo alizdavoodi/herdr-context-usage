@@ -85,7 +85,7 @@ type MaintenanceDiagnostic struct {
 // the machine.
 const refreshConcurrency = 4
 
-func Refresh(ctx context.Context, client Herdr, eventPaneID string, log io.Writer, config Config) error {
+func Refresh(ctx context.Context, client Herdr, eventPaneID string, log io.Writer, providers map[provider.Kind]provider.Provider) error {
 	// Herdr does not serialize overlapping plugin runs and drops a write whose
 	// sequence is not above the last one it accepted. Every write in a round is
 	// a verdict on this agent snapshot, so the snapshot's time orders them all:
@@ -125,7 +125,6 @@ func Refresh(ctx context.Context, client Herdr, eventPaneID string, log io.Write
 	}
 	appendErr(sweepStaleMetadata(ctx, client, eventPaneID, live, log, roundSeq))
 
-	providers := registry(config)
 	var wg sync.WaitGroup
 	slots := make(chan struct{}, refreshConcurrency)
 	for _, agent := range agents {
@@ -149,7 +148,7 @@ func Refresh(ctx context.Context, client Herdr, eventPaneID string, log io.Write
 				}
 			}
 			kind := provider.FromAgent(agent.Agent, processes)
-			// The registry is the single authority on which kinds can be measured.
+			// The providers map is the single authority on which kinds can be measured.
 			// Gating on it rather than on a parallel predicate means a kind nobody
 			// registered blanks its row instead of silently keeping a previous
 			// session's value, which is the safe direction for an unreadable pane.
