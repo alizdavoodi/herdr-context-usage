@@ -3,7 +3,7 @@
 Status: agreed. Which providers have actually shipped is the coverage table in
 [README.md](../README.md#agent-kinds-and-provider-coverage) and nowhere else;
 this document records the design. Terminology is defined in
-[CONTEXT.md](../CONTEXT.md).
+[GLOSSARY.md](../GLOSSARY.md).
 
 ## Why this exists
 

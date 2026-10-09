@@ -1,7 +1,7 @@
 # Spec: pi and omp providers
 
 Extends [docs/design.md](design.md), whose scope is the four providers shipped
-before this. Vocabulary is [CONTEXT.md](../CONTEXT.md); the decisions this spec
+before this. Vocabulary is [GLOSSARY.md](../GLOSSARY.md); the decisions this spec
 depends on are [ADR-0001](adr/0001-absolute-tokens-not-percentage.md),
 [ADR-0004](adr/0004-provider-specific-session-correlation.md) and
 [ADR-0006](adr/0006-two-providers-for-pi-and-omp.md).
