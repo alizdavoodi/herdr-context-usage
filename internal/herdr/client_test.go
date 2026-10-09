@@ -144,8 +144,8 @@ func TestProcessInfo(t *testing.T) {
 	// herdr 0.9.3 on Linux reports no argv0 for any foreground process: the
 	// field is absent from the wire (skip_serializing_if = Option::is_none)
 	// while argv, name and cmdline are present. This is the process-info
-	// capture of a live opencode2 pane on that host, the case classification
-	// falls back to argv for.
+	// capture of a live opencode2 pane on that host: without argv0 filled from
+	// argv[0], every opencode pane on Linux would classify as v1 and blank.
 	t.Run("herdr on linux omits argv0 entirely", func(t *testing.T) {
 		t.Parallel()
 		runner := &fakeRunner{responses: [][]byte{[]byte(`{"result":{"process_info":{"foreground_process_group_id":2158461,"foreground_processes":[{"pid":2158461,"name":".opencode2-wrap","argv":["/nix/store/mf1zmrwz1dp6zv0v9sqp79cwfjbw97xh-opencode2-2.0.24/bin/opencode2"],"cmdline":"/nix/store/mf1zmrwz1dp6zv0v9sqp79cwfjbw97xh-opencode2-2.0.24/bin/opencode2","cwd":"/home/user/work"}]}}}`)}}
@@ -157,11 +157,40 @@ func TestProcessInfo(t *testing.T) {
 		if len(processes) != 1 {
 			t.Fatalf("ProcessInfo() = %#v, want one process", processes)
 		}
-		if processes[0].Argv0 != "" {
-			t.Fatalf("argv0 = %q, want empty: the field was absent on the wire", processes[0].Argv0)
+		const argv0 = "/nix/store/mf1zmrwz1dp6zv0v9sqp79cwfjbw97xh-opencode2-2.0.24/bin/opencode2"
+		if processes[0].Argv0 != argv0 {
+			t.Fatalf("argv0 = %q, want argv[0] %q", processes[0].Argv0, argv0)
 		}
-		if len(processes[0].Argv) != 1 || processes[0].Argv[0] != "/nix/store/mf1zmrwz1dp6zv0v9sqp79cwfjbw97xh-opencode2-2.0.24/bin/opencode2" {
-			t.Fatalf("argv = %#v, want the /proc cmdline argv", processes[0].Argv)
+		if len(processes[0].Argv) != 1 || processes[0].Argv[0] != argv0 {
+			t.Fatalf("argv = %#v, want the /proc cmdline argv unchanged", processes[0].Argv)
+		}
+	})
+
+	// The fill is only for an absent field, so it can never override herdr's
+	// explicit name with a different one.
+	t.Run("reported argv0 wins over argv", func(t *testing.T) {
+		t.Parallel()
+		runner := &fakeRunner{responses: [][]byte{[]byte(`{"result":{"process_info":{"foreground_processes":[{"pid":42,"argv0":"opencode","argv":["/nix/store/x-opencode2/bin/opencode2"]}]}}}`)}}
+		client := NewClient("herdr", runner)
+		processes, err := client.ProcessInfo(context.Background(), "w1:p1")
+		if err != nil {
+			t.Fatalf("ProcessInfo() error = %v", err)
+		}
+		if len(processes) != 1 || processes[0].Argv0 != "opencode" {
+			t.Fatalf("ProcessInfo() = %#v, want argv0 opencode", processes)
+		}
+	})
+
+	t.Run("neither argv0 nor argv", func(t *testing.T) {
+		t.Parallel()
+		runner := &fakeRunner{responses: [][]byte{[]byte(`{"result":{"process_info":{"foreground_processes":[{"pid":42}]}}}`)}}
+		client := NewClient("herdr", runner)
+		processes, err := client.ProcessInfo(context.Background(), "w1:p1")
+		if err != nil {
+			t.Fatalf("ProcessInfo() error = %v", err)
+		}
+		if len(processes) != 1 || processes[0].Argv0 != "" {
+			t.Fatalf("ProcessInfo() = %#v, want one process with empty argv0", processes)
 		}
 	})
 }

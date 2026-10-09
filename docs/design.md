@@ -295,10 +295,10 @@ observed empty list selects `opencode`.
 builds its `ForegroundProcess` with the field unset while populating `argv`
 from `/proc/<pid>/cmdline`, so on Linux the field is absent from the wire for
 every process — observed as `argv0: null` for every pane, zsh included. macOS
-fills both from the same `KERN_PROCARGS2` buffer. The basename compared is
-therefore argv[0] under either name: herdr's `argv0` field first, and the
-first element of `argv` when that field is absent. The same fallback keys
-claude's process-registry tier, which reads the basename too. Without it every
+fills both from the same `KERN_PROCARGS2` buffer. The herdr client therefore
+fills `argv0` from the first element of `argv` at decode when the field is
+absent, and keeps a reported `argv0`. Classification and claude's
+process-registry tier then read one name. Without that fill every
 opencode pane on Linux classifies as v1 and blanks, because the v1 provider
 cannot resolve a v2 session id in the v1 store.
 
