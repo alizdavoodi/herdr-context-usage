@@ -135,19 +135,25 @@ func Refresh(ctx context.Context, client Herdr, eventPaneID string, log io.Write
 				<-slots
 				wg.Done()
 			}()
-			processes, processErr := client.ProcessInfo(ctx, agent.PaneID)
-			if processErr != nil {
-				// The process list matters in two ways: opencode classification
-				// cannot happen without it, and every provider that uses
-				// process IDs as a resolution tier degrades to its other
-				// tiers. Either way the failure is round-local, so it becomes
-				// a diagnostic rather than an error that kills the run.
-				appendErr(writeMaintenanceDiagnostic(log, MaintenanceDiagnostic{Operation: "process_info", PaneID: agent.PaneID, Error: processErr.Error()}))
-				if provider.NeedsProcessList(agent.Agent) {
-					return
+			// Only the labels ReadsProcesses names pay for herdr's process-info
+			// subprocess; every other pane is classified and measured without it.
+			// A failed read is round-local, so it becomes a diagnostic rather
+			// than an error that kills the run, and FromAgent decides whether
+			// the pane can still be classified: a provider using process ids as
+			// a tier degrades to its others, but opencode cannot tell its
+			// versions apart and waits a round.
+			var processes []provider.Process
+			var processErr error
+			if provider.ReadsProcesses(agent.Agent) {
+				processes, processErr = client.ProcessInfo(ctx, agent.PaneID)
+				if processErr != nil {
+					appendErr(writeMaintenanceDiagnostic(log, MaintenanceDiagnostic{Operation: "process_info", PaneID: agent.PaneID, Error: processErr.Error()}))
 				}
 			}
-			kind := provider.FromAgent(agent.Agent, processes)
+			kind, ok := provider.FromAgent(agent.Agent, processes, processErr)
+			if !ok {
+				return
+			}
 			// The providers map is the single authority on which kinds can be measured.
 			// Gating on it rather than on a parallel predicate means a kind nobody
 			// registered blanks its row instead of silently keeping a previous
