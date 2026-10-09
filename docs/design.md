@@ -289,7 +289,10 @@ compare every foreground process's `argv0` basename case-insensitively after
 stripping a leading dot, and choose `opencode2` if any such process is present;
 process-list order is not meaningful. An unavailable process list leaves the
 provider undetermined rather than defaulting to `opencode`; a successfully
-observed empty list selects `opencode`.
+observed empty list selects `opencode`. The process list costs a herdr
+subprocess per pane, so it is read only for the labels whose classification or
+provider uses it: `opencode` to choose a version, `claude` for its
+process-registry tier, and `opencode2` to attribute a mini-interface failure.
 
 `argv0` is not reported on every platform. herdr 0.9.3's Linux process detection
 builds its `ForegroundProcess` with the field unset while populating `argv`

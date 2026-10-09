@@ -37,47 +37,67 @@ type Process struct {
 }
 
 // FromAgent chooses a pane's kind from herdr's agent label. processes is read
-// only for opencode, whose label hosts both versions; NeedsProcessList says why
-// a list that could not be read must never reach here.
-func FromAgent(agent string, processes []Process) Kind {
-	switch strings.ToLower(strings.TrimSpace(agent)) {
+// only for opencode, whose label hosts both versions. ok is false when that
+// choice cannot be made this round, which happens only for opencode whose
+// list could not be read: an observed empty list is evidence of v1, but a
+// failed read is evidence of nothing, and a guess would either report the
+// wrong store or blank a live value, so the caller keeps the pane's value.
+// Every other label ignores processErr.
+func FromAgent(agent string, processes []Process, processErr error) (Kind, bool) {
+	switch normalizeAgent(agent) {
 	case "claude":
-		return Claude
+		return Claude, true
 	case "codex":
-		return Codex
+		return Codex, true
 	// herdr labels pi and omp panes on their own, unlike the opencode pair whose
 	// version only the foreground process reveals, so no process inspection
 	// belongs here.
 	case "pi":
-		return Pi
+		return Pi, true
 	case "omp":
-		return Omp
+		return Omp, true
 	// Hermes runs as python3.12, so its process names nothing; herdr's label is
 	// the only signal, and Process.Kind deliberately does not learn it.
 	case "hermes":
-		return Hermes
+		return Hermes, true
 	case "opencode2":
-		return OpenCode2
+		return OpenCode2, true
 	case "opencode":
+		if processErr != nil {
+			return None, false
+		}
 		for _, process := range processes {
 			if process.Kind() == OpenCode2 {
-				return OpenCode2
+				return OpenCode2, true
 			}
 		}
-		return OpenCode
+		return OpenCode, true
 	}
-	return None
+	return None, true
 }
 
-// NeedsProcessList reports whether classifying an agent depends on its pane's
-// process list. Only opencode does: the one label hosts both v1 and v2, and
-// the process list is the only way to tell them apart. An observed empty list
-// is evidence of v1, and a guess would either report nonsense or blank a live
-// value, so an opencode pane whose list could not be read must not be
-// classified at all: the caller skips it for the round and keeps its displayed
-// value.
-func NeedsProcessList(agent string) bool {
-	return strings.ToLower(strings.TrimSpace(agent)) == "opencode"
+// ReadsProcesses reports whether anything downstream of an agent label reads
+// its pane's process list, so the caller pays herdr's process-info subprocess
+// only where the answer is used:
+//   - opencode, because the one label hosts both v1 and v2 and the foreground
+//     process is the only way FromAgent can tell them apart.
+//   - claude, because its process ids key the registry resolution tier.
+//   - opencode2, because a mini-interface failure is attributed from the
+//     process list.
+//
+// pi, omp and hermes are labelled by herdr on their own and none of their
+// providers looks at processes, so they never fetch. A new provider that reads
+// Pane.Processes must add its label here, or it silently receives nil.
+func ReadsProcesses(agent string) bool {
+	switch normalizeAgent(agent) {
+	case "claude", "opencode", "opencode2":
+		return true
+	}
+	return false
+}
+
+func normalizeAgent(agent string) string {
+	return strings.ToLower(strings.TrimSpace(agent))
 }
 
 // Kind reports which agent a single process is, by the same basename rule
