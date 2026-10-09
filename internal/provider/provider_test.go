@@ -58,8 +58,9 @@ func TestFromAgent(t *testing.T) {
 	}
 }
 
-// pi, omp and hermes are labelled by herdr on their own and none of their
-// providers reads the list, so their panes never pay for the fetch.
+// codex, pi, omp and hermes are labelled by herdr on their own and none of
+// their providers reads the list, so their panes never pay for the fetch;
+// neither does an unrecognised label, which no provider measures.
 func TestReadsProcesses(t *testing.T) {
 	t.Parallel()
 
