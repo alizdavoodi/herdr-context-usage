@@ -22,11 +22,21 @@ func (p claudeProvider) Measure(_ context.Context, pane provider.Pane) (provider
 		ClaudeHome:    p.home,
 		AgentSession:  pane.AgentSession,
 		ForegroundCWD: pane.ForegroundCWD,
-		ProcessIDs:    provider.ProcessIDs(pane.Processes, provider.Claude),
+		ProcessIDs:    processIDs(pane.Processes),
 	})
 	if err != nil {
 		return provider.Reading{}, err
 	}
 	value, err := readOccupancy(resolved.Path)
 	return provider.Reading{Mode: resolved.Mode, Occupancy: value}, err
+}
+
+func processIDs(processes []provider.Process) []int {
+	ids := make([]int, 0, 1)
+	for _, process := range processes {
+		if process.Kind() == provider.Claude {
+			ids = append(ids, process.PID)
+		}
+	}
+	return ids
 }

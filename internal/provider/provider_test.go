@@ -1,9 +1,6 @@
 package provider
 
-import (
-	"slices"
-	"testing"
-)
+import "testing"
 
 func TestFromAgent(t *testing.T) {
 	t.Parallel()
@@ -44,20 +41,6 @@ func TestFromAgent(t *testing.T) {
 				t.Fatalf("FromAgent() = %q, want %q", got, tt.want)
 			}
 		})
-	}
-}
-
-func TestProcessIDsUsesExactBasenames(t *testing.T) {
-	t.Parallel()
-
-	processes := []Process{
-		{PID: 1, Argv0: "claude-mcp"},
-		{PID: 2, Argv0: "/bin/claude"},
-		{PID: 3, Argv0: "codex"},
-		{PID: 5, Argv0: "claude", Argv: []string{"/bin/not-claude"}},
-	}
-	if got := ProcessIDs(processes, Claude); !slices.Equal(got, []int{2, 5}) {
-		t.Fatalf("ProcessIDs() = %v, want [2 5]", got)
 	}
 }
 

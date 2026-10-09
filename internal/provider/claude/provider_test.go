@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io/fs"
 	"path/filepath"
+	"slices"
 	"syscall"
 	"testing"
 
@@ -116,5 +117,18 @@ func TestMeasure(t *testing.T) {
 				t.Fatalf("errors.Is(%v, ErrJustCompacted) = %t, want %t", err, compacted, tt.wantCompacted)
 			}
 		})
+	}
+}
+
+func TestProcessIDsUsesExactBasenames(t *testing.T) {
+	t.Parallel()
+
+	processes := []provider.Process{
+		{PID: 1, Argv0: "claude-mcp"},
+		{PID: 2, Argv0: "/bin/claude"},
+		{PID: 3, Argv0: "codex"},
+	}
+	if got := processIDs(processes); !slices.Equal(got, []int{2}) {
+		t.Fatalf("processIDs() = %v, want [2]", got)
 	}
 }

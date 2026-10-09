@@ -80,16 +80,6 @@ func NeedsProcessList(agent string) bool {
 	return strings.ToLower(strings.TrimSpace(agent)) == "opencode"
 }
 
-func ProcessIDs(processes []Process, kind Kind) []int {
-	ids := make([]int, 0, 1)
-	for _, process := range processes {
-		if process.Kind() == kind {
-			ids = append(ids, process.PID)
-		}
-	}
-	return ids
-}
-
 // Kind reports which agent a single process is, by the same basename rule
 // dispatch uses to choose a provider for the pane. Exported so a provider can
 // find its own entry in a pane's process list without restating that rule. It
