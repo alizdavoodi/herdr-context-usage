@@ -7,7 +7,7 @@ import (
 )
 
 // ResolutionMode names which method identified the agent session for a pane
-// (CONTEXT.md). One set of names for every provider, so a measurement record
+// (GLOSSARY.md). One set of names for every provider, so a measurement record
 // reads the same whichever package produced it.
 type ResolutionMode string
 

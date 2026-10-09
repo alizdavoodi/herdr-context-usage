@@ -533,7 +533,7 @@ This plugin reports one thing: context occupancy. It does not report or manage
 Session spend is cumulative billing across superseded turns, while context
 occupancy is the current pressure on one agent session. Plan quota is measured
 against a subscription time window. They are different measurements; see the
-[glossary](CONTEXT.md).
+[glossary](GLOSSARY.md).
 
 ## Design decisions
 
