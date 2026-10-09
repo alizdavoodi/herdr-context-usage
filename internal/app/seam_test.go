@@ -38,8 +38,8 @@ func TestEveryRegisteredKindIsReachableFromItsAgentLabel(t *testing.T) {
 			if kind == provider.None {
 				t.Fatal("a provider is registered under provider.None, the kind every unrecognised agent label dispatches to")
 			}
-			got, _ := provider.FromAgent(string(kind), nil, nil)
-			if got != kind {
+			got, ok := provider.FromAgent(string(kind), nil, nil)
+			if !ok || got != kind {
 				t.Fatalf("FromAgent(%q) = %q; the provider registered for %q is unreachable", string(kind), got, kind)
 			}
 		})

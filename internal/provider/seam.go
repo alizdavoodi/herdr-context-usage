@@ -26,7 +26,7 @@ type Pane struct {
 	TerminalTitle string
 	AgentSession  *AgentSession
 	// Processes is the pane's foreground process list. It is empty when herdr
-	// could not read it this round, and also for a kind ReadsProcesses does
+	// could not read it this round, and also for a label ReadsProcesses does
 	// not name, whose list is never fetched; a provider using it as a
 	// resolution tier then degrades to its other tiers. A failed read and an
 	// observed empty list look the same here on purpose: only choosing between

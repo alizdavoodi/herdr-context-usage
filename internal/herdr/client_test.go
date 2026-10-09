@@ -181,9 +181,12 @@ func TestProcessInfo(t *testing.T) {
 		}
 	})
 
+	// The wire's name is herdr's comm-style label (".opencode2-wrap" for a
+	// wrapped binary), not argv[0], so it must never stand in for argv0 even
+	// when nothing else names the process.
 	t.Run("neither argv0 nor argv", func(t *testing.T) {
 		t.Parallel()
-		runner := &fakeRunner{responses: [][]byte{[]byte(`{"result":{"process_info":{"foreground_processes":[{"pid":42}]}}}`)}}
+		runner := &fakeRunner{responses: [][]byte{[]byte(`{"result":{"process_info":{"foreground_processes":[{"pid":42,"name":".opencode2-wrap"}]}}}`)}}
 		client := NewClient("herdr", runner)
 		processes, err := client.ProcessInfo(context.Background(), "w1:p1")
 		if err != nil {

@@ -321,6 +321,29 @@ func TestRefreshDoesNotClaimOpenCode2AsV1(t *testing.T) {
 	}
 }
 
+// An observed empty process list is evidence of v1, so a round must measure
+// such a pane with the v1 provider rather than skip it as unreadable; skipping
+// would blank every v1 pane.
+func TestRefreshMeasuresOpenCodeV1FromAnObservedEmptyProcessList(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeHerdr{
+		agents:    []herdr.Agent{{Agent: "opencode", PaneID: "w1:p1"}},
+		processes: map[string][]provider.Process{"w1:p1": {}},
+	}
+	v1, v2 := measuring(), measuring()
+	providers := map[provider.Kind]provider.Provider{provider.OpenCode: v1, provider.OpenCode2: v2}
+	if err := Refresh(context.Background(), fake, "", nil, providers); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+	if len(v1.measured()) != 1 || len(v2.measured()) != 0 {
+		t.Fatalf("measured v1 %d times, v2 %d times; want the pane measured by v1 only", len(v1.measured()), len(v2.measured()))
+	}
+	if len(fake.processCalls) != 1 {
+		t.Fatalf("ProcessInfo called for %v, want once", fake.processCalls)
+	}
+}
+
 // A round cut short by its deadline must not report success just because the
 // panes that did measure came back clean.
 func TestRefreshReportsDeadlineCancelation(t *testing.T) {

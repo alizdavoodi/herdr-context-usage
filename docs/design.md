@@ -291,8 +291,11 @@ process-list order is not meaningful. An unavailable process list leaves the
 provider undetermined rather than defaulting to `opencode`; a successfully
 observed empty list selects `opencode`. The process list costs a herdr
 subprocess per pane, so it is read only for the labels whose classification or
-provider uses it: `opencode` to choose a version, `claude` for its
-process-registry tier, and `opencode2` to attribute a mini-interface failure.
+provider uses it. `provider.ReadsProcesses` owns that label set; today it is
+`opencode` to choose a version, `claude` for its process-registry tier, and
+`opencode2` to attribute a mini-interface failure. A provider that starts
+reading `Pane.Processes` must add its label there, or it receives an empty
+list.
 
 `argv0` is not reported on every platform. herdr 0.9.3's Linux process detection
 builds its `ForegroundProcess` with the field unset while populating `argv`
@@ -411,7 +414,7 @@ surveyed ships one, and herdr's own agent skill says nothing about tokens.
    field reads `opencode`, confirming both the title channel and the version
    discriminator. The argv0 verification was macOS-only: on Linux, herdr 0.9.3
    reports no `argv0` for any process, and classification there rests on the
-   argv fallback described above.
+   herdr client filling `argv0` from `argv[0]` at decode, described above.
 6. ~~Unverified: whether herdr clears source-scoped tokens when an agent is
    released.~~ **Verified against Herdr 0.8.0:** a temporary pane was given a
    synthetic `claude` agent, one ordinary metadata token, and one token scoped

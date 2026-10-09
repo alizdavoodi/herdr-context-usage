@@ -88,13 +88,12 @@ func TestMeasure(t *testing.T) {
 			wantCompacted:  true,
 		},
 		{
-			// The pane an agent exited from: a codex process still listed, no
-			// reported session, and no live rollout under the pane's directory.
-			// The value displayed belongs to a session that is gone.
+			// The pane an agent exited from: no reported session, and no live
+			// rollout under the pane's directory. The value displayed belongs
+			// to a session that is gone.
 			name: "clears a pane with no reported session and no live rollout",
 			pane: provider.Pane{
 				ForegroundCWD: "/work",
-				Processes:     []provider.Process{{PID: 43, Argv0: "codex"}},
 			},
 			wantErr:        ErrNoSession,
 			wantRoot:       provider.ErrNoSession,

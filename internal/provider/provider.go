@@ -85,8 +85,8 @@ func FromAgent(agent string, processes []Process, processErr error) (Kind, bool)
 //   - opencode2, because a mini-interface failure is attributed from the
 //     process list.
 //
-// pi, omp and hermes are labelled by herdr on their own and none of their
-// providers looks at processes, so they never fetch. A new provider that reads
+// codex, pi, omp, hermes and unrecognised labels never fetch: herdr's label
+// alone names their kind, and none of their providers looks at processes. A new provider that reads
 // Pane.Processes must add its label here, or it silently receives nil.
 func ReadsProcesses(agent string) bool {
 	switch normalizeAgent(agent) {
