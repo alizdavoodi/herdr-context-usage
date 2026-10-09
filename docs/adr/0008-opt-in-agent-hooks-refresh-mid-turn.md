@@ -25,8 +25,9 @@ no agent's configuration. What changes is that a hook is now documented, not
 forbidden. A snippet the user pastes is owned by the user, and a format change
 breaks one accelerator rather than the plugin.
 
-[ADR-0005](0005-no-plugin-cli.md) is untouched. The action is a trigger, not a
-query: `herdr plugin action invoke` returns the started command's log record,
+[ADR-0005](0005-no-plugin-cli.md) rested on the same premise when it called
+the staleness window normally empty, and is corrected on that point only. Its
+decision is untouched. The action is a trigger, not a query: `herdr plugin action invoke` returns the started command's log record,
 not its output, which rules it out as a query interface but suits a trigger
 that only needs to start the run. Nothing goes on `$PATH`, and a hook needs no
 plugin root, because Herdr resolves the action by plugin id.

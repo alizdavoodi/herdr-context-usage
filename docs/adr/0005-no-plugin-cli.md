@@ -22,9 +22,13 @@ The manifest therefore invokes its binary as `./herdr-context-usage`.
 
 Queries work even when the plugin is disabled or absent, because they read
 herdr's state rather than ours. They are also stale by definition: a token is
-only as fresh as the last event that wrote it. Given occupancy changes only at
-turn boundaries, and events fire at turn boundaries, the staleness window is
-normally empty.
+only as fresh as the last event that wrote it. This ADR first held that the
+window is normally empty, because occupancy changes only at turn boundaries
+and events fire there. Occupancy changes at every API call, so a long turn
+holds the window open, and
+[ADR-0008](0008-opt-in-agent-hooks-refresh-mid-turn.md) adds an opt-in hook
+that narrows it. The decision does not depend on the cadence: a query reads
+whatever the last write left, at either one.
 
 A plugin cannot add a `herdr` subcommand, and `herdr plugin action invoke`
 returns the started-command log record rather than the command's stdout, so

@@ -1,5 +1,11 @@
 # Read transcripts on herdr events rather than installing agent-side hooks
 
+Amended by [ADR-0008](0008-opt-in-agent-hooks-refresh-mid-turn.md). This
+decision took a turn boundary to be the only moment occupancy changes. It
+changes at every API call, so a hook the user installs may now trigger a
+refresh between turns. Host events remain the architecture, and the plugin
+still writes into no agent's configuration.
+
 The obvious way to learn that a turn ended is to have the agent tell you: a
 Claude Code `Stop` hook, codex hooks in `~/.codex/config.toml`, an opencode
 plugin. A sibling project does exactly this, because tmux cannot signal a turn
