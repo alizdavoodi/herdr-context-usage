@@ -128,8 +128,14 @@ platforms can last indefinitely: those report a session only at start and at
 Herdr 0.9.1; Hermes is not pinned to a version.
 
 Tokens are only as fresh as the last event that wrote them. Occupancy changes
-at turn boundaries, and Herdr events fire at turn boundaries, so the normal
-staleness window is empty. A blank or absent token means unknown, never zero.
+at call boundaries, each completed model API call inside a turn, while Herdr's
+own events fire at turn boundaries. Between turns the staleness window is
+empty. Mid-turn, a pane whose user installed the optional refresh hook updates
+at each tool or model call; one without it can lag until the turn ends. A
+mid-turn value is the occupancy of the last refresh that succeeded. Within one
+session, with no compaction since, it is a lower bound on the call in flight;
+across a compaction or a session change it is not, until a refresh observes
+that boundary. A blank or absent token means unknown, never zero.
 The plugin clears tokens when a semantic state proves that the previous value
 no longer describes the current session, such as no resolvable session or a
 just-compacted session. A transient I/O failure can preserve the last value;

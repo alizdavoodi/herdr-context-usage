@@ -256,6 +256,269 @@ pane has no token values; an absent `ctx_raw` is unknown, never zero. To inspect
 a pane returned by `herdr agent list`, use `herdr pane get <pane_id>` and read
 its `.result.pane.tokens` object.
 
+## Refresh mid-turn
+
+Herdr's events fire at turn boundaries, but a long agentic turn is a run of
+model calls, each with a larger prompt than the last. Between turn boundaries
+the row can show the previous turn's size until something else in Herdr
+happens to fire, and a turn that is filling the window fast is when the number
+matters most.
+
+The plugin declares a Herdr action, `refresh`, that runs the same refresh an
+event does. Any agent hook can invoke it:
+
+```bash
+herdr plugin action invoke refresh --plugin herdr-context-usage
+```
+
+This is optional, and the plugin installs none of it: every agent has its own
+hook format, and the plugin writes into no agent's configuration
+([ADR-0008](docs/adr/0008-opt-in-agent-hooks-refresh-mid-turn.md)). Paste the
+snippet for each agent you want refreshed per call. Without one, the row is
+still correct at every turn boundary.
+
+Each snippet does four things, and none of them is decoration:
+
+- It returns at once unless `HERDR_ENV` is `1`, so the same agent config is
+  harmless outside Herdr.
+- It runs detached, so a refresh never delays the agent's next call.
+- It skips sub-agents. The row reports the main thread only, and a sub-agent
+  firing the hook would multiply runs for no new information.
+- It invokes the full refresh rather than one pane's: the context Herdr gives
+  an action names the focused pane, which need not be the pane whose hook ran.
+
+A value read mid-turn is the occupancy of the last refresh that succeeded,
+which can lag the newest call. Within one session, with no compaction since,
+it is a lower bound on the call in flight; across a compaction or a session
+change it is not, until a refresh observes that boundary. Concurrent
+invocations are tolerated. Each write carries its refresh round's sequence number and
+Herdr drops older ones, and ten simultaneous invocations ran without hitting a
+plugin command limit on Herdr 0.9.3.
+
+### Claude Code
+
+Verified against Claude Code 2.1.293. Merge into the `hooks` object of
+`~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      { "hooks": [ { "type": "command", "async": true,
+        "command": "[ \"${HERDR_ENV:-}\" = 1 ] || exit 0; jq -e 'has(\"agent_id\")' >/dev/null 2>&1 && exit 0; herdr plugin action invoke refresh --plugin herdr-context-usage >/dev/null 2>&1 &" } ] }
+    ],
+    "PostCompact": [
+      { "hooks": [ { "type": "command", "async": true,
+        "command": "[ \"${HERDR_ENV:-}\" = 1 ] || exit 0; jq -e 'has(\"agent_id\")' >/dev/null 2>&1 && exit 0; herdr plugin action invoke refresh --plugin herdr-context-usage >/dev/null 2>&1 &" } ] }
+    ]
+  }
+}
+```
+
+Claude writes each call's usage before the tool runs, so `PostToolUse` reads
+the call that issued the tool. `PostCompact` clears the pre-compaction number
+at once; the row fills in again when a later call records usage and a refresh
+reads it. The hook's stdin JSON carries a top-level `agent_id` only inside a
+sub-agent, and the guard checks only that key: a tool whose input or result
+carries an `agent_id` field of its own must not silence the hook, which a plain
+text match would. A missing `jq` makes the guard fail open, so sub-agents then
+refresh too, which costs runs and changes nothing.
+
+### codex
+
+Verified against codex-cli 0.161.0. Add to `~/.codex/hooks.json`:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      { "hooks": [ { "type": "command", "async": true,
+        "command": "[ \"${HERDR_ENV:-}\" = 1 ] || exit 0; jq -e 'has(\"agent_id\")' >/dev/null 2>&1 && exit 0; herdr plugin action invoke refresh --plugin herdr-context-usage >/dev/null 2>&1 &" } ] }
+    ],
+    "PostCompact": [
+      { "hooks": [ { "type": "command", "async": true,
+        "command": "[ \"${HERDR_ENV:-}\" = 1 ] || exit 0; jq -e 'has(\"agent_id\")' >/dev/null 2>&1 && exit 0; herdr plugin action invoke refresh --plugin herdr-context-usage >/dev/null 2>&1 &" } ] }
+    ]
+  }
+}
+```
+
+codex runs a user hook only after it is trusted. Approve it at the startup
+review or through `/hooks`, and again after any edit, because trust is keyed on
+the hook's content. `PostToolUse` alone is enough: the plugin reads codex's
+`token_usage_record`, which is written before the tool runs, so no
+`PreToolUse` pairing is needed to catch up a step.
+
+### hermes
+
+Verified against Hermes Agent 0.21.5. Hermes runs a hook command without a
+shell, so the guard lives in a script. Save it as
+`~/.hermes/agent-hooks/herdr-context-refresh.sh` and make it executable:
+
+```sh
+#!/bin/sh
+[ "${HERDR_ENV:-}" = 1 ] || exit 0
+# Delegated sub-agents run with platform "subagent"; stdin is the hook JSON.
+grep -q '"platform": "subagent"' && exit 0
+herdr plugin action invoke refresh --plugin herdr-context-usage </dev/null >/dev/null 2>&1 &
+```
+
+Then add to `~/.hermes/config.yaml`:
+
+```yaml
+hooks:
+  post_api_request:
+    - command: "~/.hermes/agent-hooks/herdr-context-refresh.sh"
+      timeout: 5
+```
+
+`post_api_request` fires after Hermes has written the call's usage anchor, so
+this refreshes per model call, not per tool. Hermes waits for the hook's output
+to close, which is why the backgrounded command redirects all three streams.
+The first run asks for consent at a terminal. A session without one, such as
+the gateway or ACP, skips the hook silently unless it is accepted with
+`hooks_auto_accept: true` or `HERMES_ACCEPT_HOOKS=1`. A background-review fork
+cannot be told apart from the main loop, so it triggers a refresh too; that
+costs a run and changes nothing.
+
+### opencode (v1)
+
+Verified against opencode 1.18.35 and `@opencode-ai/plugin` 1.18.1. Save as
+`~/.config/opencode/plugins/herdr-context-refresh.js`:
+
+```js
+import { spawn } from "node:child_process";
+
+const subagentSessions = new Set();
+
+export const HerdrContextRefresh = async () => {
+  if (process.env.HERDR_ENV !== "1") return {};
+  return {
+    event: async ({ event }) => {
+      const info = event.properties?.info;
+      if (event.type === "session.created" || event.type === "session.updated") {
+        if (info?.parentID) subagentSessions.add(info.id);
+        return;
+      }
+      // message.updated fires repeatedly while a message streams; only a
+      // completed assistant message carries the figure the plugin reads.
+      if (event.type !== "message.updated" || info?.role !== "assistant") return;
+      if (!info.time?.completed || subagentSessions.has(info.sessionID)) return;
+      spawn("herdr", ["plugin", "action", "invoke", "refresh", "--plugin", "herdr-context-usage"],
+        { detached: true, stdio: "ignore" })
+        .on("error", () => {})
+        .unref();
+    },
+  };
+};
+```
+
+A sub-agent is a session with a `parentID`, which only the session events
+carry; the message's own `parentID` names a message, not a session.
+
+### opencode2
+
+Verified against opencode 2.0.24. Its TUI loads a plugin from a directory
+whose `tui.js` is the entrypoint, and it discovers every such directory under
+`~/.config/opencode/plugins/` and the project's `.opencode/plugins/` on its
+own. Save as `~/.config/opencode/plugins/herdr-context-refresh/tui.js`:
+
+```js
+import { spawn } from "node:child_process";
+
+export default {
+  id: "herdr.context.refresh",
+  setup(api) {
+    if (process.env.HERDR_ENV !== "1") return;
+    const refresh = (event) => {
+      // A sub-agent runs in a child session, and a child session carries a parentID.
+      if (api.data.session.get(event.data.sessionID)?.parentID) return;
+      spawn("herdr", ["plugin", "action", "invoke", "refresh", "--plugin", "herdr-context-usage"],
+        { detached: true, stdio: "ignore" })
+        .on("error", () => {})
+        .unref();
+    };
+    // One model call and its tools; the assistant row is complete by now.
+    const offStep = api.data.on("session.step.ended", refresh);
+    // A compaction records no step; this clears the old number at once.
+    const offCompact = api.data.on("session.compaction.ended", refresh);
+    return () => { offStep(); offCompact(); };
+  },
+};
+```
+
+No configuration entry is needed. A directory kept elsewhere can be listed in
+the `plugins` array of `~/.config/opencode/cli.json` instead; a bare file path
+there is skipped without a message.
+
+The plugin runs inside the TUI, the pane's foreground process, so it inherits
+`HERDR_ENV`. `session.step.ended` is one model call and its tools, and the
+assistant row it names is complete in `opencode2.db` before the event is
+delivered: read from inside the handler, the row carried `time.completed` and
+its tokens on every step measured. A compaction records no step, so
+`session.compaction.ended` triggers too; that run finds the session
+just-compacted and clears the row, which fills in again at the next step. The
+row-before-event ordering was measured with the TUI on a private server
+(`opencode2 --standalone`), and the per-step refreshes again with the TUI
+attached to the shared background service.
+
+### pi
+
+Verified against pi source at `earendil-works/pi@ce950d7`. Save as
+`~/.pi/agent/extensions/herdr-context-refresh.ts`:
+
+```ts
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { spawn } from "node:child_process";
+
+export default function (pi: ExtensionAPI) {
+  if (process.env.HERDR_ENV !== "1") return;
+  pi.on("turn_end", (_event, ctx) => {
+    // Sub-agents run as headless `pi --mode json` children; only the TUI owns the pane.
+    if (ctx.mode !== "tui") return;
+    spawn("herdr", ["plugin", "action", "invoke", "refresh", "--plugin", "herdr-context-usage"],
+      { detached: true, stdio: "ignore" })
+      .on("error", () => {})
+      .unref();
+  });
+}
+```
+
+pi's `turn_end` is one model call plus its tools, and it fires only after that
+call's message is on disk. Handlers are awaited, so the spawn is not.
+
+### omp
+
+Verified against omp source at `can1357/oh-my-pi@c50daa5`. Save as
+`~/.omp/agent/extensions/herdr-context-refresh.ts`:
+
+```ts
+import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
+import { spawn } from "node:child_process";
+
+// A nested `omp` started from a parent session's shell inherits OMPCODE=1.
+const nested = process.env.OMPCODE === "1";
+
+export default function (pi: ExtensionAPI) {
+  if (process.env.HERDR_ENV !== "1" || nested) return;
+  pi.on("turn_end", (_event, ctx) => {
+    // In-process sub-agents and the advisor report a kind other than "main".
+    if (ctx.agent.kind !== "main") return;
+    spawn("herdr", ["plugin", "action", "invoke", "refresh", "--plugin", "herdr-context-usage"],
+      { detached: true, stdio: "ignore" })
+      .on("error", () => {})
+      .unref();
+  });
+}
+```
+
+omp queues the message write before `turn_end` without awaiting it, so the
+ordering rests on that write being synchronous and finishing first, not on a
+guarantee.
+
+In both extensions the empty `error` handler is load-bearing: without it, a
+missing `herdr` binary raises an unhandled error that can take the agent down.
+
 ## Deliberate boundaries
 
 This plugin reports one thing: context occupancy. It does not report or manage
@@ -284,3 +547,4 @@ The implementation follows the agreed design in
 - [ADR-0005: no plugin CLI](docs/adr/0005-no-plugin-cli.md)
 - [ADR-0006: two providers for pi and omp](docs/adr/0006-two-providers-for-pi-and-omp.md)
 - [ADR-0007: hermes reads the usage anchor](docs/adr/0007-hermes-reads-the-usage-anchor.md)
+- [ADR-0008: opt-in agent hooks refresh mid-turn](docs/adr/0008-opt-in-agent-hooks-refresh-mid-turn.md)

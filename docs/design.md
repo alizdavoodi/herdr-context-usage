@@ -76,8 +76,8 @@ from its own read commands, the plugin writes and herdr answers. See
 
 ### Trigger
 
-`pane.agent_status_changed` is a turn boundary, which is exactly when occupancy
-changes and when the number becomes actionable. `pane.focused` covers the case
+`pane.agent_status_changed` is a turn boundary, which is when occupancy settles
+for the turn and when the number becomes actionable. `pane.focused` covers the case
 where you look at a pane whose agent has been quiet.
 
 `pane.exited` and `pane.closed` cover the other side of that lifecycle. They
@@ -99,6 +99,17 @@ A `[[startup]]` hook re-reads everything once, because herdr documents that
 *"Token metadata is not restored after a server restart."* Without it, a restart
 blanks every row until each agent independently takes another turn — possibly
 hours. This is correctness, not polish.
+
+A turn is a run of model calls, and every store records occupancy per call, so
+between turn boundaries the row lags a growing number. The manifest therefore
+also declares an action, `refresh`, running the same binary, and the README
+offers a snippet per agent that invokes it from a tool-call or model-call hook.
+Those snippets are opt-in and installed by the user; the plugin still writes
+into no agent's configuration, and without them the events above remain the
+whole trigger. The action refreshes every agent rather than the caller's pane,
+because the context Herdr hands an action names the focused pane, which need
+not be the pane whose hook fired. See
+[ADR-0008](adr/0008-opt-in-agent-hooks-refresh-mid-turn.md).
 
 ### Providers
 

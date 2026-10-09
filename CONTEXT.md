@@ -71,9 +71,17 @@ _Avoid_: lookup strategy, match type
 ### Change and reporting
 
 **Turn boundary**:
-The moment an agent finishes responding and returns control. Context occupancy
-is stable between turn boundaries, which is why measurement is anchored to them.
+The moment an agent finishes responding and returns control. Every reading is
+current at a turn boundary, which is why measurement is anchored to them.
 _Avoid_: completion, stop event
+
+**Call boundary**:
+The moment one model API call inside a turn completes. Context occupancy is
+stable between call boundaries, not only between turn boundaries. A value read
+mid-turn is the occupancy of the last call a refresh observed, a lower bound
+on the call in flight within the same session and absent a compaction since.
+A turn boundary is also a call boundary.
+_Avoid_: step, tool boundary
 
 **Compaction**:
 An agent replacing its accumulated transcript with a summary, causing context

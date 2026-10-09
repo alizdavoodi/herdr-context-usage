@@ -26,3 +26,9 @@ command = ["./herdr-context-usage"]
 [[events]]
 on = "pane.closed"
 command = ["./herdr-context-usage"]
+
+[[actions]]
+id = "refresh"
+title = "Herdr Context Occupancy: refresh"
+contexts = ["pane", "workspace", "global"]
+command = ["./herdr-context-usage"]
