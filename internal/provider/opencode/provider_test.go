@@ -135,3 +135,37 @@ func TestMeasureReadsTheResolvedSessionAndClassifiesWhatItFinds(t *testing.T) {
 		})
 	}
 }
+
+// A sub-agent's session carries its own, smaller context, so measuring one a
+// pane reported would show a number for a thread the pane is not displaying.
+// The child holds a completed turn, which is what makes a refusal the only way
+// this can blank rather than report.
+func TestMeasureRefusesAReportedIDThatIsNotARootSession(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct{ name, reported string }{
+		{name: "a sub-agent's session", reported: "child"},
+		{name: "a session the store never held", reported: "missing"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			path := fixtureDatabase(t, func(database *sql.DB) {
+				exec(t, database, `INSERT INTO session (id) VALUES ('target')`)
+				exec(t, database, `INSERT INTO session (id, parent_id) VALUES ('child', 'target')`)
+				exec(t, database, `INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_child', 'child', 1, ?)`, completed)
+			})
+
+			p := New(path, "")
+			got, err := p.Measure(context.Background(), provider.Pane{AgentSession: &provider.AgentSession{Kind: "id", Value: tt.reported}})
+			if !errors.Is(err, opencodeshared.ErrNoRootSession) {
+				t.Fatalf("Measure() error = %v, want ErrNoRootSession", err)
+			}
+			if want := (provider.Reading{Mode: provider.ResolutionAgentSession}); got != want {
+				t.Fatalf("Measure() = %+v, want %+v", got, want)
+			}
+			if !provider.IsSuperseded(err, p.Superseded()) {
+				t.Fatalf("superseded = false, want a refused id to clear the pane")
+			}
+		})
+	}
+}

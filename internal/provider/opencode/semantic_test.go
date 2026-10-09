@@ -22,7 +22,7 @@ func TestSupersededClassifiesEveryAnswer(t *testing.T) {
 		err  error
 		want bool
 	}{
-		{name: "unresolvable session", err: ErrNoSession, want: true},
+		{name: "reported id is not a root session", err: opencodeshared.ErrNoRootSession, want: true},
 		{name: "unresolvable agent home", err: provider.ErrNoHome, want: true},
 		{name: "session has produced no reading", err: ErrNoOccupancy, want: true},
 		{name: "database is not the v1 schema", err: sqlitestore.ErrSchema, want: true},

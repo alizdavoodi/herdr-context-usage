@@ -5,7 +5,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
@@ -51,10 +50,6 @@ func open(ctx context.Context, explicitPath, dataHome string) (*store, error) {
 }
 
 func (s *store) readOccupancy(ctx context.Context, sessionID string) (int64, error) {
-	if err := sessionExists(ctx, s.DB, sessionID); err != nil {
-		return 0, err
-	}
-
 	rows, err := s.QueryContext(ctx, `SELECT data FROM message WHERE session_id = ? ORDER BY time_created DESC, id DESC`, sessionID)
 	if err != nil {
 		return 0, fmt.Errorf("read opencode messages: %w", err)
@@ -86,18 +81,6 @@ func (s *store) readOccupancy(ctx context.Context, sessionID string) (int64, err
 		return 0, fmt.Errorf("iterate opencode messages: %w", err)
 	}
 	return 0, ErrNoOccupancy
-}
-
-func sessionExists(ctx context.Context, database *sql.DB, sessionID string) error {
-	var found int
-	err := database.QueryRowContext(ctx, `SELECT 1 FROM session WHERE id = ?`, sessionID).Scan(&found)
-	if errors.Is(err, sql.ErrNoRows) {
-		return ErrNoSession
-	}
-	if err != nil {
-		return fmt.Errorf("resolve opencode session: %w", err)
-	}
-	return nil
 }
 
 func occupancy(message assistantMessage) (int64, error) {

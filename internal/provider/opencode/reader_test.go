@@ -169,17 +169,6 @@ func TestReadOccupancyRejectsMissingV1SchemaAndSession(t *testing.T) {
 			t.Fatalf("open() error = %v, want sqlitestore.ErrSchema", err)
 		}
 	})
-
-	t.Run("reported session no longer exists", func(t *testing.T) {
-		databasePath := fixtureDatabase(t, func(database *sql.DB) {
-			exec(t, database, `INSERT INTO session (id) VALUES ('ses_other')`)
-		})
-		s := openStore(t, databasePath)
-		defer s.Close()
-		if _, err := s.readOccupancy(context.Background(), "ses_current"); !errors.Is(err, ErrNoSession) {
-			t.Fatalf("readOccupancy() error = %v, want ErrNoSession", err)
-		}
-	})
 }
 
 // The title query and its refusals are pinned in opencodeshared; this pins it

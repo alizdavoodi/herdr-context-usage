@@ -92,7 +92,7 @@ func TestMeasureResolvesThroughTheLadderAndClassifiesWhatItFinds(t *testing.T) {
 			messages: []testMessage{{"answer", "child", "assistant", 1, measured}},
 			pane:     reported("child"),
 			want:     provider.Reading{Mode: provider.ResolutionAgentSession},
-			wantErr:  ErrNoSession,
+			wantErr:  opencodeshared.ErrNoRootSession,
 			clears:   true,
 		},
 		{
@@ -101,7 +101,7 @@ func TestMeasureResolvesThroughTheLadderAndClassifiesWhatItFinds(t *testing.T) {
 			messages: []testMessage{{"answer", "target", "assistant", 1, measured}},
 			pane:     reported("ses_deleted"),
 			want:     provider.Reading{Mode: provider.ResolutionAgentSession},
-			wantErr:  ErrNoSession,
+			wantErr:  opencodeshared.ErrNoRootSession,
 			clears:   true,
 		},
 		{
