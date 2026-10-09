@@ -56,7 +56,7 @@ func paneOf(agent herdr.Agent, processes []provider.Process) provider.Pane {
 // whether a failed one clears the pane. Each provider brings only its own
 // resolution and reading; the error classification, measurement, and reporting
 // are identical across every provider.
-func refreshOne(ctx context.Context, client Herdr, paneID string, kind provider.Kind, pane provider.Pane, log io.Writer, p provider.Provider) error {
+func refreshOne(ctx context.Context, client Herdr, paneID string, kind provider.Kind, pane provider.Pane, log io.Writer, p provider.Provider, seq int64) error {
 	reading, err := p.Measure(ctx, pane)
 	// Every outcome below records the same shape and differs only in the state
 	// and in how much the provider got to observe first, so the record is built
@@ -77,7 +77,7 @@ func refreshOne(ctx context.Context, client Herdr, paneID string, kind provider.
 		measurement.Error = err.Error()
 		measurementErr := writeMeasurement(log, measurement)
 		if provider.IsSuperseded(err, p.Superseded()) {
-			return errors.Join(measurementErr, client.Clear(ctx, paneID))
+			return errors.Join(measurementErr, client.Clear(ctx, paneID, seq))
 		}
 		// Anything undeclared leaves the displayed value alone. An answer such as
 		// codex's ErrFailedTurn leaves the previous reading standing as a valid
@@ -89,7 +89,7 @@ func refreshOne(ctx context.Context, client Herdr, paneID string, kind provider.
 	measurement.Occupancy = &reading.Occupancy
 	measurement.ModelID = reading.ModelID
 	measurement.OracleDisagreement = reading.OracleDisagreement
-	reportErr := client.Report(ctx, paneID, formatOccupancy(reading.Occupancy), strconv.FormatInt(reading.Occupancy, 10))
+	reportErr := client.Report(ctx, paneID, formatOccupancy(reading.Occupancy), strconv.FormatInt(reading.Occupancy, 10), seq)
 	measurementErr := writeMeasurement(log, measurement)
 	return errors.Join(measurementErr, reportErr)
 }

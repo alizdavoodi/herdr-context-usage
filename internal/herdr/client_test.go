@@ -171,10 +171,10 @@ func TestReportAndClearUseOneStableSource(t *testing.T) {
 
 	runner := &fakeRunner{responses: [][]byte{[]byte(`{"result":{}}`), []byte(`{"result":{}}`)}}
 	client := NewClient("herdr", runner)
-	if err := client.Report(context.Background(), "w1:p1", "92k", "92481"); err != nil {
+	if err := client.Report(context.Background(), "w1:p1", "92k", "92481", 7); err != nil {
 		t.Fatalf("Report() error = %v", err)
 	}
-	if err := client.Clear(context.Background(), "w1:p1"); err != nil {
+	if err := client.Clear(context.Background(), "w1:p1", 8); err != nil {
 		t.Fatalf("Clear() error = %v", err)
 	}
 
@@ -182,8 +182,8 @@ func TestReportAndClearUseOneStableSource(t *testing.T) {
 	// source slot permanently and clears tokens only per source, so a renamed
 	// source would strand every pane's existing ctx tokens.
 	want := []recordedCall{
-		{name: "herdr", args: []string{"pane", "report-metadata", "w1:p1", "--source", "herdr-context-usage", "--token", "ctx=92k", "--token", "ctx_raw=92481"}},
-		{name: "herdr", args: []string{"pane", "report-metadata", "w1:p1", "--source", "herdr-context-usage", "--clear-token", "ctx", "--clear-token", "ctx_raw"}},
+		{name: "herdr", args: []string{"pane", "report-metadata", "w1:p1", "--source", "herdr-context-usage", "--token", "ctx=92k", "--token", "ctx_raw=92481", "--seq", "7"}},
+		{name: "herdr", args: []string{"pane", "report-metadata", "w1:p1", "--source", "herdr-context-usage", "--clear-token", "ctx", "--clear-token", "ctx_raw", "--seq", "8"}},
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
@@ -205,10 +205,10 @@ func TestClientErrors(t *testing.T) {
 		if _, err := client.ProcessInfo(context.Background(), "w1:p1"); err == nil {
 			t.Fatal("ProcessInfo() error = nil")
 		}
-		if err := client.Report(context.Background(), "w1:p1", "1k", "1000"); err == nil {
+		if err := client.Report(context.Background(), "w1:p1", "1k", "1000", 1); err == nil {
 			t.Fatal("Report() error = nil")
 		}
-		if err := client.Clear(context.Background(), "w1:p1"); err == nil {
+		if err := client.Clear(context.Background(), "w1:p1", 1); err == nil {
 			t.Fatal("Clear() error = nil")
 		}
 	})

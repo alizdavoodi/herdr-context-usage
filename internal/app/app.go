@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"time"
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/herdr"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
@@ -16,8 +17,8 @@ type Herdr interface {
 	ListAgents(context.Context) ([]herdr.Agent, error)
 	ListPanes(context.Context) ([]herdr.Pane, error)
 	ProcessInfo(context.Context, string) ([]provider.Process, error)
-	Report(context.Context, string, string, string) error
-	Clear(context.Context, string) error
+	Report(context.Context, string, string, string, int64) error
+	Clear(context.Context, string, int64) error
 }
 
 type Config struct {
@@ -85,6 +86,19 @@ type MaintenanceDiagnostic struct {
 const refreshConcurrency = 4
 
 func Refresh(ctx context.Context, client Herdr, eventPaneID string, log io.Writer, config Config) error {
+	// Herdr does not serialize overlapping plugin runs and drops a write whose
+	// sequence is not above the last one it accepted. Every write in a round is
+	// a verdict on this agent snapshot, so the snapshot's time orders them all:
+	// a round that saw an agent arrive or leave outranks every older round,
+	// whichever lands first. The price is that two rounds measuring the same
+	// live pane rank by snapshot, not by read, so a slower round's fresher
+	// value can lose and the row lags until the next successful refresh,
+	// still a lower bound.
+	// ponytail: wall-clock nanoseconds, so a clock stepped backwards freezes
+	// every report and clear for this source until wall time passes the old
+	// high-water mark; only a sequence allocator shared across plugin processes
+	// would avoid that.
+	roundSeq := time.Now().UnixNano()
 	agents, err := client.ListAgents(ctx)
 	if err != nil {
 		return err
@@ -109,7 +123,7 @@ func Refresh(ctx context.Context, client Herdr, eventPaneID string, log io.Write
 		defer errMu.Unlock()
 		errs = append(errs, err)
 	}
-	appendErr(sweepStaleMetadata(ctx, client, eventPaneID, live, log))
+	appendErr(sweepStaleMetadata(ctx, client, eventPaneID, live, log, roundSeq))
 
 	providers := registry(config)
 	var wg sync.WaitGroup
@@ -142,13 +156,13 @@ func Refresh(ctx context.Context, client Herdr, eventPaneID string, log io.Write
 			p := providers[kind]
 			if p == nil {
 				if hasOccupancyToken(agent.Tokens) {
-					if err := client.Clear(ctx, agent.PaneID); err != nil {
+					if err := client.Clear(ctx, agent.PaneID, roundSeq); err != nil {
 						appendErr(fmt.Errorf("clear superseded metadata for %s: %w", agent.PaneID, err))
 					}
 				}
 				return
 			}
-			appendErr(refreshOne(ctx, client, agent.PaneID, kind, paneOf(agent, processes), log, p))
+			appendErr(refreshOne(ctx, client, agent.PaneID, kind, paneOf(agent, processes), log, p, roundSeq))
 		}()
 	}
 	wg.Wait()
@@ -162,7 +176,7 @@ func Refresh(ctx context.Context, client Herdr, eventPaneID string, log io.Write
 	return errors.Join(errs...)
 }
 
-func sweepStaleMetadata(ctx context.Context, client Herdr, eventPaneID string, live map[string]struct{}, log io.Writer) error {
+func sweepStaleMetadata(ctx context.Context, client Herdr, eventPaneID string, live map[string]struct{}, log io.Writer, seq int64) error {
 	var stale []string
 	var errs []error
 	panes, err := client.ListPanes(ctx)
@@ -183,7 +197,7 @@ func sweepStaleMetadata(ctx context.Context, client Herdr, eventPaneID string, l
 			continue
 		}
 		// A later event retries the sweep; measurement delivery owns exit status.
-		if err := client.Clear(ctx, paneID); err != nil {
+		if err := client.Clear(ctx, paneID, seq); err != nil {
 			errs = append(errs, writeMaintenanceDiagnostic(log, MaintenanceDiagnostic{Operation: "clear_stale_metadata", PaneID: paneID, Error: err.Error()}))
 		}
 	}

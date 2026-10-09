@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
@@ -96,12 +97,17 @@ func (c *Client) ProcessInfo(ctx context.Context, paneID string) ([]provider.Pro
 	return response.Result.ProcessInfo.Processes, nil
 }
 
-func (c *Client) Report(ctx context.Context, paneID, display, raw string) error {
+// Report and Clear carry the caller's sequence because Herdr does not
+// serialize plugin runs: an older, slower run can finish after a newer one,
+// and Herdr ignores a report whose sequence is not above the last one it
+// accepted for this source.
+func (c *Client) Report(ctx context.Context, paneID, display, raw string, seq int64) error {
 	_, err := c.runner.Run(ctx, c.binary,
 		"pane", "report-metadata", paneID,
 		"--source", SourceID,
 		"--token", "ctx="+display,
 		"--token", "ctx_raw="+raw,
+		"--seq", strconv.FormatInt(seq, 10),
 	)
 	if err != nil {
 		return fmt.Errorf("report context occupancy for pane %s: %w", paneID, err)
@@ -109,12 +115,13 @@ func (c *Client) Report(ctx context.Context, paneID, display, raw string) error 
 	return nil
 }
 
-func (c *Client) Clear(ctx context.Context, paneID string) error {
+func (c *Client) Clear(ctx context.Context, paneID string, seq int64) error {
 	_, err := c.runner.Run(ctx, c.binary,
 		"pane", "report-metadata", paneID,
 		"--source", SourceID,
 		"--clear-token", "ctx",
 		"--clear-token", "ctx_raw",
+		"--seq", strconv.FormatInt(seq, 10),
 	)
 	if err != nil {
 		return fmt.Errorf("clear context occupancy for pane %s: %w", paneID, err)

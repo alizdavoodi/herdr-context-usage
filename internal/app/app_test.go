@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/herdr"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
@@ -31,6 +32,8 @@ type fakeHerdr struct {
 	reports      map[string][2]string
 	clears       []string
 	clearErrs    map[string]error
+	seqs         []int64
+	listAgentsAt int64
 }
 
 type errorWriter struct {
@@ -42,6 +45,10 @@ func (w errorWriter) Write([]byte) (int, error) {
 }
 
 func (f *fakeHerdr) ListAgents(context.Context) ([]herdr.Agent, error) {
+	f.listAgentsAt = time.Now().UnixNano()
+	// The wall clock can be coarser than a nanosecond, so the pause is what
+	// guarantees every timestamp taken after the snapshot is strictly later.
+	time.Sleep(time.Millisecond)
 	return f.agents, f.listErr
 }
 
@@ -68,16 +75,18 @@ func (f *fakeHerdr) ProcessInfo(_ context.Context, paneID string) ([]provider.Pr
 	return f.processes[paneID], f.processErrs[paneID]
 }
 
-func (f *fakeHerdr) Report(_ context.Context, paneID, display, raw string) error {
+func (f *fakeHerdr) Report(_ context.Context, paneID, display, raw string, seq int64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.seqs = append(f.seqs, seq)
 	f.reports[paneID] = [2]string{display, raw}
 	return nil
 }
 
-func (f *fakeHerdr) Clear(_ context.Context, paneID string) error {
+func (f *fakeHerdr) Clear(_ context.Context, paneID string, seq int64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.seqs = append(f.seqs, seq)
 	f.clears = append(f.clears, paneID)
 	return f.clearErrs[paneID]
 }
@@ -905,5 +914,45 @@ func appendOpenCodeMessage(t *testing.T, path, id, sessionID string, created int
 	defer database.Close()
 	if _, err := database.Exec(`INSERT INTO message (id, session_id, time_created, data) VALUES (?, ?, ?, ?)`, id, sessionID, created, data); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Every write in a round is a verdict on that round's agent snapshot, so all of
+// them carry one sequence no later than the snapshot, and a later round's is
+// greater: whichever round lands last, the one that saw the newer agent list
+// wins, for a measurement and a clear alike.
+func TestRefreshSequencesEveryWriteByTheRoundsAgentSnapshot(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	transcript := filepath.Join(root, "session.jsonl")
+	if err := os.WriteFile(transcript, []byte(`{"type":"assistant","message":{"usage":{"input_tokens":840,"cache_read_input_tokens":90000,"cache_creation_input_tokens":1641}}}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fake := &fakeHerdr{
+		agents: []herdr.Agent{
+			{Agent: "claude", PaneID: "w1:p1", AgentSession: &provider.AgentSession{Kind: "path", Value: transcript}},
+			{Agent: "gemini", PaneID: "w1:g", Tokens: map[string]string{"ctx": "50k", "ctx_raw": "50000"}},
+		},
+		panes:   []herdr.Pane{{PaneID: "w1:gone", Tokens: map[string]string{"ctx": "80k"}}},
+		reports: make(map[string][2]string),
+	}
+	var previous int64
+	for round := range 2 {
+		fake.seqs = nil
+		if err := Refresh(context.Background(), fake, "", nil, Config{ClaudeHome: root}); err != nil {
+			t.Fatalf("Refresh() error = %v", err)
+		}
+		// The stale pane, the unregistered kind, and the measured claude pane.
+		if len(fake.seqs) != 3 {
+			t.Fatalf("round %d seqs = %v, want two clears and a report", round, fake.seqs)
+		}
+		seq := fake.seqs[0]
+		for _, got := range fake.seqs {
+			if got != seq || got <= previous || got > fake.listAgentsAt {
+				t.Fatalf("round %d seqs = %v, want one value above %d and at or below the agent snapshot %d", round, fake.seqs, previous, fake.listAgentsAt)
+			}
+		}
+		previous = seq
 	}
 }

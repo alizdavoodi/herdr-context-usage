@@ -311,6 +311,15 @@ No TTL. An idle agent's occupancy has genuinely not changed, so an hours-old
 value is still true; expiring it would delete correct data to guard against a
 failure better handled by clearing explicitly when an agent exits.
 
+Every report and clear carries `--seq`, the wall-clock nanoseconds at which
+its refresh round listed the agents, because Herdr runs overlapping plugin
+commands without serializing them and drops a write whose sequence is not
+above the last one it accepted. One sequence per round, taken at the snapshot
+every write in it is a verdict on, means a round that saw an agent arrive or
+leave outranks every older round whichever lands first. Two rounds measuring
+the same live pane rank by snapshot rather than read, so the slower reader can
+lose a fresher value until the next refresh.
+
 Unknown is expressed by writing nothing. herdr's renderer does the rest: *"a row
 disappears when none of its tokens have a value."* Never zero, never a stale
 value dressed as live, and — during just-compacted — never the pre-boundary
