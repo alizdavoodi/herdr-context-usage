@@ -89,6 +89,17 @@ func TestReadOccupancy(t *testing.T) {
 			want:    245_715,
 		},
 		{
+			// Lines 99, 103 and 104 of
+			// ~/.codex/sessions/2026/09/28/rollout-2026-09-28T14-31-38-01a0e7ff-d798-7222-bddb-60b644643bd1.jsonl:
+			// the previous step's token_count, then a function_call and its
+			// response's token_usage_record, cut before the tool output and the
+			// token_count at line 106. That is the file as a hook on tool completion
+			// sees it. Reading only token_count answers 74,129, the previous call.
+			name:    "a usage record ahead of its token count is the current call",
+			fixture: "record-before-tool.jsonl",
+			want:    74_706,
+		},
+		{
 			// The whole of
 			// ~/.codex/sessions/2026/01/29/rollout-2026-01-29T11-42-29-019c0958-ef52-7a83-b189-7f34e6ae0841.jsonl,
 			// a four-record rollout whose session never took a turn: session_meta

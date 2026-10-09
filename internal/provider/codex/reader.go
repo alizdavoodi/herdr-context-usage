@@ -21,8 +21,9 @@ var (
 type rolloutEntry struct {
 	Type    string `json:"type"`
 	Payload struct {
-		Type string `json:"type"`
-		Info struct {
+		Type  string      `json:"type"`
+		Usage *tokenUsage `json:"usage"`
+		Info  struct {
 			LastTokenUsage *tokenUsage `json:"last_token_usage"`
 		} `json:"info"`
 	} `json:"payload"`
@@ -48,8 +49,8 @@ func readOccupancy(path string) (int64, error) {
 		if len(strings.TrimSpace(string(line))) > 0 {
 			var entry rolloutEntry
 			if json.Unmarshal(line, &entry) == nil {
-				if entry.Payload.Info.LastTokenUsage != nil {
-					latest = entry.Payload.Info.LastTokenUsage
+				if usage := usageOf(entry); usage != nil {
+					latest = usage
 					// Only a usage row that yields a number ends the just-compacted
 					// window. A turn that recorded nothing leaves the previous reading
 					// standing as a lower bound, but after a compaction the previous
@@ -93,6 +94,21 @@ func readOccupancy(path string) (int64, error) {
 	// its own name: one error covering both this and "nothing recorded yet"
 	// makes the difference between clearing and preserving invisible.
 	return 0, ErrFailedTurn
+}
+
+// usageOf returns the per-response usage a row carries, from either of the two
+// rows codex writes for one response. token_usage_record lands before the
+// response's tool runs and token_count only after the step's tools drain, so a
+// refresh fired on tool completion reads the current call from the record and
+// the previous one from the count. For one response the two carry the same
+// numbers; token_count is still read because rollouts that predate the record
+// carry nothing else. The record's turn_token_usage and thread_token_usage are
+// cumulative sums and never a context size.
+func usageOf(entry rolloutEntry) *tokenUsage {
+	if entry.Type == "token_usage_record" {
+		return entry.Payload.Usage
+	}
+	return entry.Payload.Info.LastTokenUsage
 }
 
 // occupancy reads the one number a usage row can contribute, and reports
