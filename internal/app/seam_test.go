@@ -28,7 +28,7 @@ import (
 // provider.None is refused outright. FromAgent returns it for every label it
 // does not recognise, so a provider registered there would measure every
 // unrecognised agent, and the reachability check is vacuous for it:
-// FromAgent("", nil) is None as well.
+// FromAgent("", nil, nil) is None as well.
 func TestEveryRegisteredKindIsReachableFromItsAgentLabel(t *testing.T) {
 	t.Parallel()
 
@@ -38,8 +38,8 @@ func TestEveryRegisteredKindIsReachableFromItsAgentLabel(t *testing.T) {
 			if kind == provider.None {
 				t.Fatal("a provider is registered under provider.None, the kind every unrecognised agent label dispatches to")
 			}
-			got := provider.FromAgent(string(kind), nil)
-			if got != kind {
+			got, ok := provider.FromAgent(string(kind), nil, nil)
+			if !ok || got != kind {
 				t.Fatalf("FromAgent(%q) = %q; the provider registered for %q is unreachable", string(kind), got, kind)
 			}
 		})

@@ -198,8 +198,8 @@ func TestRefreshFansOutAndClearsEventPaneAfterAgentExit(t *testing.T) {
 	if err := Refresh(context.Background(), fake, "w1:exited", nil, providers); err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
-	if len(fake.processCalls) != 2 {
-		t.Fatalf("ProcessInfo called for %v, want every live agent", fake.processCalls)
+	if !slices.Equal(fake.processCalls, []string{"w1:p1"}) {
+		t.Fatalf("ProcessInfo called for %v, want only the claude pane, whose provider reads it", fake.processCalls)
 	}
 	if got := fake.reports["w1:p1"]; got != [2]string{"92k", "92481"} {
 		t.Fatalf("claude report = %v", got)
@@ -242,19 +242,21 @@ func TestRefreshPreservesOpenCodeValueWhenProcessInfoFails(t *testing.T) {
 	}
 }
 
-// An unrecognised agent name is already unmeasurable, so a transient
-// process-info failure must not stop its stale occupancy metadata from being
-// cleared.
-func TestRefreshClearsUnknownAgentWhenProcessInfoFails(t *testing.T) {
+// An unrecognised agent name is already unmeasurable and nothing reads its
+// process list, so its stale occupancy metadata is cleared without paying for
+// a fetch.
+func TestRefreshClearsUnknownAgentWithoutReadingItsProcesses(t *testing.T) {
 	t.Parallel()
 
 	fake := &fakeHerdr{
-		agents:      []herdr.Agent{{Agent: "shell", PaneID: "w1:p1", Tokens: map[string]string{"ctx_raw": "92481"}}},
-		processErrs: map[string]error{"w1:p1": errors.New("process info failed")},
+		agents: []herdr.Agent{{Agent: "shell", PaneID: "w1:p1", Tokens: map[string]string{"ctx_raw": "92481"}}},
 	}
 	var log bytes.Buffer
 	if err := Refresh(context.Background(), fake, "", &log, nil); err != nil {
 		t.Fatalf("Refresh() error = %v, want nil", err)
+	}
+	if len(fake.processCalls) != 0 {
+		t.Fatalf("ProcessInfo called for %v, want none", fake.processCalls)
 	}
 	if !slices.Equal(fake.clears, []string{"w1:p1"}) {
 		t.Fatalf("clears = %v, want stale metadata cleared", fake.clears)
@@ -264,30 +266,38 @@ func TestRefreshClearsUnknownAgentWhenProcessInfoFails(t *testing.T) {
 // Every kind but opencode is classified from its label alone, so a transient
 // process-info failure degrades the read to an empty process list instead of
 // dropping the pane for the round; a provider that uses process ids as a tier
-// falls back to its others.
+// falls back to its others. opencode2 is covered by its own label too, so a
+// failed read cannot hold it back the way it holds back the shared opencode
+// label.
 func TestRefreshMeasuresWithoutAProcessListWhenProcessInfoFails(t *testing.T) {
 	t.Parallel()
 
-	fake := &fakeHerdr{
-		agents:      []herdr.Agent{{Agent: "claude", PaneID: "w1:p1"}},
-		processErrs: map[string]error{"w1:p1": errors.New("process info failed")},
-	}
-	claude := measuring()
-	var log bytes.Buffer
-	if err := Refresh(context.Background(), fake, "", &log, map[provider.Kind]provider.Provider{provider.Claude: claude}); err != nil {
-		t.Fatalf("Refresh() error = %v, want degraded measurement to succeed", err)
-	}
-	if got := claude.measured(); len(got) != 1 || got[0].Processes != nil {
-		t.Fatalf("measured panes = %#v, want one with no process list", got)
-	}
-	if got := fake.reports["w1:p1"]; got != [2]string{"92k", "92481"} {
-		t.Fatalf("report = %v, want measurement despite process-info failure", got)
-	}
-	if len(fake.clears) != 0 {
-		t.Fatalf("clears = %v, want none", fake.clears)
-	}
-	if got := log.String(); !strings.Contains(got, `"operation":"process_info"`) {
-		t.Fatalf("log = %s, want process-info maintenance diagnostic", got)
+	for _, kind := range []provider.Kind{provider.Claude, provider.OpenCode2} {
+		t.Run(string(kind), func(t *testing.T) {
+			t.Parallel()
+
+			fake := &fakeHerdr{
+				agents:      []herdr.Agent{{Agent: string(kind), PaneID: "w1:p1"}},
+				processErrs: map[string]error{"w1:p1": errors.New("process info failed")},
+			}
+			p := measuring()
+			var log bytes.Buffer
+			if err := Refresh(context.Background(), fake, "", &log, map[provider.Kind]provider.Provider{kind: p}); err != nil {
+				t.Fatalf("Refresh() error = %v, want degraded measurement to succeed", err)
+			}
+			if got := p.measured(); len(got) != 1 || got[0].Processes != nil {
+				t.Fatalf("measured panes = %#v, want one with no process list", got)
+			}
+			if got := fake.reports["w1:p1"]; got != [2]string{"92k", "92481"} {
+				t.Fatalf("report = %v, want measurement despite process-info failure", got)
+			}
+			if len(fake.clears) != 0 {
+				t.Fatalf("clears = %v, want none", fake.clears)
+			}
+			if got := log.String(); !strings.Contains(got, `"operation":"process_info"`) {
+				t.Fatalf("log = %s, want process-info maintenance diagnostic", got)
+			}
+		})
 	}
 }
 
@@ -308,6 +318,29 @@ func TestRefreshDoesNotClaimOpenCode2AsV1(t *testing.T) {
 	}
 	if len(v1.measured()) != 0 || len(v2.measured()) != 1 {
 		t.Fatalf("measured v1 %d times, v2 %d times; want the pane measured by v2 only", len(v1.measured()), len(v2.measured()))
+	}
+}
+
+// An observed empty process list is evidence of v1, so a round must measure
+// such a pane with the v1 provider rather than skip it as unreadable; skipping
+// would blank every v1 pane.
+func TestRefreshMeasuresOpenCodeV1FromAnObservedEmptyProcessList(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeHerdr{
+		agents:    []herdr.Agent{{Agent: "opencode", PaneID: "w1:p1"}},
+		processes: map[string][]provider.Process{"w1:p1": {}},
+	}
+	v1, v2 := measuring(), measuring()
+	providers := map[provider.Kind]provider.Provider{provider.OpenCode: v1, provider.OpenCode2: v2}
+	if err := Refresh(context.Background(), fake, "", nil, providers); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+	if len(v1.measured()) != 1 || len(v2.measured()) != 0 {
+		t.Fatalf("measured v1 %d times, v2 %d times; want the pane measured by v1 only", len(v1.measured()), len(v2.measured()))
+	}
+	if len(fake.processCalls) != 1 {
+		t.Fatalf("ProcessInfo called for %v, want once", fake.processCalls)
 	}
 }
 
@@ -473,40 +506,47 @@ func TestRefreshHandsTheProviderWhatHerdrReportedAboutThePane(t *testing.T) {
 	t.Parallel()
 
 	session := &provider.AgentSession{Kind: "id", Value: "ses_current"}
-	processes := []provider.Process{{PID: 42, Argv0: "codex", Argv: []string{"codex", "resume"}}}
+	processes := []provider.Process{{PID: 42, Argv0: "claude", Argv: []string{"claude", "--resume"}}}
 	fake := &fakeHerdr{
 		agents: []herdr.Agent{{
-			Agent: "codex", PaneID: "w1:p1",
-			ForegroundCWD: "/work/acme", TerminalTitle: "codex | acme", AgentSession: session,
+			Agent: "claude", PaneID: "w1:p1",
+			ForegroundCWD: "/work/acme", TerminalTitle: "claude | acme", AgentSession: session,
 		}},
 		processes: map[string][]provider.Process{"w1:p1": processes},
 	}
-	codex := measuring()
-	if err := Refresh(context.Background(), fake, "", nil, map[provider.Kind]provider.Provider{provider.Codex: codex}); err != nil {
+	claude := measuring()
+	if err := Refresh(context.Background(), fake, "", nil, map[provider.Kind]provider.Provider{provider.Claude: claude}); err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
-	want := provider.Pane{ForegroundCWD: "/work/acme", TerminalTitle: "codex | acme", AgentSession: session, Processes: processes}
-	if got := codex.measured(); len(got) != 1 || !reflect.DeepEqual(got[0], want) {
+	want := provider.Pane{ForegroundCWD: "/work/acme", TerminalTitle: "claude | acme", AgentSession: session, Processes: processes}
+	if got := claude.measured(); len(got) != 1 || !reflect.DeepEqual(got[0], want) {
 		t.Fatalf("measured panes = %#v, want %#v", got, want)
 	}
 }
 
 // A kind nobody registered cannot be read, so a value it displays belongs to
 // no session this plugin can vouch for and is cleared; a pane showing nothing
-// is left alone, and neither produces a measurement record.
+// is left alone, and neither produces a measurement record. A recognised label
+// is held to the same registry, and the round still spends no process-info
+// fetch on it.
 func TestRefreshClearsAnUnregisteredKindOnlyWhenItDisplaysOccupancy(t *testing.T) {
 	t.Parallel()
 
 	fake := &fakeHerdr{agents: []herdr.Agent{
 		{Agent: "gemini", PaneID: "w1:shown", Tokens: map[string]string{"ctx": "50k"}},
 		{Agent: "gemini", PaneID: "w1:blank"},
+		{Agent: "codex", PaneID: "w1:codex", Tokens: map[string]string{"ctx_raw": "70000"}},
 	}}
 	var log bytes.Buffer
-	if err := Refresh(context.Background(), fake, "", &log, map[provider.Kind]provider.Provider{provider.Claude: measuring()}); err != nil {
+	if err := Refresh(context.Background(), fake, "", &log, map[provider.Kind]provider.Provider{}); err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
-	if !slices.Equal(fake.clears, []string{"w1:shown"}) {
-		t.Fatalf("clears = %v, want only the pane displaying occupancy", fake.clears)
+	slices.Sort(fake.clears)
+	if !slices.Equal(fake.clears, []string{"w1:codex", "w1:shown"}) {
+		t.Fatalf("clears = %v, want only the panes displaying occupancy", fake.clears)
+	}
+	if len(fake.processCalls) != 0 {
+		t.Fatalf("ProcessInfo called for %v, want none", fake.processCalls)
 	}
 	if records := measurements(t, &log); len(records) != 0 {
 		t.Fatalf("records = %#v, want none for an unregistered kind", records)

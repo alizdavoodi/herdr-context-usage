@@ -94,7 +94,20 @@ func (c *Client) ProcessInfo(ctx context.Context, paneID string) ([]provider.Pro
 	if err := json.Unmarshal(data, &response); err != nil {
 		return nil, fmt.Errorf("decode process info for pane %s: %w", paneID, err)
 	}
-	return response.Result.ProcessInfo.Processes, nil
+	processes := response.Result.ProcessInfo.Processes
+	// argv0 is argv[0] under another name: on macOS herdr fills both from the
+	// same KERN_PROCARGS2 buffer, but herdr 0.9.3's Linux detection builds its
+	// ForegroundProcess with argv0 unset while argv comes from /proc. Filling
+	// the gap here keeps that wire quirk out of every consumer, which then
+	// reads one name. A reported argv0 is herdr's own answer and is kept; the
+	// wire's name field is a different fact (the wrapper's comm, such as
+	// .opencode2-wrap) and is never a substitute.
+	for i := range processes {
+		if processes[i].Argv0 == "" && len(processes[i].Argv) > 0 {
+			processes[i].Argv0 = processes[i].Argv[0]
+		}
+	}
+	return processes, nil
 }
 
 // Report and Clear carry the caller's sequence because Herdr does not
