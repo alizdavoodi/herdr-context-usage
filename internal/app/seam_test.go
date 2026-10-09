@@ -1,11 +1,17 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"slices"
 	"testing"
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider/claude"
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider/codex"
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider/hermes"
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider/omp"
+	"github.com/alizdavoodi/herdr-context-usage/internal/provider/pi"
 )
 
 // A provider that declares no superseded answer can never clear its pane, so a
@@ -19,7 +25,7 @@ import (
 func TestEveryRegisteredProviderDeclaresASupersededAnswer(t *testing.T) {
 	t.Parallel()
 
-	for kind, registered := range registry(Config{}) {
+	for kind, registered := range Registry(Config{}) {
 		t.Run(string(kind), func(t *testing.T) {
 			t.Parallel()
 			declared := registered.Superseded()
@@ -52,7 +58,7 @@ func TestEveryRegisteredProviderDeclaresASupersededAnswer(t *testing.T) {
 func TestEveryRegisteredKindIsReachableFromItsAgentLabel(t *testing.T) {
 	t.Parallel()
 
-	for kind := range registry(Config{}) {
+	for kind := range Registry(Config{}) {
 		t.Run(string(kind), func(t *testing.T) {
 			t.Parallel()
 			if kind == provider.None {
@@ -61,6 +67,42 @@ func TestEveryRegisteredKindIsReachableFromItsAgentLabel(t *testing.T) {
 			got := provider.FromAgent(string(kind), nil)
 			if got != kind {
 				t.Fatalf("FromAgent(%q) = %q; the provider registered for %q is unreachable", string(kind), got, kind)
+			}
+		})
+	}
+}
+
+// The other tests here pin that every registered kind is reachable and declares
+// a superseded answer, and both still pass when two entries are swapped: a
+// provider.Omp entry built by pi.New is reachable and well-formed, and it reads
+// an omp pane against pi's store. A swap fails only a test that asks which
+// provider answered. An empty pane makes each of these providers refuse before
+// it opens any store, and each refuses with its own package's sentinel, so the
+// sentinel's identity is the only thing that ties an entry to its constructor.
+//
+// opencode and opencode2 are absent because they cannot be told apart this way.
+// Both open the store before resolving anything, and every refusal either
+// returns is shared from opencodeshared or sqlitestore.
+func TestEachRegistryEntryIsItsOwnKindsProvider(t *testing.T) {
+	t.Parallel()
+
+	own := map[provider.Kind]error{
+		provider.Claude: claude.ErrNoSession,
+		provider.Codex:  codex.ErrNoSession,
+		provider.Pi:     pi.ErrNoSession,
+		provider.Omp:    omp.ErrNoSession,
+		provider.Hermes: hermes.ErrNoSession,
+	}
+	registry := Registry(Config{})
+	for kind, want := range own {
+		t.Run(string(kind), func(t *testing.T) {
+			t.Parallel()
+			registered, ok := registry[kind]
+			if !ok {
+				t.Fatalf("no provider registered for %q", kind)
+			}
+			if _, err := registered.Measure(context.Background(), provider.Pane{}); !errors.Is(err, want) {
+				t.Fatalf("Measure(empty pane) error = %v, want %v; the entry for %q is another kind's provider", err, want, kind)
 			}
 		})
 	}

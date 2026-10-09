@@ -28,7 +28,7 @@ func main() {
 		PiCodingAgentDir: os.Getenv("PI_CODING_AGENT_DIR"),
 		HermesHome:       os.Getenv("HERMES_HOME"),
 	}
-	if err := app.Refresh(ctx, client, os.Getenv("HERDR_PANE_ID"), os.Stdout, config); err != nil {
+	if err := app.Refresh(ctx, client, os.Getenv("HERDR_PANE_ID"), os.Stdout, app.Registry(config)); err != nil {
 		fmt.Fprintf(os.Stderr, "herdr-context-usage: %v\n", err)
 		os.Exit(1)
 	}

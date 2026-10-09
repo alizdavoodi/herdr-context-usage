@@ -3,10 +3,11 @@ package app
 import (
 	"bytes"
 	"context"
-	"database/sql"
+	"encoding/json"
 	"errors"
-	"os"
-	"path/filepath"
+	"fmt"
+	"io"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -15,8 +16,6 @@ import (
 
 	"github.com/alizdavoodi/herdr-context-usage/internal/herdr"
 	"github.com/alizdavoodi/herdr-context-usage/internal/provider"
-
-	_ "modernc.org/sqlite"
 )
 
 type fakeHerdr struct {
@@ -56,15 +55,6 @@ func (f *fakeHerdr) ListPanes(context.Context) ([]herdr.Pane, error) {
 	return f.panes, f.paneListErr
 }
 
-func TestRefreshReturnsListError(t *testing.T) {
-	t.Parallel()
-
-	want := errors.New("list failed")
-	if err := Refresh(context.Background(), &fakeHerdr{listErr: want}, "", nil, Config{}); !errors.Is(err, want) {
-		t.Fatalf("Refresh() error = %v, want %v", err, want)
-	}
-}
-
 // The methods below are called from parallel pane refreshes inside Refresh;
 // the mutex mirrors the production client, whose calls are independent
 // subprocess spawns.
@@ -79,6 +69,9 @@ func (f *fakeHerdr) Report(_ context.Context, paneID, display, raw string, seq i
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.seqs = append(f.seqs, seq)
+	if f.reports == nil {
+		f.reports = make(map[string][2]string)
+	}
 	f.reports[paneID] = [2]string{display, raw}
 	return nil
 }
@@ -91,23 +84,104 @@ func (f *fakeHerdr) Clear(_ context.Context, paneID string, seq int64) error {
 	return f.clearErrs[paneID]
 }
 
+// fakeProvider stands in for any agent's provider, so the round's policy is
+// pinned by what Refresh does with an answer rather than by how one provider
+// arrives at it, and no test here needs a store on disk.
+type fakeProvider struct {
+	reading    provider.Reading
+	err        error
+	superseded []error
+
+	mu    sync.Mutex
+	panes []provider.Pane
+}
+
+func (f *fakeProvider) Superseded() []error { return f.superseded }
+
+func (f *fakeProvider) Measure(_ context.Context, pane provider.Pane) (provider.Reading, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.panes = append(f.panes, pane)
+	return f.reading, f.err
+}
+
+func (f *fakeProvider) measured() []provider.Pane {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.panes)
+}
+
+// measuring answers 92,481 tokens, the design document's worked example, so a
+// report of 92k/92481 is recognisably this provider's reading.
+func measuring() *fakeProvider {
+	return &fakeProvider{reading: provider.Reading{Occupancy: 92481}}
+}
+
+var errSuperseded = errors.New("superseded session")
+
+// measurements decodes the round's log and keeps only the measurement records,
+// so an assertion reads a field rather than matching a substring of the JSON.
+func measurements(t *testing.T, log *bytes.Buffer) []Measurement {
+	t.Helper()
+
+	var records []Measurement
+	decoder := json.NewDecoder(bytes.NewReader(log.Bytes()))
+	for {
+		var record Measurement
+		if err := decoder.Decode(&record); errors.Is(err, io.EOF) {
+			return records
+		} else if err != nil {
+			t.Fatalf("decode log %q: %v", log.String(), err)
+		}
+		if record.Type == "measurement" {
+			records = append(records, record)
+		}
+	}
+}
+
+// rawMeasurement is the one measurement record a round wrote, field by field as
+// it went over the wire. Decoding into Measurement cannot tell a field written
+// as null from one left out, and the record's consumers can: null is the
+// contract for "known to be unknown", so presence has to be asserted on the raw
+// JSON.
+func rawMeasurement(t *testing.T, log *bytes.Buffer) map[string]json.RawMessage {
+	t.Helper()
+
+	var found []map[string]json.RawMessage
+	decoder := json.NewDecoder(bytes.NewReader(log.Bytes()))
+	for {
+		var record map[string]json.RawMessage
+		if err := decoder.Decode(&record); errors.Is(err, io.EOF) {
+			break
+		} else if err != nil {
+			t.Fatalf("decode log %q: %v", log.String(), err)
+		}
+		if string(record["type"]) == `"measurement"` {
+			found = append(found, record)
+		}
+	}
+	if len(found) != 1 {
+		t.Fatalf("log = %s, want exactly one measurement record", log.String())
+	}
+	return found[0]
+}
+
+func TestRefreshReturnsListError(t *testing.T) {
+	t.Parallel()
+
+	want := errors.New("list failed")
+	if err := Refresh(context.Background(), &fakeHerdr{listErr: want}, "", nil, nil); !errors.Is(err, want) {
+		t.Fatalf("Refresh() error = %v, want %v", err, want)
+	}
+}
+
 func TestRefreshFansOutAndClearsEventPaneAfterAgentExit(t *testing.T) {
 	t.Parallel()
 
-	root := t.TempDir()
-	transcript := filepath.Join(root, "session.jsonl")
-	if err := os.WriteFile(transcript, []byte(`{"type":"assistant","message":{"usage":{"input_tokens":840,"cache_read_input_tokens":90000,"cache_creation_input_tokens":1641}}}`+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
 	fake := &fakeHerdr{
 		agents: []herdr.Agent{
-			{Agent: "claude", PaneID: "w1:p1", ForegroundCWD: "/work", AgentSession: &provider.AgentSession{Kind: "path", Value: transcript}},
-			{Agent: "codex", PaneID: "w1:p2", ForegroundCWD: "/work", Tokens: map[string]string{"ctx_raw": "70000"}},
-		},
-		processes: map[string][]provider.Process{
-			"w1:p1": {{PID: 41, Argv0: "codex"}, {PID: 42, Argv0: "claude"}},
-			"w1:p2": {{PID: 43, Argv0: "codex"}},
+			{Agent: "claude", PaneID: "w1:p1"},
+			{Agent: "codex", PaneID: "w1:p2", Tokens: map[string]string{"ctx_raw": "70000"}},
 		},
 		panes: []herdr.Pane{
 			{PaneID: "w1:p1", Tokens: map[string]string{"ctx": "92k", "ctx_raw": "92481"}},
@@ -115,12 +189,13 @@ func TestRefreshFansOutAndClearsEventPaneAfterAgentExit(t *testing.T) {
 			{PaneID: "w1:also-exited", Tokens: map[string]string{"ctx_raw": "70000"}},
 			{PaneID: "w1:shell"},
 		},
-		reports: make(map[string][2]string),
+	}
+	providers := map[provider.Kind]provider.Provider{
+		provider.Claude: measuring(),
+		provider.Codex:  &fakeProvider{err: errSuperseded, superseded: []error{errSuperseded}},
 	}
 
-	// The codex pane resolves against root, which holds no live rollout, so its
-	// stale value is superseded whatever the host's own ~/.codex contains.
-	if err := Refresh(context.Background(), fake, "w1:exited", nil, Config{ClaudeHome: root, CodexHome: root}); err != nil {
+	if err := Refresh(context.Background(), fake, "w1:exited", nil, providers); err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
 	if len(fake.processCalls) != 2 {
@@ -130,8 +205,9 @@ func TestRefreshFansOutAndClearsEventPaneAfterAgentExit(t *testing.T) {
 		t.Fatalf("claude report = %v", got)
 	}
 	if got, ok := fake.reports["w1:p2"]; ok {
-		t.Fatalf("codex report = %v, want no report for a pane with no live rollout", got)
+		t.Fatalf("codex report = %v, want no report for a superseded pane", got)
 	}
+	// The sweep runs before any pane is measured, so its clears come first.
 	wantClears := []string{"w1:exited", "w1:also-exited", "w1:p2"}
 	if !slices.Equal(fake.clears, wantClears) {
 		t.Fatalf("clears = %v, want every stale occupancy pane %v", fake.clears, wantClears)
@@ -139,21 +215,27 @@ func TestRefreshFansOutAndClearsEventPaneAfterAgentExit(t *testing.T) {
 }
 
 // opencode is the one agent whose classification needs the process list, so a
-// transient process-info failure there waits a round: the value is preserved,
-// the run does not fail, and the failure lands as a diagnostic.
-func TestRefreshPreservesValueWhenProcessInfoFails(t *testing.T) {
+// transient process-info failure there waits a round: neither version is
+// measured, the value is preserved, the run does not fail, and the failure
+// lands as a diagnostic.
+func TestRefreshPreservesOpenCodeValueWhenProcessInfoFails(t *testing.T) {
 	t.Parallel()
 
 	fake := &fakeHerdr{
 		agents:      []herdr.Agent{{Agent: "opencode", PaneID: "w1:p1", Tokens: map[string]string{"ctx_raw": "92481"}}},
 		processErrs: map[string]error{"w1:p1": errors.New("process info failed")},
 	}
+	v1, v2 := measuring(), measuring()
+	providers := map[provider.Kind]provider.Provider{provider.OpenCode: v1, provider.OpenCode2: v2}
 	var log bytes.Buffer
-	if err := Refresh(context.Background(), fake, "", &log, Config{}); err != nil {
+	if err := Refresh(context.Background(), fake, "", &log, providers); err != nil {
 		t.Fatalf("Refresh() error = %v, want nil", err)
 	}
-	if len(fake.clears) != 0 {
-		t.Fatalf("clears = %v, want transient process failure to preserve the value", fake.clears)
+	if len(v1.measured()) != 0 || len(v2.measured()) != 0 {
+		t.Fatalf("measured v1 %v, v2 %v; want an unclassifiable pane skipped", v1.measured(), v2.measured())
+	}
+	if len(fake.clears) != 0 || len(fake.reports) != 0 {
+		t.Fatalf("clears = %v, reports = %v; want transient process failure to preserve the value", fake.clears, fake.reports)
 	}
 	if got := log.String(); !strings.Contains(got, `"operation":"process_info"`) {
 		t.Fatalf("log = %s, want process-info maintenance diagnostic", got)
@@ -171,11 +253,61 @@ func TestRefreshClearsUnknownAgentWhenProcessInfoFails(t *testing.T) {
 		processErrs: map[string]error{"w1:p1": errors.New("process info failed")},
 	}
 	var log bytes.Buffer
-	if err := Refresh(context.Background(), fake, "", &log, Config{}); err != nil {
+	if err := Refresh(context.Background(), fake, "", &log, nil); err != nil {
 		t.Fatalf("Refresh() error = %v, want nil", err)
 	}
 	if !slices.Equal(fake.clears, []string{"w1:p1"}) {
 		t.Fatalf("clears = %v, want stale metadata cleared", fake.clears)
+	}
+}
+
+// Every kind but opencode is classified from its label alone, so a transient
+// process-info failure degrades the read to an empty process list instead of
+// dropping the pane for the round; a provider that uses process ids as a tier
+// falls back to its others.
+func TestRefreshMeasuresWithoutAProcessListWhenProcessInfoFails(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeHerdr{
+		agents:      []herdr.Agent{{Agent: "claude", PaneID: "w1:p1"}},
+		processErrs: map[string]error{"w1:p1": errors.New("process info failed")},
+	}
+	claude := measuring()
+	var log bytes.Buffer
+	if err := Refresh(context.Background(), fake, "", &log, map[provider.Kind]provider.Provider{provider.Claude: claude}); err != nil {
+		t.Fatalf("Refresh() error = %v, want degraded measurement to succeed", err)
+	}
+	if got := claude.measured(); len(got) != 1 || got[0].Processes != nil {
+		t.Fatalf("measured panes = %#v, want one with no process list", got)
+	}
+	if got := fake.reports["w1:p1"]; got != [2]string{"92k", "92481"} {
+		t.Fatalf("report = %v, want measurement despite process-info failure", got)
+	}
+	if len(fake.clears) != 0 {
+		t.Fatalf("clears = %v, want none", fake.clears)
+	}
+	if got := log.String(); !strings.Contains(got, `"operation":"process_info"`) {
+		t.Fatalf("log = %s, want process-info maintenance diagnostic", got)
+	}
+}
+
+// The opencode label hosts both versions, and the foreground process is what
+// tells them apart, so a v2 pane must reach the v2 provider and never be read
+// as v1.
+func TestRefreshDoesNotClaimOpenCode2AsV1(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeHerdr{
+		agents:    []herdr.Agent{{Agent: "opencode", PaneID: "w1:p1"}},
+		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: ".OpenCode2"}}},
+	}
+	v1, v2 := measuring(), measuring()
+	providers := map[provider.Kind]provider.Provider{provider.OpenCode: v1, provider.OpenCode2: v2}
+	if err := Refresh(context.Background(), fake, "", nil, providers); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+	if len(v1.measured()) != 0 || len(v2.measured()) != 1 {
+		t.Fatalf("measured v1 %d times, v2 %d times; want the pane measured by v2 only", len(v1.measured()), len(v2.measured()))
 	}
 }
 
@@ -189,288 +321,181 @@ func TestRefreshReportsDeadlineCancelation(t *testing.T) {
 	fake := &fakeHerdr{
 		agents: []herdr.Agent{{Agent: "shell", PaneID: "w1:p1"}},
 	}
-	if err := Refresh(ctx, fake, "", nil, Config{}); !errors.Is(err, context.Canceled) {
+	if err := Refresh(ctx, fake, "", nil, nil); !errors.Is(err, context.Canceled) {
 		t.Fatalf("Refresh() error = %v, want context canceled", err)
 	}
 }
 
-// A claude pane resolves through the reported session first and process IDs
-// only as a fallback tier, so a transient process-info failure must degrade
-// the read instead of dropping the pane for the round.
-func TestRefreshMeasuresClaudeWhenProcessInfoFails(t *testing.T) {
+func TestRefreshReportsASuccessfulReadingAndRecordsItMeasured(t *testing.T) {
 	t.Parallel()
 
-	home := t.TempDir()
-	transcript := filepath.Join(home, "session.jsonl")
-	entry := `{"type":"assistant","message":{"usage":{"input_tokens":840,"cache_read_input_tokens":90000,"cache_creation_input_tokens":1641}}}` + "\n"
-	if err := os.WriteFile(transcript, []byte(entry), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	version := 3
+	fake := &fakeHerdr{agents: []herdr.Agent{{Agent: "claude", PaneID: "w1:p1"}}}
+	claude := &fakeProvider{reading: provider.Reading{
+		Mode:               provider.ResolutionProcessRegistry,
+		Occupancy:          92481,
+		ModelID:            "claude-opus-5-5",
+		TranscriptVersion:  &version,
+		OracleDisagreement: "store says 92000",
+	}}
 	var log bytes.Buffer
-	fake := &fakeHerdr{
-		agents:      []herdr.Agent{{Agent: "claude", PaneID: "w1:p1", AgentSession: &provider.AgentSession{Kind: "path", Value: transcript}}},
-		processErrs: map[string]error{"w1:p1": errors.New("process info failed")},
-		reports:     make(map[string][2]string),
-	}
-	if err := Refresh(context.Background(), fake, "", &log, Config{ClaudeHome: home}); err != nil {
-		t.Fatalf("Refresh() error = %v, want degraded measurement to succeed", err)
+	if err := Refresh(context.Background(), fake, "", &log, map[provider.Kind]provider.Provider{provider.Claude: claude}); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
 	}
 	if got := fake.reports["w1:p1"]; got != [2]string{"92k", "92481"} {
-		t.Fatalf("report = %v, want measurement despite process-info failure", got)
+		t.Fatalf("report = %v, want the formatted and raw occupancy", got)
 	}
-	if len(fake.clears) != 0 {
-		t.Fatalf("clears = %v, want none", fake.clears)
+	records := measurements(t, &log)
+	if len(records) != 1 {
+		t.Fatalf("records = %#v, want one", records)
 	}
-	if got := log.String(); !strings.Contains(got, `"operation":"process_info"`) {
-		t.Fatalf("log = %s, want process-info maintenance diagnostic", got)
-	}
-}
-
-func TestRefreshClearsValueWhenClaudeSessionCannotBeResolved(t *testing.T) {
-	t.Parallel()
-
-	var log bytes.Buffer
-	home := t.TempDir()
-	fake := &fakeHerdr{
-		agents:    []herdr.Agent{{Agent: "claude", PaneID: "w1:p1", ForegroundCWD: "/ambiguous", Tokens: map[string]string{"ctx_raw": "92481"}}},
-		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "claude"}}},
-		reports:   make(map[string][2]string),
-	}
-	if err := Refresh(context.Background(), fake, "", &log, Config{ClaudeHome: home}); err != nil {
-		t.Fatalf("Refresh() error = %v", err)
-	}
-	if !slices.Equal(fake.clears, []string{"w1:p1"}) {
-		t.Fatalf("clears = %v, want unresolved session cleared", fake.clears)
-	}
-	if got := log.String(); !strings.Contains(got, `"type":"measurement"`) || !strings.Contains(got, `"context_state":"unknown"`) || !strings.Contains(got, `"occupancy":null`) {
-		t.Fatalf("diagnostic = %s, want unknown state with null occupancy", got)
+	got := records[0]
+	if got.PaneID != "w1:p1" || got.Provider != provider.Claude || got.ContextState != ContextMeasured ||
+		got.Occupancy == nil || *got.Occupancy != 92481 ||
+		got.ResolutionMode == nil || *got.ResolutionMode != provider.ResolutionProcessRegistry ||
+		got.ModelID != "claude-opus-5-5" || got.OracleDisagreement != "store says 92000" || got.Error != "" ||
+		got.TranscriptVersion == nil || *got.TranscriptVersion != version {
+		t.Fatalf("record = %#v, want a measured claude reading carrying its occupancy, mode, model, transcript version and oracle disagreement", got)
 	}
 }
 
-func TestRefreshReportsCodexPostCompactionOccupancy(t *testing.T) {
+// A failed reading is classified by the provider's own declaration alone: a
+// declared answer clears the pane, anything else keeps the value standing, and
+// either way the record carries whatever the provider observed before failing.
+func TestRefreshRecordsAFailedReadingAndClearsOnlyWhatTheProviderDeclares(t *testing.T) {
 	t.Parallel()
 
-	rollout := filepath.Join(t.TempDir(), "rollout.jsonl")
-	entries := "" +
-		`{"type":"event_msg","payload":{"info":{"last_token_usage":{"input_tokens":245400,"cached_input_tokens":238336,"total_tokens":245715}}}}` + "\n" +
-		`{"type":"compacted","payload":{"message":"","replacement_history":[]}}` + "\n" +
-		`{"type":"event_msg","payload":{"info":{"last_token_usage":{"input_tokens":0,"cached_input_tokens":0,"total_tokens":18162},"model_context_window":272000}}}` + "\n"
-	if err := os.WriteFile(rollout, []byte(entries), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	var log bytes.Buffer
-	fake := &fakeHerdr{
-		agents: []herdr.Agent{{
-			Agent:        "codex",
-			PaneID:       "w1:p1",
-			AgentSession: &provider.AgentSession{Kind: "path", Value: rollout},
-		}},
-		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "codex"}}},
-		reports:   make(map[string][2]string),
-	}
-	if err := Refresh(context.Background(), fake, "", &log, Config{}); err != nil {
-		t.Fatalf("Refresh() error = %v", err)
-	}
-	if got := fake.reports["w1:p1"]; got != [2]string{"18k", "18162"} {
-		t.Fatalf("report = %v, want post-compaction absolute occupancy", got)
-	}
-	if got := log.String(); !strings.Contains(got, `"provider":"codex"`) || !strings.Contains(got, `"resolution_mode":"agent_session"`) {
-		t.Fatalf("measurement = %s, want codex agent_session resolution", got)
+	version := 3
+	undeclared := errors.New("permission denied")
+	compacted := fmt.Errorf("transcript: %w", provider.ErrJustCompacted)
+	for _, test := range []struct {
+		name       string
+		reading    provider.Reading
+		err        error
+		superseded []error
+		wantClear  bool
+		wantState  ContextState
+		wantMode   provider.ResolutionMode
+	}{
+		{
+			name:       "a declared answer clears",
+			err:        fmt.Errorf("resolve: %w", errSuperseded),
+			superseded: []error{errSuperseded},
+			wantClear:  true,
+			wantState:  ContextUnknown,
+		},
+		{
+			name:       "an undeclared error keeps the value",
+			reading:    provider.Reading{Mode: provider.ResolutionAgentSession},
+			err:        undeclared,
+			superseded: []error{errSuperseded},
+			wantState:  ContextUnknown,
+			wantMode:   provider.ResolutionAgentSession,
+		},
+		{
+			name:       "a just-compacted answer is recorded as such",
+			reading:    provider.Reading{Mode: provider.ResolutionTerminalTitle, TranscriptVersion: &version},
+			err:        compacted,
+			superseded: []error{provider.ErrJustCompacted},
+			wantClear:  true,
+			wantState:  ContextJustCompacted,
+			wantMode:   provider.ResolutionTerminalTitle,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			fake := &fakeHerdr{agents: []herdr.Agent{{Agent: "pi", PaneID: "w1:p1", Tokens: map[string]string{"ctx_raw": "92481"}}}}
+			pi := &fakeProvider{reading: test.reading, err: test.err, superseded: test.superseded}
+			var log bytes.Buffer
+			if err := Refresh(context.Background(), fake, "", &log, map[provider.Kind]provider.Provider{provider.Pi: pi}); err != nil {
+				t.Fatalf("Refresh() error = %v; a failed reading is round-local", err)
+			}
+			if len(fake.reports) != 0 {
+				t.Fatalf("reports = %v, want none for a failed reading", fake.reports)
+			}
+			if cleared := slices.Equal(fake.clears, []string{"w1:p1"}); cleared != test.wantClear || (!cleared && len(fake.clears) != 0) {
+				t.Fatalf("clears = %v, want cleared = %v", fake.clears, test.wantClear)
+			}
+			records := measurements(t, &log)
+			if len(records) != 1 {
+				t.Fatalf("records = %#v, want one", records)
+			}
+			got := records[0]
+			if got.ContextState != test.wantState || got.Occupancy != nil || got.Error != test.err.Error() {
+				t.Fatalf("record = %#v, want state %q, null occupancy and error %q", got, test.wantState, test.err)
+			}
+			// A zero mode is null rather than an empty name; one that resolved
+			// before the read failed is still recorded.
+			if test.wantMode == "" && got.ResolutionMode != nil || test.wantMode != "" && (got.ResolutionMode == nil || *got.ResolutionMode != test.wantMode) {
+				t.Fatalf("resolution_mode = %v, want %q (null when empty)", got.ResolutionMode, test.wantMode)
+			}
+			if test.reading.TranscriptVersion != nil && (got.TranscriptVersion == nil || *got.TranscriptVersion != version) {
+				t.Fatalf("transcript_version = %v, want %d recorded on the failed read", got.TranscriptVersion, version)
+			}
+			raw := rawMeasurement(t, &log)
+			if occupancy, ok := raw["occupancy"]; !ok || string(occupancy) != "null" {
+				t.Fatalf("record = %s, want occupancy written as null rather than left out", log.String())
+			}
+			if mode, ok := raw["resolution_mode"]; test.wantMode == "" && (!ok || string(mode) != "null") {
+				t.Fatalf("record = %s, want an unresolved mode written as null rather than left out", log.String())
+			}
+		})
 	}
 }
 
-func TestRefreshPreservesCodexValueAfterATurnThatRecordedNoUsage(t *testing.T) {
+// paneOf is the only place herdr's record becomes a provider's input, so every
+// field a provider resolves from has to arrive intact.
+func TestRefreshHandsTheProviderWhatHerdrReportedAboutThePane(t *testing.T) {
 	t.Parallel()
 
-	// Codex reads the newest usage row rather than walking back, so a turn that
-	// recorded nothing has to leave the previous reading standing rather than
-	// blank the pane. No rollout in the local corpus has produced this row.
-	rollout := filepath.Join(t.TempDir(), "rollout.jsonl")
-	entries := "" +
-		`{"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":85751,"cached_input_tokens":84736,"total_tokens":86542}}}}` + "\n" +
-		`{"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":0,"cached_input_tokens":0,"total_tokens":0}}}}` + "\n"
-	if err := os.WriteFile(rollout, []byte(entries), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	var log bytes.Buffer
-	fake := &fakeHerdr{
-		agents: []herdr.Agent{{
-			Agent:        "codex",
-			PaneID:       "w1:p1",
-			Tokens:       map[string]string{"ctx": "86k", "ctx_raw": "86542"},
-			AgentSession: &provider.AgentSession{Kind: "path", Value: rollout},
-		}},
-		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "codex"}}},
-		reports:   make(map[string][2]string),
-	}
-	if err := Refresh(context.Background(), fake, "", &log, Config{}); err != nil {
-		t.Fatalf("Refresh() error = %v", err)
-	}
-	if len(fake.clears) != 0 || len(fake.reports) != 0 {
-		t.Fatalf("clears = %v, reports = %v; want the previous reading left standing", fake.clears, fake.reports)
-	}
-}
-
-func TestRefreshClearsValueWhenCodexRolloutIsNotWritten(t *testing.T) {
-	t.Parallel()
-
-	missing := filepath.Join(t.TempDir(), "not-written.jsonl")
-	var log bytes.Buffer
-	fake := &fakeHerdr{
-		agents: []herdr.Agent{{
-			Agent:        "codex",
-			PaneID:       "w1:p1",
-			Tokens:       map[string]string{"ctx_raw": "92481"},
-			AgentSession: &provider.AgentSession{Kind: "path", Value: missing},
-		}},
-		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "codex"}}},
-		reports:   make(map[string][2]string),
-	}
-	if err := Refresh(context.Background(), fake, "", &log, Config{}); err != nil {
-		t.Fatalf("Refresh() error = %v", err)
-	}
-	if !slices.Equal(fake.clears, []string{"w1:p1"}) {
-		t.Fatalf("clears = %v, want previous occupancy cleared", fake.clears)
-	}
-	if got := log.String(); !strings.Contains(got, `"provider":"codex"`) || !strings.Contains(got, `"occupancy":null`) {
-		t.Fatalf("measurement = %s, want unknown Codex occupancy", got)
-	}
-}
-
-func TestRefreshClearsValueWhenTranscriptIsJustCompacted(t *testing.T) {
-	t.Parallel()
-
-	home := t.TempDir()
-	transcript := filepath.Join(home, "session.jsonl")
-	if err := os.WriteFile(transcript, []byte(`{"type":"summary","isCompactSummary":true}`+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	var log bytes.Buffer
+	session := &provider.AgentSession{Kind: "id", Value: "ses_current"}
+	processes := []provider.Process{{PID: 42, Argv0: "codex", Argv: []string{"codex", "resume"}}}
 	fake := &fakeHerdr{
 		agents: []herdr.Agent{{
-			Agent:        "claude",
-			PaneID:       "w1:p1",
-			Tokens:       map[string]string{"ctx_raw": "92481"},
-			AgentSession: &provider.AgentSession{Kind: "path", Value: transcript},
+			Agent: "codex", PaneID: "w1:p1",
+			ForegroundCWD: "/work/acme", TerminalTitle: "codex | acme", AgentSession: session,
 		}},
-		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "claude"}}},
-		reports:   make(map[string][2]string),
+		processes: map[string][]provider.Process{"w1:p1": processes},
 	}
-	if err := Refresh(context.Background(), fake, "", &log, Config{ClaudeHome: home}); err != nil {
+	codex := measuring()
+	if err := Refresh(context.Background(), fake, "", nil, map[provider.Kind]provider.Provider{provider.Codex: codex}); err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
-	if !slices.Equal(fake.clears, []string{"w1:p1"}) {
-		t.Fatalf("clears = %v, want pre-compaction value cleared", fake.clears)
-	}
-	if got := log.String(); !strings.Contains(got, `"context_state":"just_compacted"`) || !strings.Contains(got, `"occupancy":null`) {
-		t.Fatalf("diagnostic = %s, want just-compacted state with null occupancy", got)
-	}
-	// Resolution succeeded before the read failed, so its mode is still recorded.
-	if got := log.String(); !strings.Contains(got, `"resolution_mode":"agent_session"`) {
-		t.Fatalf("diagnostic = %s, want the resolution mode kept on the failed read", got)
+	want := provider.Pane{ForegroundCWD: "/work/acme", TerminalTitle: "codex | acme", AgentSession: session, Processes: processes}
+	if got := codex.measured(); len(got) != 1 || !reflect.DeepEqual(got[0], want) {
+		t.Fatalf("measured panes = %#v, want %#v", got, want)
 	}
 }
 
-func TestRefreshTreatsSyntheticZeroUsageAsUnknown(t *testing.T) {
+// A kind nobody registered cannot be read, so a value it displays belongs to
+// no session this plugin can vouch for and is cleared; a pane showing nothing
+// is left alone, and neither produces a measurement record.
+func TestRefreshClearsAnUnregisteredKindOnlyWhenItDisplaysOccupancy(t *testing.T) {
 	t.Parallel()
 
-	home := t.TempDir()
-	transcript := filepath.Join(home, "session.jsonl")
-	entry := `{"type":"assistant","message":{"usage":{"input_tokens":0,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}` + "\n"
-	if err := os.WriteFile(transcript, []byte(entry), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	fake := &fakeHerdr{agents: []herdr.Agent{
+		{Agent: "gemini", PaneID: "w1:shown", Tokens: map[string]string{"ctx": "50k"}},
+		{Agent: "gemini", PaneID: "w1:blank"},
+	}}
 	var log bytes.Buffer
-	fake := &fakeHerdr{
-		agents: []herdr.Agent{{
-			Agent:        "claude",
-			PaneID:       "w1:p1",
-			Tokens:       map[string]string{"ctx_raw": "92481"},
-			AgentSession: &provider.AgentSession{Kind: "path", Value: transcript},
-		}},
-		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "claude"}}},
-		reports:   make(map[string][2]string),
-	}
-	if err := Refresh(context.Background(), fake, "", &log, Config{ClaudeHome: home}); err != nil {
+	if err := Refresh(context.Background(), fake, "", &log, map[provider.Kind]provider.Provider{provider.Claude: measuring()}); err != nil {
 		t.Fatalf("Refresh() error = %v", err)
 	}
-	if len(fake.reports) != 0 || !slices.Equal(fake.clears, []string{"w1:p1"}) {
-		t.Fatalf("reports = %v, clears = %v; want empty transcript cleared", fake.reports, fake.clears)
+	if !slices.Equal(fake.clears, []string{"w1:shown"}) {
+		t.Fatalf("clears = %v, want only the pane displaying occupancy", fake.clears)
 	}
-	if got := log.String(); !strings.Contains(got, `"context_state":"unknown"`) || !strings.Contains(got, `"occupancy":null`) {
-		t.Fatalf("diagnostic = %s, want unknown state with null occupancy", got)
-	}
-}
-
-func TestRefreshClearsValueWhenResolvedTranscriptDoesNotExist(t *testing.T) {
-	t.Parallel()
-
-	home := t.TempDir()
-	missing := filepath.Join(home, "not-created-yet.jsonl")
-	var log bytes.Buffer
-	fake := &fakeHerdr{
-		agents: []herdr.Agent{{
-			Agent:        "claude",
-			PaneID:       "w1:p1",
-			Tokens:       map[string]string{"ctx_raw": "92481"},
-			AgentSession: &provider.AgentSession{Kind: "path", Value: missing},
-		}},
-		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "claude"}}},
-		reports:   make(map[string][2]string),
-	}
-	if err := Refresh(context.Background(), fake, "", &log, Config{ClaudeHome: home}); err != nil {
-		t.Fatalf("Refresh() error = %v", err)
-	}
-	if !slices.Equal(fake.clears, []string{"w1:p1"}) {
-		t.Fatalf("clears = %v, want previous session value cleared", fake.clears)
-	}
-	if got := log.String(); !strings.Contains(got, `"context_state":"unknown"`) || !strings.Contains(got, `"occupancy":null`) {
-		t.Fatalf("diagnostic = %s, want unknown state with null occupancy", got)
-	}
-}
-
-func TestRefreshPreservesValueOnTranscriptIOFailure(t *testing.T) {
-	t.Parallel()
-
-	home := t.TempDir()
-	var log bytes.Buffer
-	fake := &fakeHerdr{
-		agents: []herdr.Agent{{
-			Agent:        "claude",
-			PaneID:       "w1:p1",
-			Tokens:       map[string]string{"ctx_raw": "92481"},
-			AgentSession: &provider.AgentSession{Kind: "path", Value: home},
-		}},
-		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "claude"}}},
-		reports:   make(map[string][2]string),
-	}
-	if err := Refresh(context.Background(), fake, "", &log, Config{ClaudeHome: home}); err != nil {
-		t.Fatalf("Refresh() error = %v", err)
-	}
-	if len(fake.clears) != 0 {
-		t.Fatalf("clears = %v, want I/O failure to preserve value", fake.clears)
-	}
-	if got := log.String(); !strings.Contains(got, `"context_state":"unknown"`) || !strings.Contains(got, `"occupancy":null`) {
-		t.Fatalf("diagnostic = %s, want unknown state with null occupancy", got)
+	if records := measurements(t, &log); len(records) != 0 {
+		t.Fatalf("records = %#v, want none for an unregistered kind", records)
 	}
 }
 
 func TestRefreshReportsOccupancyWhenMeasurementLoggingFails(t *testing.T) {
 	t.Parallel()
 
-	home := t.TempDir()
-	transcript := filepath.Join(home, "session.jsonl")
-	entry := `{"type":"assistant","message":{"usage":{"input_tokens":840,"cache_read_input_tokens":90000,"cache_creation_input_tokens":1641}}}` + "\n"
-	if err := os.WriteFile(transcript, []byte(entry), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	writeErr := errors.New("stdout failed")
-	fake := &fakeHerdr{
-		agents:    []herdr.Agent{{Agent: "claude", PaneID: "w1:p1", AgentSession: &provider.AgentSession{Kind: "path", Value: transcript}}},
-		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "claude"}}},
-		reports:   make(map[string][2]string),
-	}
-	err := Refresh(context.Background(), fake, "", errorWriter{err: writeErr}, Config{ClaudeHome: home})
+	fake := &fakeHerdr{agents: []herdr.Agent{{Agent: "claude", PaneID: "w1:p1"}}}
+	err := Refresh(context.Background(), fake, "", errorWriter{err: writeErr}, map[provider.Kind]provider.Provider{provider.Claude: measuring()})
 	if !errors.Is(err, writeErr) {
 		t.Fatalf("Refresh() error = %v, want logging error %v", err, writeErr)
 	}
@@ -482,20 +507,12 @@ func TestRefreshReportsOccupancyWhenMeasurementLoggingFails(t *testing.T) {
 func TestRefreshReportsPaneListFailureWithoutMaskingMeasurement(t *testing.T) {
 	t.Parallel()
 
-	home := t.TempDir()
-	transcript := filepath.Join(home, "session.jsonl")
-	entry := `{"type":"assistant","message":{"usage":{"input_tokens":840,"cache_read_input_tokens":90000,"cache_creation_input_tokens":1641}}}` + "\n"
-	if err := os.WriteFile(transcript, []byte(entry), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	var log bytes.Buffer
 	fake := &fakeHerdr{
-		agents:      []herdr.Agent{{Agent: "claude", PaneID: "w1:p1", AgentSession: &provider.AgentSession{Kind: "path", Value: transcript}}},
+		agents:      []herdr.Agent{{Agent: "claude", PaneID: "w1:p1"}},
 		paneListErr: errors.New("pane list failed"),
-		processes:   map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "claude"}}},
-		reports:     make(map[string][2]string),
 	}
-	if err := Refresh(context.Background(), fake, "w1:exited", &log, Config{ClaudeHome: home}); err != nil {
+	if err := Refresh(context.Background(), fake, "w1:exited", &log, map[provider.Kind]provider.Provider{provider.Claude: measuring()}); err != nil {
 		t.Fatalf("Refresh() error = %v, want successful measurement", err)
 	}
 	if got := log.String(); !strings.Contains(got, `"type":"maintenance"`) || !strings.Contains(got, `"type":"measurement"`) || !strings.Contains(got, `"operation":"list_panes"`) || !strings.Contains(got, `"error":"pane list failed"`) {
@@ -525,7 +542,7 @@ func TestRefreshReportsEveryStaleMetadataClearFailure(t *testing.T) {
 			"w1:p2": errors.New("second clear failed"),
 		},
 	}
-	if err := Refresh(context.Background(), fake, "", &log, Config{}); err != nil {
+	if err := Refresh(context.Background(), fake, "", &log, nil); err != nil {
 		t.Fatalf("Refresh() error = %v, want sweep failures to preserve exit status", err)
 	}
 	got := log.String()
@@ -551,7 +568,7 @@ func TestRefreshReportsEventPaneFallbackClearFailure(t *testing.T) {
 		paneListErr: errors.New("pane list failed"),
 		clearErrs:   map[string]error{"w1:exited": errors.New("fallback clear failed")},
 	}
-	if err := Refresh(context.Background(), fake, "w1:exited", &log, Config{}); err != nil {
+	if err := Refresh(context.Background(), fake, "w1:exited", &log, nil); err != nil {
 		t.Fatalf("Refresh() error = %v, want sweep failures to preserve exit status", err)
 	}
 	got := log.String()
@@ -567,356 +584,6 @@ func TestRefreshReportsEventPaneFallbackClearFailure(t *testing.T) {
 	}
 }
 
-func TestRefreshReportsOpenCodeV1Occupancy(t *testing.T) {
-	t.Parallel()
-
-	dataDir := t.TempDir()
-	createOpenCodeDatabase(t, filepath.Join(dataDir, "opencode.db"), "ses_current", `{"role":"assistant","time":{"completed":1},"tokens":{"input":840,"cache":{"read":90000,"write":1641}}}`)
-	var log bytes.Buffer
-	fake := &fakeHerdr{
-		agents: []herdr.Agent{{
-			Agent:        "opencode",
-			PaneID:       "w1:p1",
-			AgentSession: &provider.AgentSession{Kind: "id", Value: "ses_current"},
-		}},
-		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "opencode"}}},
-		reports:   make(map[string][2]string),
-	}
-
-	if err := Refresh(context.Background(), fake, "", &log, Config{OpenCodeDB: filepath.Join(dataDir, "opencode.db")}); err != nil {
-		t.Fatalf("Refresh() error = %v", err)
-	}
-	if got := fake.reports["w1:p1"]; got != [2]string{"92k", "92481"} {
-		t.Fatalf("report = %v, want opencode v1 occupancy", got)
-	}
-	if got := log.String(); !strings.Contains(got, `"provider":"opencode"`) || !strings.Contains(got, `"resolution_mode":"agent_session"`) {
-		t.Fatalf("diagnostic = %s, want opencode agent_session measurement", got)
-	}
-}
-
-func TestRefreshReportsOpenCodeV1OccupancyResolvedFromTerminalTitle(t *testing.T) {
-	t.Parallel()
-
-	dataDir := t.TempDir()
-	databasePath := filepath.Join(dataDir, "opencode.db")
-	createOpenCodeDatabase(t, databasePath, "ses_current", `{"role":"assistant","time":{"completed":1},"tokens":{"input":840,"cache":{"read":90000,"write":1641}}}`)
-	database, err := sql.Open("sqlite", databasePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := database.Exec(`UPDATE session SET directory = ?, title = ? WHERE id = ?`, "/work/acme", "Probe test response", "ses_current"); err != nil {
-		t.Fatal(err)
-	}
-	if err := database.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	var log bytes.Buffer
-	fake := &fakeHerdr{
-		agents: []herdr.Agent{{
-			Agent:         "opencode",
-			PaneID:        "w1:p1",
-			ForegroundCWD: "/work/acme",
-			TerminalTitle: "OC | Probe test response",
-		}},
-		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "opencode"}}},
-		reports:   make(map[string][2]string),
-	}
-
-	if err := Refresh(context.Background(), fake, "", &log, Config{OpenCodeDB: databasePath}); err != nil {
-		t.Fatalf("Refresh() error = %v", err)
-	}
-	if got := fake.reports["w1:p1"]; got != [2]string{"92k", "92481"} {
-		t.Fatalf("report = %v, want opencode v1 occupancy", got)
-	}
-	if got := log.String(); !strings.Contains(got, `"resolution_mode":"terminal_title"`) {
-		t.Fatalf("diagnostic = %s, want terminal_title resolution", got)
-	}
-}
-
-func TestRefreshOpenCodeClearsValueWhenStoreIsMissing(t *testing.T) {
-	t.Parallel()
-
-	var log bytes.Buffer
-	fake := &fakeHerdr{
-		agents: []herdr.Agent{{
-			Agent:        "opencode",
-			PaneID:       "w1:p1",
-			Tokens:       map[string]string{"ctx_raw": "92481"},
-			AgentSession: &provider.AgentSession{Kind: "id", Value: "ses_current"},
-		}},
-		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "opencode"}}},
-		reports:   make(map[string][2]string),
-	}
-
-	if err := Refresh(context.Background(), fake, "", &log, Config{OpenCodeDB: filepath.Join(t.TempDir(), "opencode.db")}); err != nil {
-		t.Fatalf("Refresh() error = %v", err)
-	}
-	if !slices.Equal(fake.clears, []string{"w1:p1"}) {
-		t.Fatalf("clears = %v, want missing store to clear stale occupancy", fake.clears)
-	}
-	if !strings.Contains(log.String(), `"resolution_mode":"agent_session"`) {
-		t.Fatalf("diagnostic = %s, want known agent_session mode", log.String())
-	}
-}
-
-func TestRefreshOpenCodeClearsValueForZeroOccupancy(t *testing.T) {
-	t.Parallel()
-
-	dataDir := t.TempDir()
-	createOpenCodeDatabase(t, filepath.Join(dataDir, "opencode.db"), "ses_aborted", `{"role":"assistant","time":{"completed":1},"tokens":{"input":0,"cache":{"read":0,"write":0}}}`)
-	fake := &fakeHerdr{
-		agents: []herdr.Agent{{
-			Agent:        "opencode",
-			PaneID:       "w1:p1",
-			Tokens:       map[string]string{"ctx_raw": "92481"},
-			AgentSession: &provider.AgentSession{Kind: "id", Value: "ses_aborted"},
-		}},
-		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "opencode"}}},
-		reports:   make(map[string][2]string),
-	}
-
-	if err := Refresh(context.Background(), fake, "", nil, Config{OpenCodeDB: filepath.Join(dataDir, "opencode.db")}); err != nil {
-		t.Fatalf("Refresh() error = %v", err)
-	}
-	if !slices.Equal(fake.clears, []string{"w1:p1"}) || len(fake.reports) != 0 {
-		t.Fatalf("clears = %v, reports = %v; want zero occupancy to clear stale metadata", fake.clears, fake.reports)
-	}
-}
-
-func TestRefreshOpenCodeUsesPreviousCompletedOccupancyAfterZeroTurn(t *testing.T) {
-	t.Parallel()
-
-	dataDir := t.TempDir()
-	databasePath := filepath.Join(dataDir, "opencode.db")
-	createOpenCodeDatabase(t, databasePath, "ses_current", `{"role":"assistant","time":{"completed":1},"tokens":{"input":840,"cache":{"read":90000,"write":1641}}}`)
-	appendOpenCodeMessage(t, databasePath, "msg_zero", "ses_current", 2, `{"role":"assistant","time":{"completed":2},"tokens":{"input":0,"cache":{"read":0,"write":0}}}`)
-	fake := &fakeHerdr{
-		agents: []herdr.Agent{{
-			Agent:        "opencode",
-			PaneID:       "w1:p1",
-			Tokens:       map[string]string{"ctx_raw": "92481"},
-			AgentSession: &provider.AgentSession{Kind: "id", Value: "ses_current"},
-		}},
-		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "opencode"}}},
-		reports:   make(map[string][2]string),
-	}
-
-	if err := Refresh(context.Background(), fake, "", nil, Config{OpenCodeDB: databasePath}); err != nil {
-		t.Fatalf("Refresh() error = %v", err)
-	}
-	if got := fake.reports["w1:p1"]; got != [2]string{"92k", "92481"} || len(fake.clears) != 0 {
-		t.Fatalf("report = %v, clears = %v; want previous completed lower bound", got, fake.clears)
-	}
-}
-
-func TestRefreshOpenCodeClearsValueWhenNewestMessageIsCompactionSummary(t *testing.T) {
-	t.Parallel()
-
-	dataDir := t.TempDir()
-	databasePath := filepath.Join(dataDir, "opencode.db")
-	createOpenCodeDatabase(t, databasePath, "ses_current", `{"role":"assistant","time":{"completed":1},"tokens":{"input":840,"cache":{"read":90000,"write":1641}}}`)
-	// msg_ce8685bc7001SiK5DcsX6T7Q34 of session ses_31c1bfde3ffeCEDhd6W270unu4:
-	// the assistant message that wrote a compaction summary. Its own token counts
-	// are what summarising the old context cost, not the size of the new one.
-	appendOpenCodeMessage(t, databasePath, "msg_summary", "ses_current", 2,
-		`{"role":"assistant","mode":"compaction","agent":"compaction","summary":true,"time":{"created":1773425679303,"completed":1773425736799},"tokens":{"input":2,"cache":{"read":0,"write":131757}}}`)
-	var log bytes.Buffer
-	fake := &fakeHerdr{
-		agents: []herdr.Agent{{
-			Agent:        "opencode",
-			PaneID:       "w1:p1",
-			Tokens:       map[string]string{"ctx_raw": "92481"},
-			AgentSession: &provider.AgentSession{Kind: "id", Value: "ses_current"},
-		}},
-		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "opencode"}}},
-		reports:   make(map[string][2]string),
-	}
-
-	if err := Refresh(context.Background(), fake, "", &log, Config{OpenCodeDB: databasePath}); err != nil {
-		t.Fatalf("Refresh() error = %v", err)
-	}
-	if !slices.Equal(fake.clears, []string{"w1:p1"}) || len(fake.reports) != 0 {
-		t.Fatalf("clears = %v, reports = %v; want pre-compaction value cleared", fake.clears, fake.reports)
-	}
-	if got := log.String(); !strings.Contains(got, `"context_state":"just_compacted"`) {
-		t.Fatalf("diagnostic = %s, want just-compacted state", got)
-	}
-	// Resolution succeeded before the read failed, so its mode is still recorded.
-	if got := log.String(); !strings.Contains(got, `"resolution_mode":"agent_session"`) {
-		t.Fatalf("diagnostic = %s, want the resolution mode kept on the failed read", got)
-	}
-}
-
-func TestRefreshKeepsOpenCodeV1OccupancyDuringInFlightTurn(t *testing.T) {
-	t.Parallel()
-
-	// herdr fires an event when an agent starts working, so this is the state a
-	// v1 pane is read in for the whole of every turn: a completed reading, the
-	// prompt that started the turn, and an assistant row with nothing in it yet.
-	dataDir := t.TempDir()
-	databasePath := filepath.Join(dataDir, "opencode.db")
-	createOpenCodeDatabase(t, databasePath, "ses_current", `{"role":"assistant","time":{"completed":1},"tokens":{"input":840,"cache":{"read":90000,"write":1641}}}`)
-	appendOpenCodeMessage(t, databasePath, "msg_prompt", "ses_current", 2, `{"role":"user","time":{"created":2},"summary":{"diffs":[]},"agent":"build"}`)
-	appendOpenCodeMessage(t, databasePath, "msg_in_flight", "ses_current", 3, `{"role":"assistant","mode":"Atlas (Plan Executor)","time":{"created":3}}`)
-	fake := &fakeHerdr{
-		agents: []herdr.Agent{{
-			Agent:        "opencode",
-			PaneID:       "w1:p1",
-			Tokens:       map[string]string{"ctx": "92k", "ctx_raw": "92481"},
-			AgentSession: &provider.AgentSession{Kind: "id", Value: "ses_current"},
-		}},
-		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "opencode"}}},
-		reports:   make(map[string][2]string),
-	}
-
-	if err := Refresh(context.Background(), fake, "", nil, Config{OpenCodeDB: databasePath}); err != nil {
-		t.Fatalf("Refresh() error = %v", err)
-	}
-	if got := fake.reports["w1:p1"]; got != [2]string{"92k", "92481"} || len(fake.clears) != 0 {
-		t.Fatalf("report = %v, clears = %v; want the running turn to keep its lower bound", got, fake.clears)
-	}
-}
-
-func TestRefreshOpenCodeClearsWhenSessionCannotBeResolved(t *testing.T) {
-	t.Parallel()
-
-	dataDir := t.TempDir()
-	createOpenCodeDatabase(t, filepath.Join(dataDir, "opencode.db"), "ses_someone_else", `{"role":"assistant","time":{"completed":1},"tokens":{"input":999999,"cache":{"read":0,"write":0}}}`)
-	fake := &fakeHerdr{
-		agents: []herdr.Agent{{
-			Agent:  "opencode",
-			PaneID: "w1:p1",
-			Tokens: map[string]string{"ctx_raw": "92481"},
-		}},
-		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "opencode"}}},
-		reports:   make(map[string][2]string),
-	}
-
-	if err := Refresh(context.Background(), fake, "", nil, Config{OpenCodeDB: filepath.Join(dataDir, "opencode.db")}); err != nil {
-		t.Fatalf("Refresh() error = %v", err)
-	}
-	if !slices.Equal(fake.clears, []string{"w1:p1"}) || len(fake.reports) != 0 {
-		t.Fatalf("clears = %v, reports = %v; want blank unresolved opencode row", fake.clears, fake.reports)
-	}
-}
-
-func TestRefreshDoesNotClaimOpenCode2AsV1(t *testing.T) {
-	t.Parallel()
-
-	dataDir := t.TempDir()
-	createOpenCodeDatabase(t, filepath.Join(dataDir, "opencode.db"), "ses_current", `{"role":"assistant","time":{"completed":1},"tokens":{"input":840,"cache":{"read":90000,"write":1641}}}`)
-	fake := &fakeHerdr{
-		agents: []herdr.Agent{{
-			Agent:        "opencode",
-			PaneID:       "w1:p1",
-			Tokens:       map[string]string{"ctx_raw": "92481"},
-			AgentSession: &provider.AgentSession{Kind: "id", Value: "ses_current"},
-		}},
-		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: ".OpenCode2"}}},
-		reports:   make(map[string][2]string),
-	}
-
-	// OpenCode2DB names a store that does not exist, so the opencode2 side reads
-	// nothing on the host either.
-	config := Config{OpenCodeDB: filepath.Join(dataDir, "opencode.db"), OpenCode2DB: filepath.Join(dataDir, "opencode2.db")}
-	if err := Refresh(context.Background(), fake, "", nil, config); err != nil {
-		t.Fatalf("Refresh() error = %v", err)
-	}
-	if len(fake.reports) != 0 {
-		t.Fatalf("reports = %v, want opencode2 excluded from v1", fake.reports)
-	}
-}
-
-// Each provider detects a compaction against its own store, and the three
-// detections have nothing in common: codex writes a top-level marker record,
-// opencode v1 sets a flag inside a user message, opencode2 uses a dedicated row
-// type. These assertions are what keep all of them reporting the same state to
-// herdr despite that, so they are repeated per provider rather than shared.
-func TestRefreshClearsValueWhenCodexRolloutIsJustCompacted(t *testing.T) {
-	t.Parallel()
-
-	rollout := filepath.Join(t.TempDir(), "rollout.jsonl")
-	entries := "" +
-		`{"type":"event_msg","payload":{"info":{"last_token_usage":{"input_tokens":245400,"cached_input_tokens":238336,"total_tokens":245715}}}}` + "\n" +
-		`{"type":"compacted","payload":{"message":"","replacement_history":[]}}` + "\n"
-	if err := os.WriteFile(rollout, []byte(entries), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	var log bytes.Buffer
-	fake := &fakeHerdr{
-		agents: []herdr.Agent{{
-			Agent:        "codex",
-			PaneID:       "w1:p1",
-			Tokens:       map[string]string{"ctx_raw": "245715"},
-			AgentSession: &provider.AgentSession{Kind: "path", Value: rollout},
-		}},
-		processes: map[string][]provider.Process{"w1:p1": {{PID: 42, Argv0: "codex"}}},
-		reports:   make(map[string][2]string),
-	}
-
-	if err := Refresh(context.Background(), fake, "", &log, Config{}); err != nil {
-		t.Fatalf("Refresh() error = %v", err)
-	}
-	if !slices.Equal(fake.clears, []string{"w1:p1"}) || len(fake.reports) != 0 {
-		t.Fatalf("clears = %v, reports = %v; want pre-compaction value cleared", fake.clears, fake.reports)
-	}
-	if got := log.String(); !strings.Contains(got, `"context_state":"just_compacted"`) {
-		t.Fatalf("diagnostic = %s, want just-compacted state", got)
-	}
-	// Resolution succeeded before the read failed, so its mode is still recorded.
-	if got := log.String(); !strings.Contains(got, `"resolution_mode":"agent_session"`) {
-		t.Fatalf("diagnostic = %s, want the resolution mode kept on the failed read", got)
-	}
-}
-
-// Provenance for the fixtures in this file, which are about delivery to herdr
-// rather than about arithmetic, so most of them carry the design document's
-// worked example — 840 / 90000 / 1641, the same 92,481 across three providers
-// — instead of a copied record. Where an instant is what is being asserted,
-// the record is real and named at the call site: the codex compaction is lines
-// 396, 397 and 400 of
-// ~/.codex/sessions/2026/07/31/rollout-2026-07-31T17-43-45-019fb8d8-85b8-7c50-82ac-bc46ddf0d5fe.jsonl,
-// and the opencode v1 compaction summary is msg_ce8685bc7001SiK5DcsX6T7Q34 of
-// session ses_31c1bfde3ffeCEDhd6W270unu4. Both are described in full in the
-// providers' own reader tests.
-func createOpenCodeDatabase(t *testing.T, path, sessionID, message string) {
-	t.Helper()
-
-	database, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer database.Close()
-	for _, query := range []string{
-		`CREATE TABLE session (id TEXT PRIMARY KEY, directory TEXT, title TEXT, parent_id TEXT)`,
-		`CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, time_created INTEGER NOT NULL, data TEXT NOT NULL)`,
-	} {
-		if _, err := database.Exec(query); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if _, err := database.Exec(`INSERT INTO session (id) VALUES (?)`, sessionID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := database.Exec(`INSERT INTO message (id, session_id, time_created, data) VALUES ('msg_current', ?, 1, ?)`, sessionID, message); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func appendOpenCodeMessage(t *testing.T, path, id, sessionID string, created int64, data string) {
-	t.Helper()
-
-	database, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer database.Close()
-	if _, err := database.Exec(`INSERT INTO message (id, session_id, time_created, data) VALUES (?, ?, ?, ?)`, id, sessionID, created, data); err != nil {
-		t.Fatal(err)
-	}
-}
-
 // Every write in a round is a verdict on that round's agent snapshot, so all of
 // them carry one sequence no later than the snapshot, and a later round's is
 // greater: whichever round lands last, the one that saw the newer agent list
@@ -924,23 +591,18 @@ func appendOpenCodeMessage(t *testing.T, path, id, sessionID string, created int
 func TestRefreshSequencesEveryWriteByTheRoundsAgentSnapshot(t *testing.T) {
 	t.Parallel()
 
-	root := t.TempDir()
-	transcript := filepath.Join(root, "session.jsonl")
-	if err := os.WriteFile(transcript, []byte(`{"type":"assistant","message":{"usage":{"input_tokens":840,"cache_read_input_tokens":90000,"cache_creation_input_tokens":1641}}}`+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	fake := &fakeHerdr{
 		agents: []herdr.Agent{
-			{Agent: "claude", PaneID: "w1:p1", AgentSession: &provider.AgentSession{Kind: "path", Value: transcript}},
+			{Agent: "claude", PaneID: "w1:p1"},
 			{Agent: "gemini", PaneID: "w1:g", Tokens: map[string]string{"ctx": "50k", "ctx_raw": "50000"}},
 		},
-		panes:   []herdr.Pane{{PaneID: "w1:gone", Tokens: map[string]string{"ctx": "80k"}}},
-		reports: make(map[string][2]string),
+		panes: []herdr.Pane{{PaneID: "w1:gone", Tokens: map[string]string{"ctx": "80k"}}},
 	}
+	providers := map[provider.Kind]provider.Provider{provider.Claude: measuring()}
 	var previous int64
 	for round := range 2 {
 		fake.seqs = nil
-		if err := Refresh(context.Background(), fake, "", nil, Config{ClaudeHome: root}); err != nil {
+		if err := Refresh(context.Background(), fake, "", nil, providers); err != nil {
 			t.Fatalf("Refresh() error = %v", err)
 		}
 		// The stale pane, the unregistered kind, and the measured claude pane.

@@ -28,7 +28,7 @@ import (
 //
 // Each provider is handed only the config it reads, once; Config.PiCodingAgentDir
 // says why pi and omp share a field.
-func registry(config Config) map[provider.Kind]provider.Provider {
+func Registry(config Config) map[provider.Kind]provider.Provider {
 	return map[provider.Kind]provider.Provider{
 		provider.Claude:    claude.New(config.ClaudeHome),
 		provider.Codex:     codex.New(config.CodexHome),
