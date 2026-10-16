@@ -13,7 +13,7 @@
 
 </div>
 
-Herdr shows you a column of running agents and their lifecycle state, but not how full any of them is. The number that decides whether you paste a large file into a pane, or clear it first, stays invisible until you focus each agent and ask it.
+Herdr shows you a column of running agents and their lifecycle state, but not how full any of their context windows is. That number decides when an agent should compact. Once it is readable through the `herdr` CLI, a separate coding agent, the compressor agent, can monitor every pane and coordinate compaction for those agents, according to rules you define.
 
 This [Herdr](https://github.com/herdrdev/herdr) plugin reads each agent's own session store at every turn boundary and publishes the **context occupancy** of the pane's main thread as two Herdr metadata tokens:
 
