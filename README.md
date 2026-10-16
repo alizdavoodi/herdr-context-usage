@@ -4,6 +4,8 @@
 
 *See how full every coding agent's context window is, right in Herdr's sidebar*
 
+[![CI](https://img.shields.io/github/actions/workflow/status/alizdavoodi/herdr-context-usage/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/alizdavoodi/herdr-context-usage/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 [![Herdr](https://img.shields.io/badge/Herdr-%E2%89%A5%200.8.0-6e56cf?style=flat-square)](https://github.com/herdrdev/herdr)
 [![Go](https://img.shields.io/badge/Go-%E2%89%A5%201.22-00add8?style=flat-square&logo=go&logoColor=white)](https://go.dev)
 ![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS-555?style=flat-square)
@@ -38,20 +40,25 @@ This [Herdr](https://github.com/herdrdev/herdr) plugin reads each agent's own se
 **Requirements**
 
 - [Herdr](https://github.com/herdrdev/herdr) `0.8.0` or newer, on Linux or macOS.
-- Go `1.22` or newer, to build the binary.
+- Go `1.22` or newer on your `$PATH`. Herdr builds the plugin from source during install and does not install toolchains itself.
 
-> [!NOTE]
-> This repository is not yet public, so `herdr plugin install` cannot fetch it. Build a local checkout and link it instead:
->
-> ```bash
-> cd /path/to/herdr-context-usage
-> CGO_ENABLED=0 go build -o herdr-context-usage ./cmd/herdr-context-usage
-> herdr plugin link --enabled "$PWD"
-> ```
->
-> `plugin link` does not run the manifest's `[[build]]` command, so building is up to you, and so is rebuilding after each pull: Herdr runs whatever `./herdr-context-usage` the checkout holds. Once the repository is public, `herdr plugin install -y alizdavoodi/herdr-context-usage` will work too.
+```bash
+herdr plugin install alizdavoodi/herdr-context-usage
+```
 
-`herdr plugin install` builds the plugin itself from the `[[build]]` command in [`herdr-plugin.toml`](herdr-plugin.toml), a CGO-free `go build`. If that build fails, installation stops with the build error; fix it and run the install again. Either way, the binary is not put on your `$PATH`: Herdr runs it from the plugin root as `./herdr-context-usage`.
+Herdr clones the repository, shows a preview of the source in an interactive terminal, and builds the binary with the `[[build]]` command in [`herdr-plugin.toml`](herdr-plugin.toml), a CGO-free `go build`. If that build fails, installation stops with the build error. The binary is not put on your `$PATH`: Herdr runs it from the plugin root as `./herdr-context-usage`. On Herdr 0.9.4 or newer, `herdr plugin update herdr-context-usage` pulls later changes.
+
+### From a local checkout
+
+To run your own changes, build the checkout and link it:
+
+```bash
+cd /path/to/herdr-context-usage
+CGO_ENABLED=0 go build -o herdr-context-usage ./cmd/herdr-context-usage
+herdr plugin link --enabled "$PWD"
+```
+
+`plugin link` does not run the manifest's `[[build]]` command, so building is up to you, and so is rebuilding after each pull: Herdr runs whatever `./herdr-context-usage` the checkout holds. Herdr refuses to install over a linked plugin, so run `herdr plugin unlink herdr-context-usage` before switching to the GitHub install.
 
 ## Usage
 
@@ -429,6 +436,8 @@ This plugin reports one thing: context occupancy. A plugin that computes one num
 go test ./...
 CGO_ENABLED=0 go build -o herdr-context-usage ./cmd/herdr-context-usage
 ```
+
+[CI](.github/workflows/ci.yml) runs `go vet`, the manifest's build and the tests on Linux and macOS, against the Go version in `go.mod`, so a green run also means `herdr plugin install` builds on the oldest supported Go.
 
 The build is CGO-free because both opencode databases are read through the pure-Go [`modernc.org/sqlite`](https://pkg.go.dev/modernc.org/sqlite), which keeps the binary static. One package per provider lives under [`internal/provider/`](internal/provider), [`internal/herdr/`](internal/herdr) wraps the Herdr CLI, and [`internal/app/`](internal/app) runs a refresh round.
 
