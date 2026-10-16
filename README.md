@@ -378,7 +378,7 @@ omp queues the message write before `turn_end` without awaiting it, so the order
 </details>
 
 > [!CAUTION]
-> In every JavaScript and TypeScript snippet, the empty `error` handler is load-bearing: without it, a missing `herdr` binary raises an unhandled error that can take the agent down.
+> In every JavaScript and TypeScript snippet, keep the empty `error` handler: without it, a missing `herdr` binary raises an unhandled error that can take the agent down.
 
 ## Troubleshooting
 

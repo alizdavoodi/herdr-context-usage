@@ -49,7 +49,7 @@ running omp from the process name — its server log recording `agent changed �
 agent=Some(Omp) process=omp` — while `herdr integration status` reported omp's
 integration as not installed, and the pane reached this plugin and resolved to
 nothing, exactly as a pi pane in the same state does. Whether omp ships a
-screen manifest was never the load-bearing part; what was claimed and is false
+screen manifest was never what the decision rested on; what was claimed and is false
 is the consequence drawn from it. The decision survives on the two reasons
 above, each of which is independently sufficient.
 

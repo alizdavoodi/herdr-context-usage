@@ -104,8 +104,8 @@ The agent kinds are `pi` and `omp`, spelled exactly as herdr labels them.
 herdr's set of agent kinds is a closed enumeration compiled into its binary, and
 a user cannot extend it; `oh-my-pi` is not a value and neither is any
 transposition of `omp`. A misspelled kind constant matches no agent label and
-produces a permanently blank row with no error anywhere, so the spelling is
-load-bearing.
+produces a permanently blank row with no error anywhere, so the spelling must
+match herdr's label exactly.
 
 Unlike the opencode pair, these two kinds are reported separately by herdr, so
 dispatch needs no foreground-process inspection. Each provider is one
