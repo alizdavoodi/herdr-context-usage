@@ -2,11 +2,11 @@
 
 ### Issue tracker
 
-Issues live as local markdown files under `.scratch/<feature>/issues/`, which is gitignored. See `docs/agents/issue-tracker.md`.
+Issues live in this repo's GitHub Issues, worked through the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
-The five default triage roles, written as `Status:` lines in each ticket. See `docs/agents/triage-labels.md`.
+The five default triage roles, applied as GitHub labels. See `docs/agents/triage-labels.md`.
 
 ### Domain docs
 
