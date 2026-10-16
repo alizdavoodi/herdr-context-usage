@@ -13,7 +13,7 @@
 
 </div>
 
-Herdr shows you a column of running agents and their lifecycle state, but not how full any of their context windows is. That number decides when an agent should compact. Once it is readable through the `herdr` CLI, a separate coding agent, the compressor agent, can monitor every pane and coordinate compaction for those agents, according to rules you define.
+Herdr shows you a column of running agents and their lifecycle state, but not how full any of their context windows is. That number matters to two readers. You get every agent's context at a glance in the sidebar, instead of focusing each pane and asking it. Other agents read it through the `herdr` CLI: the compressor agent, for example, can monitor every pane and coordinate compaction for those agents according to rules you define.
 
 This [Herdr](https://github.com/herdrdev/herdr) plugin reads each agent's own session store at every turn boundary and publishes the **context occupancy** of the pane's main thread as two Herdr metadata tokens:
 
