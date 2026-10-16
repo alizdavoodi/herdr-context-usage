@@ -38,18 +38,20 @@ This [Herdr](https://github.com/herdrdev/herdr) plugin reads each agent's own se
 **Requirements**
 
 - [Herdr](https://github.com/herdrdev/herdr) `0.8.0` or newer, on Linux or macOS.
-- Go `1.22` or newer, available to Herdr's plugin build environment.
+- Go `1.22` or newer, to build the binary.
 
 > [!NOTE]
-> This repository is not yet published on GitHub, so `herdr plugin install` cannot fetch it. Link a local checkout instead:
+> This repository is not yet public, so `herdr plugin install` cannot fetch it. Build a local checkout and link it instead:
 >
 > ```bash
-> herdr plugin link --enabled /path/to/herdr-context-usage
+> cd /path/to/herdr-context-usage
+> CGO_ENABLED=0 go build -o herdr-context-usage ./cmd/herdr-context-usage
+> herdr plugin link --enabled "$PWD"
 > ```
 >
-> Once it is published, `herdr plugin install -y OWNER/REPO` will work too, and Herdr also accepts an `OWNER/REPO/SUBDIR` path for a plugin in a subdirectory.
+> `plugin link` does not run the manifest's `[[build]]` command, so building is up to you, and so is rebuilding after each pull: Herdr runs whatever `./herdr-context-usage` the checkout holds. Once the repository is public, `herdr plugin install -y alizdavoodi/herdr-context-usage` will work too.
 
-Herdr builds the plugin itself from the `[[build]]` command in [`herdr-plugin.toml`](herdr-plugin.toml), a CGO-free `go build`. If that build fails, installation stops with the build error; fix it and run the install again. The binary is not put on your `$PATH`: Herdr runs it from the plugin root as `./herdr-context-usage`.
+`herdr plugin install` builds the plugin itself from the `[[build]]` command in [`herdr-plugin.toml`](herdr-plugin.toml), a CGO-free `go build`. If that build fails, installation stops with the build error; fix it and run the install again. Either way, the binary is not put on your `$PATH`: Herdr runs it from the plugin root as `./herdr-context-usage`.
 
 ## Usage
 
