@@ -20,6 +20,10 @@ jobs:
       # Fail rather than download a newer toolchain, so a pass proves the
       # go.mod minimum the README promises still builds.
       GOTOOLCHAIN: local
+      # Test the CGO-free configuration the manifest ships. With cgo on, Go
+      # 1.22's externally linked test binaries lack LC_UUID and current macOS
+      # refuses to load them.
+      CGO_ENABLED: "0"
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
