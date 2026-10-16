@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    # The manifest declares linux and macos, so both run the suite.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      # Fail rather than download a newer toolchain, so a pass proves the
+      # go.mod minimum the README promises still builds.
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      # The manifest's own [[build]] command: a pass means herdr plugin install builds.
+      - run: CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o herdr-context-usage ./cmd/herdr-context-usage
+      - run: go test ./...
