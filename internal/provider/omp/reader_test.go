@@ -193,8 +193,8 @@ const (
 
 	// A splice with no real precedent: C line 246's toolResult carrying C line
 	// 250's usage and snapshot. Only assistant records carry a usage in any
-	// transcript, so this exists purely to keep the role half of the gate
-	// load-bearing — without it, gating on the presence of a usage alone would
+	// transcript, so this exists purely to give the role half of the gate a
+	// case that fails without it — gating on the presence of a usage alone would
 	// pass every other case here, and a usage appearing on some other role later
 	// would silently be read as a completed turn.
 	toolResultWithUsage = `{"type":"message","id":"327de39a","parentId":"167efdc3","timestamp":"2026-08-18T11:14:20.756Z","message":{"role":"toolResult","toolCallId":"ollama:0:bash","toolName":"bash","isError":false,"usage":{"input":132098,"output":2595,"cacheRead":0,"cacheWrite":0,"totalTokens":134693},"contextSnapshot":{"promptTokens":132098,"nonMessageTokens":19016}}}`

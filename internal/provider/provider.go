@@ -14,17 +14,17 @@ const (
 	OpenCode  Kind = "opencode"
 	OpenCode2 Kind = "opencode2"
 	// herdr's agent kinds are a closed enumeration compiled into its binary and
-	// a user cannot extend it, so this spelling is load-bearing: a misspelled
-	// constant matches no agent label and produces a permanently blank row with
-	// no error anywhere to explain it. "oh-my-pi" is not a value, and neither is
-	// any transposition of "omp".
+	// a user cannot extend it, so this spelling must match herdr's label
+	// exactly: a misspelled constant matches no agent label and produces a
+	// permanently blank row with no error anywhere to explain it. "oh-my-pi" is
+	// not a value, and neither is any transposition of "omp".
 	Pi Kind = "pi"
 	// herdr labels omp separately from pi even though omp is built on pi, so
 	// the two are distinct kinds here as well. The same spelling warning
 	// applies, and more sharply: "oh-my-pi" is what the project calls itself
 	// in prose, and it is not the label.
 	Omp Kind = "omp"
-	// The same load-bearing spelling as pi and omp: "hermes-agent" is the
+	// The same exact-spelling rule as pi and omp: "hermes-agent" is the
 	// package's name, and it is not the label.
 	Hermes Kind = "hermes"
 )
